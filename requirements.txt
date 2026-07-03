@@ -1,0 +1,9 @@
+pygame
+numpy
+pillow
+platformdirs
+jsonschema
+pytest
+pytest-cov
+ruff
+pyinstaller

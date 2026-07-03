@@ -1,0 +1,38 @@
+{
+  "west_raid_01": {
+    "display_name": "First Western Raid",
+    "trigger_time_ms": 180000,
+    "spawn_zone": "west_frontier",
+    "faction": "wolves",
+    "units": {"spearman": 2},
+    "objective": "survive_western_pressure",
+    "repeat": false
+  },
+  "west_raid_02": {
+    "display_name": "Second Western Raid",
+    "trigger_time_ms": 420000,
+    "spawn_zone": "west_frontier",
+    "faction": "wolves",
+    "units": {"spearman": 3, "archer": 1},
+    "objective": "survive_western_pressure",
+    "repeat": false
+  },
+  "vilereck_patrol": {
+    "display_name": "Vilereck Patrol",
+    "trigger_time_ms": 600000,
+    "spawn_zone": "vilereck_hold",
+    "faction": "vilereck",
+    "units": {"swordsman": 2, "archer": 2},
+    "objective": "push_east",
+    "repeat": true
+  },
+  "lord_vilereck_final": {
+    "display_name": "Lord Vilereck Final Guard",
+    "trigger_time_ms": 0,
+    "spawn_zone": "vilereck_hold",
+    "faction": "vilereck",
+    "units": {"knight": 3, "mounted_knight": 2, "catapult": 1},
+    "objective": "defeat_lord_vilereck",
+    "repeat": false
+  }
+}

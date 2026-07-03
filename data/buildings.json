@@ -1,0 +1,72 @@
+{
+  "hut": {
+    "display_name": "Hut",
+    "stats": {"hp": 650, "footprint_px": [140, 110], "build_time_ms": 12000},
+    "cost": {"wood": 80, "food": 0, "stone": 0, "iron": 0, "gold": 0},
+    "functions": {"dropoff": true, "population_cap_bonus": 5, "trainable_units": ["settler", "spearman"]},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "watch_tower": {
+    "display_name": "Watch Tower",
+    "stats": {"hp": 900, "footprint_px": [120, 190], "build_time_ms": 18000},
+    "cost": {"wood": 120, "food": 0, "stone": 80, "iron": 0, "gold": 0},
+    "functions": {"defensive": true, "attack_range": 320, "damage": 14},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "tower": {
+    "display_name": "Tower",
+    "stats": {"hp": 1250, "footprint_px": [140, 220], "build_time_ms": 24000},
+    "cost": {"wood": 150, "food": 0, "stone": 160, "iron": 20, "gold": 0},
+    "functions": {"defensive": true, "attack_range": 380, "damage": 20},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "farm": {
+    "display_name": "Farm",
+    "stats": {"hp": 420, "footprint_px": [180, 100], "build_time_ms": 10000},
+    "cost": {"wood": 70, "food": 0, "stone": 0, "iron": 0, "gold": 0},
+    "functions": {"resource_source": "food", "renewable": true},
+    "animations": {"construction": 4, "idle": 2, "damaged": 2, "destroyed": 4}
+  },
+  "barracks": {
+    "display_name": "Barracks",
+    "stats": {"hp": 850, "footprint_px": [190, 135], "build_time_ms": 18000},
+    "cost": {"wood": 130, "food": 0, "stone": 60, "iron": 0, "gold": 0},
+    "functions": {"trainable_units": ["spearman", "swordsman", "knight"]},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "archery_range": {
+    "display_name": "Archery Range",
+    "stats": {"hp": 760, "footprint_px": [180, 125], "build_time_ms": 17000},
+    "cost": {"wood": 150, "food": 0, "stone": 40, "iron": 0, "gold": 0},
+    "functions": {"trainable_units": ["archer"]},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "stable": {
+    "display_name": "Stable",
+    "stats": {"hp": 820, "footprint_px": [205, 130], "build_time_ms": 20000},
+    "cost": {"wood": 160, "food": 0, "stone": 50, "iron": 10, "gold": 0},
+    "functions": {"trainable_units": ["mounted_knight"]},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "workshop": {
+    "display_name": "Workshop",
+    "stats": {"hp": 780, "footprint_px": [185, 125], "build_time_ms": 22000},
+    "cost": {"wood": 180, "food": 0, "stone": 80, "iron": 35, "gold": 0},
+    "functions": {"trainable_units": ["catapult"]},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "blacksmith": {
+    "display_name": "Blacksmith",
+    "stats": {"hp": 700, "footprint_px": [170, 120], "build_time_ms": 18000},
+    "cost": {"wood": 110, "food": 0, "stone": 70, "iron": 20, "gold": 0},
+    "functions": {"researches_upgrades": true},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "fortress": {
+    "display_name": "Fortress",
+    "stats": {"hp": 1800, "footprint_px": [260, 210], "build_time_ms": 36000},
+    "cost": {"wood": 280, "food": 0, "stone": 320, "iron": 120, "gold": 90},
+    "functions": {"dropoff": true, "population_cap_bonus": 15, "trainable_units": ["knight", "wizard", "caravan"]},
+    "animations": {"construction": 5, "idle": 1, "damaged": 2, "destroyed": 5}
+  }
+}

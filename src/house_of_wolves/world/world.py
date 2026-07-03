@@ -1,0 +1,95 @@
+"""Authoritative local world state."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from random import Random
+from typing import TYPE_CHECKING
+
+from house_of_wolves.core.contracts import Command, CommandQueue, EntityId, WorldPosition
+from house_of_wolves.core.settings import AppSettings
+from house_of_wolves.world.camera import Camera
+from house_of_wolves.world.encounter_zones import DEFAULT_ENCOUNTER_ZONES, EncounterZone
+from house_of_wolves.world.spatial_hash import SpatialHash
+from house_of_wolves.world.terrain import DEFAULT_TERRAIN_BANDS, TerrainBand
+
+if TYPE_CHECKING:
+    from house_of_wolves.entities.base import Entity
+
+
+@dataclass(slots=True)
+class WorldState:
+    """Single authoritative simulation container for the desktop RTS."""
+
+    settings: AppSettings = field(default_factory=AppSettings)
+    rng_seed: int = 1337
+    elapsed_ms: int = 0
+    next_entity_id: int = 1
+    entities: dict[EntityId, Entity] = field(default_factory=dict)
+    command_queues: dict[EntityId, CommandQueue] = field(default_factory=dict)
+    resources: dict[str, int] = field(
+        default_factory=lambda: {"wood": 0, "food": 0, "stone": 0, "iron": 0, "gold": 0}
+    )
+    camera: Camera = field(default_factory=Camera)
+    spatial_hash: SpatialHash = field(default_factory=SpatialHash)
+    terrain_bands: tuple[TerrainBand, ...] = DEFAULT_TERRAIN_BANDS
+    encounter_zones: tuple[EncounterZone, ...] = DEFAULT_ENCOUNTER_ZONES
+    rng: Random = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.rng = Random(self.rng_seed)
+
+    def allocate_entity_id(self) -> EntityId:
+        entity_id = EntityId(self.next_entity_id)
+        self.next_entity_id += 1
+        return entity_id
+
+    def add_entity(self, entity: Entity) -> None:
+        self.entities[entity.id] = entity
+        self.command_queues.setdefault(entity.id, CommandQueue(entity.id))
+        self.spatial_hash.insert(entity.id, entity.bounds)
+
+    def update_entity_position(self, entity_id: EntityId, position: WorldPosition) -> None:
+        entity = self.entities[entity_id]
+        entity.position = position
+        self.spatial_hash.move(entity_id, entity.bounds)
+
+    def remove_entity(self, entity_id: EntityId) -> None:
+        self.entities.pop(entity_id, None)
+        self.command_queues.pop(entity_id, None)
+        self.spatial_hash.remove(entity_id)
+
+    def enqueue_command(self, entity_id: EntityId, command: Command) -> None:
+        queue = self.command_queues.setdefault(entity_id, CommandQueue(entity_id))
+        if command.queued:
+            queue.append(command)
+        else:
+            queue.replace(command)
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "rng_seed": self.rng_seed,
+            "elapsed_ms": self.elapsed_ms,
+            "next_entity_id": self.next_entity_id,
+            "resources": self.resources,
+            "command_queues": [
+                queue.to_json()
+                for _, queue in sorted(
+                    self.command_queues.items(),
+                    key=lambda item: int(item[0]),
+                )
+            ],
+        }
+
+    @classmethod
+    def from_json(cls, value: dict[str, object]) -> WorldState:
+        world = cls(
+            rng_seed=int(value.get("rng_seed", 1337)),
+            elapsed_ms=int(value.get("elapsed_ms", 0)),
+            next_entity_id=int(value.get("next_entity_id", 1)),
+            resources=dict(value.get("resources", {})),
+        )
+        for queue_data in value.get("command_queues", []):
+            queue = CommandQueue.from_json(queue_data)
+            world.command_queues[queue.owner_id] = queue
+        return world

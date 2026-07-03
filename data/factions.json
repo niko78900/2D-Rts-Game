@@ -1,0 +1,26 @@
+{
+  "frontier": {
+    "display_name": "Frontier Settlers",
+    "playable": true,
+    "color": [89, 140, 79],
+    "relationships": {"frontier": "ally", "neutral": "neutral", "wolves": "enemy", "vilereck": "enemy"}
+  },
+  "wolves": {
+    "display_name": "Western Raiders",
+    "playable": false,
+    "color": [116, 92, 76],
+    "relationships": {"frontier": "enemy", "neutral": "neutral", "wolves": "ally", "vilereck": "neutral"}
+  },
+  "vilereck": {
+    "display_name": "Lord Vilereck",
+    "playable": false,
+    "color": [143, 45, 45],
+    "relationships": {"frontier": "enemy", "neutral": "neutral", "wolves": "neutral", "vilereck": "ally"}
+  },
+  "neutral": {
+    "display_name": "Neutral Frontier",
+    "playable": false,
+    "color": [130, 130, 120],
+    "relationships": {"frontier": "neutral", "neutral": "ally", "wolves": "neutral", "vilereck": "neutral"}
+  }
+}

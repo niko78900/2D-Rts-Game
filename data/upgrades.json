@@ -1,0 +1,65 @@
+{
+  "sharp_spears": {
+    "display_name": "Sharp Spears",
+    "building": "blacksmith",
+    "cost": {"wood": 50, "food": 0, "stone": 0, "iron": 40, "gold": 15},
+    "prerequisites": [],
+    "effects": [{"target": "spearman", "stat": "damage", "op": "add", "value": 3}]
+  },
+  "mighty_spears": {
+    "display_name": "Mighty Spears",
+    "building": "blacksmith",
+    "cost": {"wood": 80, "food": 0, "stone": 0, "iron": 80, "gold": 40},
+    "prerequisites": ["sharp_spears"],
+    "effects": [{"target": "spearman", "stat": "damage", "op": "add", "value": 5}]
+  },
+  "sharp_arrow_tips": {
+    "display_name": "Sharp Arrow Tips",
+    "building": "blacksmith",
+    "cost": {"wood": 65, "food": 0, "stone": 0, "iron": 25, "gold": 25},
+    "prerequisites": [],
+    "effects": [{"target": "archer", "stat": "damage", "op": "add", "value": 3}]
+  },
+  "mighty_arrow_tips": {
+    "display_name": "Mighty Arrow Tips",
+    "building": "blacksmith",
+    "cost": {"wood": 100, "food": 0, "stone": 0, "iron": 45, "gold": 55},
+    "prerequisites": ["sharp_arrow_tips"],
+    "effects": [{"target": "archer", "stat": "damage", "op": "add", "value": 5}]
+  },
+  "sharp_swords": {
+    "display_name": "Sharp Swords",
+    "building": "blacksmith",
+    "cost": {"wood": 40, "food": 0, "stone": 0, "iron": 55, "gold": 20},
+    "prerequisites": [],
+    "effects": [{"target": "swordsman", "stat": "damage", "op": "add", "value": 4}]
+  },
+  "mighty_swords": {
+    "display_name": "Mighty Swords",
+    "building": "blacksmith",
+    "cost": {"wood": 75, "food": 0, "stone": 0, "iron": 95, "gold": 50},
+    "prerequisites": ["sharp_swords"],
+    "effects": [{"target": "swordsman", "stat": "damage", "op": "add", "value": 6}]
+  },
+  "reinforced_armor": {
+    "display_name": "Reinforced Armor",
+    "building": "blacksmith",
+    "cost": {"wood": 60, "food": 0, "stone": 45, "iron": 75, "gold": 35},
+    "prerequisites": [],
+    "effects": [{"target": "infantry", "stat": "hp", "op": "multiply", "value": 1.12}]
+  },
+  "horse_breeding": {
+    "display_name": "Horse Breeding",
+    "building": "stable",
+    "cost": {"wood": 80, "food": 90, "stone": 0, "iron": 30, "gold": 50},
+    "prerequisites": [],
+    "effects": [{"target": "mounted_knight", "stat": "speed", "op": "multiply", "value": 1.1}]
+  },
+  "siege_engineering": {
+    "display_name": "Siege Engineering",
+    "building": "workshop",
+    "cost": {"wood": 120, "food": 0, "stone": 80, "iron": 90, "gold": 60},
+    "prerequisites": [],
+    "effects": [{"target": "catapult", "stat": "attack_range", "op": "add", "value": 45}]
+  }
+}

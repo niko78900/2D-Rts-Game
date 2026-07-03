@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": {
+    "type": "object",
+    "required": ["display_name", "playable", "color", "relationships"],
+    "properties": {
+      "display_name": {"type": "string", "minLength": 1},
+      "playable": {"type": "boolean"},
+      "color": {
+        "type": "array",
+        "prefixItems": [
+          {"type": "integer", "minimum": 0, "maximum": 255},
+          {"type": "integer", "minimum": 0, "maximum": 255},
+          {"type": "integer", "minimum": 0, "maximum": 255}
+        ],
+        "minItems": 3,
+        "maxItems": 3
+      },
+      "relationships": {"type": "object", "additionalProperties": {"enum": ["ally", "neutral", "enemy"]}}
+    },
+    "additionalProperties": false
+  }
+}

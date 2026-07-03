@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": {
+    "type": "object",
+    "required": ["display_name", "trigger_time_ms", "spawn_zone", "faction", "units", "objective", "repeat"],
+    "properties": {
+      "display_name": {"type": "string", "minLength": 1},
+      "trigger_time_ms": {"type": "integer", "minimum": 0},
+      "spawn_zone": {"type": "string", "minLength": 1},
+      "faction": {"type": "string", "minLength": 1},
+      "units": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+      "objective": {"type": "string", "minLength": 1},
+      "repeat": {"type": "boolean"}
+    },
+    "additionalProperties": false
+  }
+}

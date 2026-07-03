@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": {
+    "type": "object",
+    "required": ["display_name", "resource_type", "amount", "gather_time_ms", "harvest_slots", "renewable", "depleted_replacement"],
+    "properties": {
+      "display_name": {"type": "string", "minLength": 1},
+      "resource_type": {"enum": ["wood", "food", "stone", "iron", "gold"]},
+      "amount": {"type": "integer", "minimum": 0},
+      "gather_time_ms": {"type": "integer", "minimum": 1},
+      "harvest_slots": {"type": "integer", "minimum": 1},
+      "renewable": {"type": "boolean"},
+      "depleted_replacement": {"type": "string", "minLength": 1}
+    },
+    "additionalProperties": false
+  }
+}

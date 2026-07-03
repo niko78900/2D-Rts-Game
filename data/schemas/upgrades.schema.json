@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": {
+    "type": "object",
+    "required": ["display_name", "building", "cost", "prerequisites", "effects"],
+    "properties": {
+      "display_name": {"type": "string", "minLength": 1},
+      "building": {"type": "string", "minLength": 1},
+      "cost": {"$ref": "#/$defs/cost"},
+      "prerequisites": {"type": "array", "items": {"type": "string"}},
+      "effects": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["target", "stat", "op", "value"],
+          "properties": {
+            "target": {"type": "string", "minLength": 1},
+            "stat": {"type": "string", "minLength": 1},
+            "op": {"enum": ["add", "multiply"]},
+            "value": {"type": "number"}
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "$defs": {
+    "cost": {
+      "type": "object",
+      "required": ["wood", "food", "stone", "iron", "gold"],
+      "properties": {
+        "wood": {"type": "integer", "minimum": 0},
+        "food": {"type": "integer", "minimum": 0},
+        "stone": {"type": "integer", "minimum": 0},
+        "iron": {"type": "integer", "minimum": 0},
+        "gold": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  }
+}

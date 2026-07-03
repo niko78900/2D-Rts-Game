@@ -1,0 +1,92 @@
+{
+  "settler": {
+    "display_name": "Settler",
+    "role": ["worker", "light_ranged", "builder"],
+    "stats": {"hp": 40, "damage": 6, "speed": 78, "attack_range": 115, "attack_cooldown_ms": 900},
+    "cost": {"wood": 20, "food": 10, "stone": 0, "iron": 0, "gold": 0},
+    "population": 1,
+    "capabilities": {"can_gather": true, "can_build": true, "can_repair": true, "can_attack": true, "carry_capacity": 8},
+    "animations": {"idle": 6, "walk": 8, "attack": 6, "gather": 6, "build": 6, "death": 6},
+    "sounds": {"select": ["settler_select_1"], "move": ["settler_move_1"]}
+  },
+  "spearman": {
+    "display_name": "Spearman",
+    "role": ["infantry", "anti_cavalry"],
+    "stats": {"hp": 70, "damage": 12, "speed": 72, "attack_range": 40, "attack_cooldown_ms": 950},
+    "cost": {"wood": 25, "food": 20, "stone": 0, "iron": 5, "gold": 0},
+    "population": 1,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
+    "animations": {"idle": 4, "walk": 8, "attack": 6, "death": 6},
+    "sounds": {"select": ["spearman_select_1"], "move": ["spearman_move_1"]}
+  },
+  "archer": {
+    "display_name": "Archer",
+    "role": ["ranged"],
+    "stats": {"hp": 55, "damage": 10, "speed": 74, "attack_range": 220, "attack_cooldown_ms": 1100},
+    "cost": {"wood": 35, "food": 25, "stone": 0, "iron": 0, "gold": 5},
+    "population": 1,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
+    "animations": {"idle": 4, "walk": 8, "attack": 7, "death": 6},
+    "sounds": {"select": ["archer_select_1"], "move": ["archer_move_1"]}
+  },
+  "swordsman": {
+    "display_name": "Swordsman",
+    "role": ["infantry"],
+    "stats": {"hp": 90, "damage": 16, "speed": 68, "attack_range": 38, "attack_cooldown_ms": 850},
+    "cost": {"wood": 15, "food": 30, "stone": 0, "iron": 20, "gold": 0},
+    "population": 1,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
+    "animations": {"idle": 4, "walk": 8, "attack": 6, "death": 6},
+    "sounds": {"select": ["swordsman_select_1"], "move": ["swordsman_move_1"]}
+  },
+  "knight": {
+    "display_name": "Knight",
+    "role": ["heavy_infantry"],
+    "stats": {"hp": 135, "damage": 22, "speed": 62, "attack_range": 42, "attack_cooldown_ms": 950},
+    "cost": {"wood": 20, "food": 45, "stone": 0, "iron": 35, "gold": 20},
+    "population": 2,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
+    "animations": {"idle": 4, "walk": 8, "attack": 6, "death": 6},
+    "sounds": {"select": ["knight_select_1"], "move": ["knight_move_1"]}
+  },
+  "mounted_knight": {
+    "display_name": "Mounted Knight",
+    "role": ["cavalry", "charge"],
+    "stats": {"hp": 150, "damage": 24, "speed": 110, "attack_range": 48, "attack_cooldown_ms": 1000},
+    "cost": {"wood": 30, "food": 60, "stone": 0, "iron": 35, "gold": 35},
+    "population": 2,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
+    "animations": {"idle": 4, "walk": 8, "attack": 6, "death": 6},
+    "sounds": {"select": ["mounted_knight_select_1"], "move": ["mounted_knight_move_1"]}
+  },
+  "wizard": {
+    "display_name": "Wizard",
+    "role": ["support", "healer"],
+    "stats": {"hp": 65, "damage": 4, "speed": 70, "attack_range": 180, "attack_cooldown_ms": 1300},
+    "cost": {"wood": 20, "food": 25, "stone": 0, "iron": 0, "gold": 70},
+    "population": 2,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
+    "animations": {"idle": 5, "walk": 8, "attack": 8, "heal": 8, "death": 6},
+    "sounds": {"select": ["wizard_select_1"], "move": ["wizard_move_1"]}
+  },
+  "catapult": {
+    "display_name": "Catapult",
+    "role": ["siege"],
+    "stats": {"hp": 115, "damage": 55, "speed": 38, "attack_range": 340, "attack_cooldown_ms": 2400},
+    "cost": {"wood": 95, "food": 0, "stone": 35, "iron": 45, "gold": 25},
+    "population": 3,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
+    "animations": {"idle": 3, "walk": 6, "attack": 8, "death": 6},
+    "sounds": {"select": ["catapult_select_1"], "move": ["catapult_move_1"]}
+  },
+  "caravan": {
+    "display_name": "Caravan",
+    "role": ["objective", "support"],
+    "stats": {"hp": 180, "damage": 0, "speed": 45, "attack_range": 0, "attack_cooldown_ms": 0},
+    "cost": {"wood": 80, "food": 40, "stone": 0, "iron": 0, "gold": 20},
+    "population": 2,
+    "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": false, "carry_capacity": 0},
+    "animations": {"idle": 3, "walk": 6, "death": 4},
+    "sounds": {"select": ["caravan_select_1"], "move": ["caravan_move_1"]}
+  }
+}

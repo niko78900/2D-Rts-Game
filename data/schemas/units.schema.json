@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "minProperties": 1,
+  "additionalProperties": {
+    "type": "object",
+    "required": ["display_name", "role", "stats", "cost", "population", "capabilities", "animations", "sounds"],
+    "properties": {
+      "display_name": {"type": "string", "minLength": 1},
+      "role": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+      "stats": {
+        "type": "object",
+        "required": ["hp", "damage", "speed", "attack_range", "attack_cooldown_ms"],
+        "properties": {
+          "hp": {"type": "integer", "minimum": 1},
+          "damage": {"type": "integer", "minimum": 0},
+          "speed": {"type": "number", "minimum": 0},
+          "attack_range": {"type": "number", "minimum": 0},
+          "attack_cooldown_ms": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      },
+      "cost": {"$ref": "#/$defs/cost"},
+      "population": {"type": "integer", "minimum": 0},
+      "capabilities": {
+        "type": "object",
+        "required": ["can_gather", "can_build", "can_repair", "can_attack", "carry_capacity"],
+        "properties": {
+          "can_gather": {"type": "boolean"},
+          "can_build": {"type": "boolean"},
+          "can_repair": {"type": "boolean"},
+          "can_attack": {"type": "boolean"},
+          "carry_capacity": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      },
+      "animations": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+      "sounds": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}}
+    },
+    "additionalProperties": false
+  },
+  "$defs": {
+    "cost": {
+      "type": "object",
+      "required": ["wood", "food", "stone", "iron", "gold"],
+      "properties": {
+        "wood": {"type": "integer", "minimum": 0},
+        "food": {"type": "integer", "minimum": 0},
+        "stone": {"type": "integer", "minimum": 0},
+        "iron": {"type": "integer", "minimum": 0},
+        "gold": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  }
+}

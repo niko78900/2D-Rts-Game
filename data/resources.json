@@ -1,0 +1,56 @@
+{
+  "wood_tree": {
+    "display_name": "Tree",
+    "resource_type": "wood",
+    "amount": 250,
+    "gather_time_ms": 900,
+    "harvest_slots": 2,
+    "renewable": false,
+    "depleted_replacement": "tree_stump"
+  },
+  "deer": {
+    "display_name": "Deer",
+    "resource_type": "food",
+    "amount": 90,
+    "gather_time_ms": 850,
+    "harvest_slots": 1,
+    "renewable": true,
+    "depleted_replacement": "bones"
+  },
+  "farm_food": {
+    "display_name": "Farm Food",
+    "resource_type": "food",
+    "amount": 500,
+    "gather_time_ms": 1000,
+    "harvest_slots": 3,
+    "renewable": true,
+    "depleted_replacement": "fallow_field"
+  },
+  "stone_outcrop": {
+    "display_name": "Stone Outcrop",
+    "resource_type": "stone",
+    "amount": 380,
+    "gather_time_ms": 1150,
+    "harvest_slots": 2,
+    "renewable": false,
+    "depleted_replacement": "rubble"
+  },
+  "iron_deposit": {
+    "display_name": "Iron Deposit",
+    "resource_type": "iron",
+    "amount": 320,
+    "gather_time_ms": 1200,
+    "harvest_slots": 2,
+    "renewable": false,
+    "depleted_replacement": "empty_iron_deposit"
+  },
+  "gold_mine": {
+    "display_name": "Gold Mine",
+    "resource_type": "gold",
+    "amount": 400,
+    "gather_time_ms": 1200,
+    "harvest_slots": 3,
+    "renewable": false,
+    "depleted_replacement": "gold_mine_empty"
+  }
+}
