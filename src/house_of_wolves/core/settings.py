@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from house_of_wolves.core.keybindings import default_keybindings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_ROOT = PROJECT_ROOT / "data"
@@ -18,7 +20,12 @@ class AppSettings:
     """Configuration for the future Pygame app shell."""
 
     window_title: str = "House of Wolves Remastered"
-    fullscreen: bool = True
+    fullscreen: bool = False
+    display_index: int = 0
+    show_resource_hitboxes: bool = False
+    show_unit_hitboxes: bool = False
+    show_building_hitboxes: bool = False
+    show_debug_waypoints: bool = False
     virtual_width: int = 1280
     virtual_height: int = 720
     target_fps: int = 60
@@ -33,6 +40,7 @@ class AppSettings:
     schema_root: Path = SCHEMA_ROOT
     asset_root: Path = ASSET_ROOT
     save_root: Path = SAVE_ROOT
+    keybindings: dict[str, str] = field(default_factory=default_keybindings)
 
     @property
     def virtual_size(self) -> tuple[int, int]:

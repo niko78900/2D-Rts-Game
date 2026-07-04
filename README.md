@@ -28,14 +28,24 @@ The validation mode loads and validates the JSON definitions, then prints a cont
 python -m house_of_wolves
 ```
 
-Fullscreen is the default play mode. Use borderless windowed mode for debugging:
+Borderless windowed mode on the primary display is the default play mode. It uses the
+monitor's full desktop size, such as `1920x1080` on a 1080p display:
 
 ```powershell
-python -m house_of_wolves --windowed
+python -m house_of_wolves
 ```
 
-The in-game `Settings` button in the top-right HUD can toggle between fullscreen and
-borderless windowed mode.
+Use fullscreen explicitly when needed:
+
+```powershell
+python -m house_of_wolves --fullscreen
+```
+
+The in-game `Settings` button in the top-right HUD can toggle between borderless
+windowed mode and fullscreen.
+
+The same settings menu can toggle resource hitbox debug outlines. They are off by
+default; resource nodes still block movement while the outlines are hidden.
 
 You can also double-click `launch_game.cmd` from the project folder.
 

@@ -38,14 +38,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--windowed",
         action="store_true",
-        help="Launch in a fixed-size window instead of fullscreen.",
+        help="Launch in borderless windowed mode. This is the default.",
+    )
+    parser.add_argument(
+        "--fullscreen",
+        action="store_true",
+        help="Launch in fullscreen mode instead of the default borderless window.",
     )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    app = GameApp(AppSettings(fullscreen=not args.windowed))
+    app = GameApp(AppSettings(fullscreen=args.fullscreen and not args.windowed))
     if args.validate:
         summary = app.validation_summary()
         joined = ", ".join(f"{name}={count}" for name, count in summary.items())
