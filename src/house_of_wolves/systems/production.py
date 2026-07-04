@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
 from house_of_wolves.entities.building import Building
+from house_of_wolves.entities.combat_unit import CombatUnit
 from house_of_wolves.entities.unit import Unit
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.world.collision import nearest_free_position
@@ -13,8 +14,22 @@ from house_of_wolves.world.terrain import DEFAULT_TERRAIN_HEIGHT, terrain_layout
 from house_of_wolves.world.world import WorldState
 
 UNIT_TEMPLATES = {
-    "settler": {"hp": 40, "speed": 92, "footprint": (38, 58)},
-    "spearman": {"hp": 70, "speed": 78, "footprint": (38, 58)},
+    "settler": {
+        "hp": 40,
+        "speed": 92,
+        "footprint": (38, 58),
+        "damage": 6,
+        "attack_range": 115,
+        "attack_cooldown_ms": 900,
+    },
+    "spearman": {
+        "hp": 70,
+        "speed": 78,
+        "footprint": (38, 58),
+        "damage": 12,
+        "attack_range": 42,
+        "attack_cooldown_ms": 950,
+    },
 }
 
 
@@ -56,14 +71,18 @@ def _create_unit(world: WorldState, producer: Building, unit_id: str) -> Unit:
     template = UNIT_TEMPLATES[unit_id]
     width, height = template["footprint"]
     spawn_pos = available_spawn_position_for(world, producer)
-    return Unit(
+    return CombatUnit(
         id=world.allocate_entity_id(),
         owner=producer.owner,
         position=spawn_pos,
         footprint=Footprint(width, height),
         hp=int(template["hp"]),
+        max_hp=int(template["hp"]),
         tags=("unit", unit_id, "selectable", "movable"),
         speed=float(template["speed"]),
+        attack_range=float(template["attack_range"]),
+        damage=int(template["damage"]),
+        attack_cooldown_ms=int(template["attack_cooldown_ms"]),
     )
 
 
