@@ -10,6 +10,7 @@ DATA_ROOT = PROJECT_ROOT / "data"
 SCHEMA_ROOT = DATA_ROOT / "schemas"
 ASSET_ROOT = PROJECT_ROOT / "assets"
 SAVE_ROOT = PROJECT_ROOT / "saves"
+UI_PANEL_HEIGHT = 112
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +18,7 @@ class AppSettings:
     """Configuration for the future Pygame app shell."""
 
     window_title: str = "House of Wolves Remastered"
+    fullscreen: bool = True
     virtual_width: int = 1280
     virtual_height: int = 720
     target_fps: int = 60
@@ -24,6 +26,7 @@ class AppSettings:
     camera_pan_speed: int = 720
     edge_scroll_margin: int = 24
     selection_drag_threshold: int = 6
+    ui_panel_height: int = UI_PANEL_HEIGHT
     world_width: int = 7200
     world_height: int = 720
     data_root: Path = DATA_ROOT

@@ -26,13 +26,13 @@ def test_box_select_replaces_or_adds_visible_units() -> None:
     units = [entity for entity in world.entities.values() if "unit" in entity.tags]
     selection = SelectionSystem()
 
-    selected = selection.box_select(world, (320, 450, 220, 110))
+    selected = selection.box_select(world, _bounds_around(units))
     assert selected == [unit.id for unit in units]
     assert selection.state.selected_ids == selected
 
     selection.state.clear()
     selection.state.add(units[0].id)
-    added = selection.box_select(world, (410, 450, 120, 110), add=True)
+    added = selection.box_select(world, _bounds_around(units[1:]), add=True)
 
     assert added == [units[1].id, units[2].id]
     assert selection.state.selected_ids == [units[0].id, units[1].id, units[2].id]
@@ -84,10 +84,19 @@ def test_box_select_only_selects_units_even_when_objects_overlap_bounds() -> Non
     units = [entity for entity in world.entities.values() if "unit" in entity.tags]
     selection = SelectionSystem()
 
-    selected = selection.box_select(world, (120, 380, 1100, 210))
+    selected = selection.box_select(world, _bounds_around(world.entities.values()))
 
     assert selected == [unit.id for unit in units]
     assert all(
         "unit" in world.entities[entity_id].tags
         for entity_id in selection.state.selected_ids
     )
+
+
+def _bounds_around(entities: object) -> tuple[float, float, float, float]:
+    bounds = [entity.bounds for entity in entities]
+    left = min(bound[0] for bound in bounds)
+    top = min(bound[1] for bound in bounds)
+    right = max(bound[0] + bound[2] for bound in bounds)
+    bottom = max(bound[1] + bound[3] for bound in bounds)
+    return (left - 1, top - 1, (right - left) + 2, (bottom - top) + 2)

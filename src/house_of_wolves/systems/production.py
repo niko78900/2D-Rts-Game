@@ -9,6 +9,7 @@ from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.unit import Unit
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.world.collision import nearest_free_position
+from house_of_wolves.world.terrain import DEFAULT_TERRAIN_HEIGHT, terrain_layout_for_height
 from house_of_wolves.world.world import WorldState
 
 UNIT_TEMPLATES = {
@@ -66,10 +67,19 @@ def _create_unit(world: WorldState, producer: Building, unit_id: str) -> Unit:
     )
 
 
-def spawn_position_for(producer: Building) -> WorldPosition:
+def spawn_position_for(
+    producer: Building,
+    world_height: int | float = DEFAULT_TERRAIN_HEIGHT,
+) -> WorldPosition:
     left, _top, width, _height = producer.bounds
-    return WorldPosition(left + width + 42, producer.position.y)
+    return WorldPosition(
+        left + width + 42,
+        terrain_layout_for_height(world_height).unit_walkable_top_y,
+    )
 
 
 def available_spawn_position_for(world: WorldState, producer: Building) -> WorldPosition:
-    return nearest_free_position(world, spawn_position_for(producer))
+    return nearest_free_position(
+        world,
+        spawn_position_for(producer, world.settings.world_height),
+    )

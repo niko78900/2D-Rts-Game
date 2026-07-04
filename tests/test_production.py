@@ -46,5 +46,7 @@ def test_produce_unit_rejects_units_not_trained_by_building() -> None:
 def test_available_spawn_position_moves_away_from_occupied_exit() -> None:
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    blocker = next(entity for entity in world.entities.values() if "unit" in entity.tags)
+    world.update_entity_position(blocker.id, spawn_position_for(hut))
 
     assert available_spawn_position_for(world, hut) != spawn_position_for(hut)

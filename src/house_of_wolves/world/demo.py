@@ -8,6 +8,7 @@ from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.resource_node import ResourceNode
 from house_of_wolves.entities.unit import Unit
 from house_of_wolves.world.camera import Camera
+from house_of_wolves.world.terrain import terrain_bands_for_height, terrain_layout_for_height
 from house_of_wolves.world.world import WorldState
 
 
@@ -22,15 +23,39 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
         world_width=app_settings.world_width,
         world_height=app_settings.world_height,
     )
+    world.terrain_bands = terrain_bands_for_height(app_settings.world_height)
+    terrain = terrain_layout_for_height(app_settings.world_height)
+    unit_lane_height = terrain.unit_walkable_bottom_y - terrain.unit_walkable_top_y
     world.resources.update({"wood": 120, "food": 80, "stone": 40, "iron": 0, "gold": 0})
 
-    _add_unit(world, "settler", 360, 510, speed=92, hp=40)
-    _add_unit(world, "spearman", 430, 520, speed=78, hp=70)
-    _add_unit(world, "archer", 500, 505, speed=82, hp=55)
+    _add_unit(
+        world,
+        "settler",
+        360,
+        terrain.unit_walkable_top_y + unit_lane_height * 0.35,
+        speed=92,
+        hp=40,
+    )
+    _add_unit(
+        world,
+        "spearman",
+        430,
+        terrain.unit_walkable_top_y + unit_lane_height * 0.38,
+        speed=78,
+        hp=70,
+    )
+    _add_unit(
+        world,
+        "archer",
+        500,
+        terrain.unit_walkable_top_y + unit_lane_height * 0.33,
+        speed=82,
+        hp=55,
+    )
 
-    _add_tree(world, 760, 520)
-    _add_gold_mine(world, 1120, 535)
-    _add_hut(world, 230, 525)
+    _add_tree(world, 760, terrain.unit_walkable_top_y + unit_lane_height * 0.38)
+    _add_gold_mine(world, 1120, terrain.unit_walkable_top_y + unit_lane_height * 0.43)
+    _add_hut(world, 230, terrain.building_lane_bottom_y)
 
     return world
 
@@ -105,6 +130,9 @@ def _add_hut(world: WorldState, x: float, y: float) -> None:
             population_cap_bonus=5,
             trainable_units=("settler", "spearman"),
         ),
-        dropoff_point=WorldPosition(x + 220, y),
+        dropoff_point=WorldPosition(
+            x + 220,
+            terrain_layout_for_height(world.settings.world_height).unit_walkable_top_y,
+        ),
     )
     world.add_entity(entity)
