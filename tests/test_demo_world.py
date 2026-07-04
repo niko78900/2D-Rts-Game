@@ -12,4 +12,9 @@ def test_demo_world_bootstrap_creates_expected_placeholder_entities() -> None:
     assert sum("building" in tags for tags in tag_sets) == 1
     assert sum("selectable" in tags for tags in tag_sets) == 6
     assert all("movable" in tags for tags in tag_sets if "unit" in tags)
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    assert hut.dropoff_point is not None
+    assert hut.production_config.dropoff is True
+    assert hut.production_config.population_cap_bonus == 5
+    assert hut.production_config.trainable_units == ("settler", "spearman")
     assert world.resources["wood"] == 120

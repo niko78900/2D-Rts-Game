@@ -100,10 +100,11 @@ def _add_hut(world: WorldState, x: float, y: float) -> None:
         tags=("building", "hut", "selectable"),
         build_time_ms=12000,
         complete=True,
-        functions={
-            "dropoff": True,
-            "population_cap_bonus": 5,
-            "trainable_units": ["settler", "spearman"],
-        },
+        functions=Building.production_functions(
+            dropoff=True,
+            population_cap_bonus=5,
+            trainable_units=("settler", "spearman"),
+        ),
+        dropoff_point=WorldPosition(x + 220, y),
     )
     world.add_entity(entity)

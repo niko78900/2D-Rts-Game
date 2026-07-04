@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
+import pygame
+
 from house_of_wolves.core.contracts import WorldPosition
-from house_of_wolves.core.renderer import queued_move_targets
+from house_of_wolves.core.renderer import GameRenderer, queued_move_targets
+from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.ui.selected_panel import mutual_abilities, selected_panel_for
 from house_of_wolves.world.demo import create_demo_world
@@ -93,3 +100,45 @@ def test_mutual_abilities_keeps_shared_settler_actions_for_same_unit_type() -> N
         "Gather Wood",
         "Repair",
     )
+
+
+def test_renderer_hit_tests_selected_panel_ability_buttons() -> None:
+    pygame.init()
+    try:
+        world = create_demo_world()
+        hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+        renderer = GameRenderer(AppSettings())
+        surface = pygame.Surface(AppSettings().virtual_size)
+        selection = type("Selection", (), {"selected_ids": [hut.id]})()
+        panel = selected_panel_for(world, [hut.id])
+        produce_settler = next(
+            button for button in renderer.ability_buttons_for_panel(surface, panel)
+            if button.label == "Produce Settler"
+        )
+
+        assert renderer.ability_at(surface, world, selection, produce_settler.rect.center) == (
+            "Produce Settler"
+        )
+    finally:
+        pygame.quit()
+
+
+def test_renderer_highlights_active_dropoff_button() -> None:
+    pygame.init()
+    try:
+        world = create_demo_world()
+        hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+        renderer = GameRenderer(AppSettings())
+        surface = pygame.Surface(AppSettings().virtual_size)
+        selection = type("Selection", (), {"selected_ids": [hut.id]})()
+        panel = selected_panel_for(world, [hut.id])
+        dropoff = next(
+            button for button in renderer.ability_buttons_for_panel(surface, panel)
+            if button.label == "Dropoff"
+        )
+
+        renderer.render(surface, world, selection, fps=0, active_ability="Dropoff")
+
+        assert surface.get_at((dropoff.rect.centerx, dropoff.rect.top))[:3] == (109, 176, 104)
+    finally:
+        pygame.quit()

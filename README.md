@@ -34,6 +34,12 @@ You can also double-click `launch_game.cmd` from the project folder.
 This opens the current minimal Pygame slice: placeholder map, camera panning, unit selection,
 and right-click movement. It is not a full RTS prototype yet.
 
+Select the hut and click `Produce Settler` or `Produce Spearman` to spawn a unit. New units
+walk to the hut's blue drop-off flag.
+
+Click `Dropoff`, then click the map to move the hut flag. Click `Dropoff` again to cancel
+flag placement.
+
 ## Architecture
 
 - `src/house_of_wolves/core`: settings, app shell, data loading, serialization, assets, profiler hooks.

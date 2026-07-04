@@ -3,6 +3,7 @@ from __future__ import annotations
 from house_of_wolves.core.contracts import WorldPosition
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.movement import MovementSystem
+from house_of_wolves.world.collision import UNIT_COLLISION_RADIUS, unit_distance
 from house_of_wolves.world.demo import create_demo_world
 
 
@@ -26,3 +27,90 @@ def test_movement_consumes_move_command_and_updates_spatial_hash() -> None:
     assert world.command_queues[unit.id].peek() is None
     assert unit.state == "idle"
     assert unit.id not in world.spatial_hash.query(original_bounds)
+
+
+def test_units_resolve_around_same_destination_instead_of_overlapping() -> None:
+    world = create_demo_world()
+    units = [entity for entity in world.entities.values() if "unit" in entity.tags][:2]
+    target = WorldPosition(900, 500)
+    movement = MovementSystem()
+
+    for unit in units:
+        world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))
+
+    for _ in range(100):
+        movement.update(world, 100)
+
+    assert unit_distance(units[0], units[1]) >= UNIT_COLLISION_RADIUS - 0.001
+    assert all(
+        unit_distance_from_position(unit, target) <= movement.shared_destination_radius
+        for unit in units
+    )
+
+
+def test_unreachable_move_command_times_out_at_closest_reached_position() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
+    target = WorldPosition(unit.position.x + 500, unit.position.y)
+    movement = MovementSystem(unreachable_timeout_ms=100)
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))
+    movement.update(world, 500)
+
+    closest_reached = unit.position
+    unit.speed = 0
+    movement.update(world, 50)
+
+    assert world.command_queues[unit.id].peek() is not None
+
+    movement.update(world, 60)
+
+    assert unit.position == closest_reached
+    assert unit.state == "idle"
+    assert world.command_queues[unit.id].peek() is None
+
+
+def test_moving_unit_shoves_blocking_unit_forward() -> None:
+    world = create_demo_world()
+    mover, blocker, bystander = [
+        entity for entity in world.entities.values() if "unit" in entity.tags
+    ][:3]
+    movement = MovementSystem()
+
+    world.update_entity_position(mover.id, WorldPosition(360, 500))
+    world.update_entity_position(blocker.id, WorldPosition(392, 500))
+    world.update_entity_position(bystander.id, WorldPosition(1000, 500))
+    original_blocker_position = blocker.position
+
+    world.enqueue_command(
+        mover.id,
+        make_command("move", [mover.id], target_pos=WorldPosition(540, 500)),
+    )
+    movement.update(world, 500)
+
+    shove_distance = unit_distance_from_position(blocker, original_blocker_position)
+    assert blocker.position.x > original_blocker_position.x
+    assert 0 < shove_distance <= movement.max_shove_px + 3
+    assert world.command_queues[blocker.id].peek() is None
+
+
+def test_overlapping_idle_units_are_pushed_apart_on_update() -> None:
+    world = create_demo_world()
+    units = [entity for entity in world.entities.values() if "unit" in entity.tags][:2]
+
+    world.update_entity_position(units[1].id, units[0].position)
+    assert unit_distance(units[0], units[1]) == 0
+
+    MovementSystem().update(world, 16)
+
+    first_separation = unit_distance(units[0], units[1])
+    assert 0 < first_separation < UNIT_COLLISION_RADIUS
+
+    for _ in range(8):
+        MovementSystem().update(world, 16)
+
+    assert unit_distance(units[0], units[1]) >= UNIT_COLLISION_RADIUS - 0.001
+
+
+def unit_distance_from_position(unit: object, position: WorldPosition) -> float:
+    return ((unit.position.x - position.x) ** 2 + (unit.position.y - position.y) ** 2) ** 0.5

@@ -7,10 +7,13 @@ from math import hypot
 
 import pygame
 
+from house_of_wolves.core.contracts import EntityId
 from house_of_wolves.core.renderer import GameRenderer, ScreenRect
 from house_of_wolves.core.settings import AppSettings
+from house_of_wolves.entities.building import Building
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.movement import MovementSystem
+from house_of_wolves.systems.production import ProductionError, produce_unit
 from house_of_wolves.systems.selection import SelectionSystem
 from house_of_wolves.world.demo import create_demo_world
 from house_of_wolves.world.world import WorldState
@@ -30,6 +33,7 @@ class GameRuntime:
     renderer: GameRenderer | None = None
     drag_start_screen: tuple[int, int] | None = None
     drag_current_screen: tuple[int, int] | None = None
+    active_dropoff_building_id: EntityId | None = None
 
     def __post_init__(self) -> None:
         if self.world.settings != self.settings:
@@ -77,6 +81,10 @@ class GameRuntime:
             self.running = False
             return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self._handle_ability_click(event.pos):
+                return
+            if self._handle_dropoff_placement(event.pos):
+                return
             self.drag_start_screen = event.pos
             self.drag_current_screen = event.pos
             return
@@ -88,6 +96,70 @@ class GameRuntime:
             return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
             self._issue_move(event.pos, queued=_shift_pressed())
+
+    def _handle_ability_click(self, screen_pos: tuple[int, int]) -> bool:
+        if self.screen is None or self.renderer is None:
+            return False
+        ability = self.renderer.ability_at(
+            self.screen,
+            self.world,
+            self.selection_system.state,
+            screen_pos,
+        )
+        if ability is None:
+            return False
+        if ability == "Dropoff":
+            self._toggle_dropoff_mode()
+            return True
+        if ability.startswith("Produce "):
+            self.active_dropoff_building_id = None
+            self._produce_from_selection(ability.removeprefix("Produce "))
+        return True
+
+    def _toggle_dropoff_mode(self) -> None:
+        building = self._selected_dropoff_building()
+        if building is None:
+            self.active_dropoff_building_id = None
+            return
+        if self.active_dropoff_building_id == building.id:
+            self.active_dropoff_building_id = None
+        else:
+            self.active_dropoff_building_id = building.id
+
+    def _handle_dropoff_placement(self, screen_pos: tuple[int, int]) -> bool:
+        if self.active_dropoff_building_id is None:
+            return False
+        if (
+            self.screen is not None
+            and self.renderer is not None
+            and self.renderer.panel_contains(self.screen, screen_pos)
+        ):
+            return True
+        building = self.world.entities.get(self.active_dropoff_building_id)
+        if not isinstance(building, Building):
+            self.active_dropoff_building_id = None
+            return False
+        building.dropoff_point = self.world.camera.screen_to_world(*screen_pos)
+        self.active_dropoff_building_id = None
+        return True
+
+    def _selected_dropoff_building(self) -> Building | None:
+        if len(self.selection_system.state.selected_ids) != 1:
+            return None
+        entity = self.world.entities.get(self.selection_system.state.selected_ids[0])
+        if isinstance(entity, Building) and entity.dropoff_point is not None:
+            return entity
+        return None
+
+    def _produce_from_selection(self, display_name: str) -> None:
+        if len(self.selection_system.state.selected_ids) != 1:
+            return
+        producer_id = self.selection_system.state.selected_ids[0]
+        unit_id = display_name.replace(" ", "_").lower()
+        try:
+            produce_unit(self.world, producer_id, unit_id)
+        except ProductionError:
+            return
 
     def update(self, dt_ms: int) -> None:
         self._update_camera(dt_ms)
@@ -103,7 +175,13 @@ class GameRuntime:
             self.selection_system.state,
             fps,
             self._current_drag_rect(),
+            self._active_ability_label(),
         )
+
+    def _active_ability_label(self) -> str | None:
+        if self.active_dropoff_building_id is not None:
+            return "Dropoff"
+        return None
 
     def _update_camera(self, dt_ms: int) -> None:
         direction = 0

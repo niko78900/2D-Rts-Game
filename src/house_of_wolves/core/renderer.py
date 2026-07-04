@@ -10,10 +10,23 @@ import pygame
 from house_of_wolves.core.contracts import Command, EntityId, WorldPosition
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.systems.selection import SelectionState
-from house_of_wolves.ui.selected_panel import selected_panel_for
+from house_of_wolves.ui.selected_panel import SelectedPanel, selected_panel_for
 from house_of_wolves.world.world import WorldState
 
 ScreenRect = tuple[int, int, int, int]
+PANEL_HEIGHT = 112
+ABILITY_START_X = 520
+ABILITY_START_Y_OFFSET = 18
+ABILITY_ROW_HEIGHT = 30
+ABILITY_CHIP_HEIGHT = 24
+
+
+@dataclass(frozen=True, slots=True)
+class AbilityButton:
+    """Hit-test data for one selected-panel ability chip."""
+
+    label: str
+    rect: pygame.Rect
 
 
 @dataclass(slots=True)
@@ -37,14 +50,16 @@ class GameRenderer:
         selection: SelectionState,
         fps: float,
         drag_rect: ScreenRect | None = None,
+        active_ability: str | None = None,
     ) -> None:
         self._draw_background(surface, world)
         self._draw_entities(surface, world, selection.selected_ids)
+        self._draw_dropoff_markers(surface, world, selection.selected_ids)
         self._draw_destinations(surface, world, selection.selected_ids)
         if drag_rect is not None:
             self._draw_drag_rect(surface, drag_rect)
         self._draw_hud(surface, world, selection, fps)
-        self._draw_selected_panel(surface, world, selection)
+        self._draw_selected_panel(surface, world, selection, active_ability)
 
     def _draw_background(self, surface: pygame.Surface, world: WorldState) -> None:
         surface.fill((112, 168, 202))
@@ -153,6 +168,35 @@ class GameRenderer:
                 self._draw_destination_marker(surface, current_screen, index)
                 previous_screen = current_screen
 
+    def _draw_dropoff_markers(
+        self,
+        surface: pygame.Surface,
+        world: WorldState,
+        selected_ids: list[EntityId],
+    ) -> None:
+        for entity_id in selected_ids:
+            entity = world.entities.get(entity_id)
+            dropoff_point = getattr(entity, "dropoff_point", None)
+            if dropoff_point is None:
+                continue
+            self._draw_dropoff_flag(surface, world.camera.world_to_screen(dropoff_point))
+
+    def _draw_dropoff_flag(self, surface: pygame.Surface, screen_pos: tuple[int, int]) -> None:
+        x, y = screen_pos
+        pygame.draw.line(surface, (18, 18, 18), (x, y), (x, y - 50), 4)
+        pygame.draw.polygon(
+            surface,
+            (45, 112, 204),
+            [(x + 2, y - 48), (x + 38, y - 36), (x + 2, y - 24)],
+        )
+        pygame.draw.polygon(
+            surface,
+            (15, 38, 74),
+            [(x + 2, y - 48), (x + 38, y - 36), (x + 2, y - 24)],
+            width=2,
+        )
+        pygame.draw.circle(surface, (18, 18, 18), (x, y), 5)
+
     def _draw_destination_marker(
         self,
         surface: pygame.Surface,
@@ -204,14 +248,14 @@ class GameRenderer:
         surface: pygame.Surface,
         world: WorldState,
         selection: SelectionState,
+        active_ability: str | None,
     ) -> None:
         panel = selected_panel_for(world, selection.selected_ids)
-        panel_height = 112
         panel_rect = pygame.Rect(
             0,
-            surface.get_height() - panel_height,
+            surface.get_height() - PANEL_HEIGHT,
             surface.get_width(),
-            panel_height,
+            PANEL_HEIGHT,
         )
         pygame.draw.rect(surface, (26, 31, 29), panel_rect)
         pygame.draw.line(surface, (128, 114, 76), panel_rect.topleft, panel_rect.topright, 2)
@@ -242,21 +286,58 @@ class GameRenderer:
                 color=(217, 220, 202),
             )
 
-        ability_x = 520
-        ability_y = panel_rect.top + 18
+        for button in self.ability_buttons_for_panel(surface, panel):
+            text = self.small_font.render(button.label, True, (244, 238, 213))
+            fill = (81, 104, 80) if button.label == active_ability else (64, 75, 61)
+            outline = (109, 176, 104) if button.label == active_ability else (136, 152, 116)
+            border_width = 2 if button.label == active_ability else 1
+            pygame.draw.rect(surface, fill, button.rect, border_radius=4)
+            pygame.draw.rect(surface, outline, button.rect, width=border_width, border_radius=4)
+            surface.blit(text, text.get_rect(center=button.rect.center))
+
+    def panel_contains(self, surface: pygame.Surface, screen_pos: tuple[int, int]) -> bool:
+        panel_rect = pygame.Rect(
+            0,
+            surface.get_height() - PANEL_HEIGHT,
+            surface.get_width(),
+            PANEL_HEIGHT,
+        )
+        return panel_rect.collidepoint(screen_pos)
+
+    def ability_at(
+        self,
+        surface: pygame.Surface,
+        world: WorldState,
+        selection: SelectionState,
+        screen_pos: tuple[int, int],
+    ) -> str | None:
+        panel = selected_panel_for(world, selection.selected_ids)
+        for button in self.ability_buttons_for_panel(surface, panel):
+            if button.rect.collidepoint(screen_pos):
+                return button.label
+        return None
+
+    def ability_buttons_for_panel(
+        self,
+        surface: pygame.Surface,
+        panel: SelectedPanel,
+    ) -> list[AbilityButton]:
+        panel_top = surface.get_height() - PANEL_HEIGHT
+        ability_x = ABILITY_START_X
+        ability_y = panel_top + ABILITY_START_Y_OFFSET
+        buttons: list[AbilityButton] = []
         for ability in panel.abilities[:8]:
             text = self.small_font.render(ability, True, (244, 238, 213))
             chip = text.get_rect()
             chip.width += 18
-            chip.height = 24
+            chip.height = ABILITY_CHIP_HEIGHT
             if ability_x + chip.width > surface.get_width() - 16:
-                ability_x = 520
-                ability_y += 30
+                ability_x = ABILITY_START_X
+                ability_y += ABILITY_ROW_HEIGHT
             chip.topleft = (ability_x, ability_y)
-            pygame.draw.rect(surface, (64, 75, 61), chip, border_radius=4)
-            pygame.draw.rect(surface, (136, 152, 116), chip, width=1, border_radius=4)
-            surface.blit(text, text.get_rect(center=chip.center))
+            buttons.append(AbilityButton(ability, chip))
             ability_x += chip.width + 8
+        return buttons
 
     def _draw_text(
         self,
