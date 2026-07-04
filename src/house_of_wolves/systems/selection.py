@@ -57,7 +57,9 @@ class SelectionSystem:
             return None
 
         entity = world.entities[entity_id]
-        if add and _is_unit(entity) and self._current_selection_is_units(world):
+        if _is_enemy_unit(entity):
+            self.state.replace([entity_id])
+        elif add and _is_player_unit(entity) and self._current_selection_is_player_units(world):
             self.state.add(entity_id)
         else:
             self.state.replace([entity_id])
@@ -68,10 +70,10 @@ class SelectionSystem:
         selected = [
             entity.id
             for entity in world.entities.values()
-            if _is_selectable_unit(entity) and _bounds_intersect(normalized, entity.bounds)
+            if _is_selectable_player_unit(entity) and _bounds_intersect(normalized, entity.bounds)
         ]
         selected.sort(key=int)
-        if add and self._current_selection_is_units(world):
+        if add and self._current_selection_is_player_units(world):
             for entity_id in selected:
                 self.state.add(entity_id)
         else:
@@ -81,22 +83,36 @@ class SelectionSystem:
     def update(self, world: object, dt_ms: int) -> None:
         return None
 
-    def _current_selection_is_units(self, world: object) -> bool:
+    def _current_selection_is_player_units(self, world: object) -> bool:
         if not self.state.selected_ids:
             return True
-        return all(_is_unit(world.entities.get(entity_id)) for entity_id in self.state.selected_ids)
+        return all(
+            _is_player_unit(world.entities.get(entity_id))
+            for entity_id in self.state.selected_ids
+        )
 
 
 def _is_selectable(entity: object) -> bool:
     return getattr(entity, "alive", False) and "selectable" in getattr(entity, "tags", ())
 
 
-def _is_selectable_unit(entity: object) -> bool:
-    return _is_selectable(entity) and _is_unit(entity)
+def _is_selectable_player_unit(entity: object) -> bool:
+    return _is_selectable(entity) and _is_player_unit(entity)
 
 
 def _is_unit(entity: object) -> bool:
     return entity is not None and "unit" in getattr(entity, "tags", ())
+
+
+def _is_player_unit(entity: object) -> bool:
+    return _is_unit(entity) and getattr(entity, "owner", None) == "frontier"
+
+
+def _is_enemy_unit(entity: object) -> bool:
+    return (
+        _is_unit(entity)
+        and getattr(entity, "owner", "neutral") not in {"frontier", "neutral"}
+    )
 
 
 def _point_in_bounds(position: WorldPosition, bounds: Bounds) -> bool:

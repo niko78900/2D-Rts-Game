@@ -14,6 +14,7 @@ class Entity:
     position: WorldPosition
     footprint: Footprint
     hp: int = 1
+    max_hp: int | None = None
     alive: bool = True
     tags: tuple[str, ...] = ()
 
@@ -28,6 +29,7 @@ class Entity:
             "position": self.position.to_json(),
             "footprint": self.footprint.to_json(),
             "hp": self.hp,
+            "max_hp": self.max_hp,
             "alive": self.alive,
             "tags": list(self.tags),
         }
@@ -40,6 +42,9 @@ class Entity:
             position=WorldPosition.from_json(value["position"]),
             footprint=Footprint.from_json(value["footprint"]),
             hp=int(value.get("hp", 1)),
+            max_hp=(
+                int(value["max_hp"]) if value.get("max_hp") is not None else None
+            ),
             alive=bool(value.get("alive", True)),
             tags=tuple(value.get("tags", [])),
         )

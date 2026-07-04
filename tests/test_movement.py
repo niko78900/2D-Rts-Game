@@ -4,10 +4,14 @@ from house_of_wolves.core.contracts import Footprint, WorldPosition
 from house_of_wolves.entities.unit import Unit
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.movement import MovementSystem
+from house_of_wolves.systems.pathing import DETOUR_MARGIN
 from house_of_wolves.world.collision import (
+    RESOURCE_OBSTACLE_CLEARANCE,
     UNIT_CLIP_FRACTION,
     UNIT_COLLISION_RADIUS,
     UNIT_HITBOX_RADIUS,
+    first_hard_obstacle_on_segment,
+    position_blocked_by_hard_obstacle,
     resolve_unit_position,
     unit_distance,
 )
@@ -24,7 +28,7 @@ def test_movement_consumes_move_command_and_updates_spatial_hash() -> None:
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     original_bounds = unit.bounds
-    target = WorldPosition(unit.position.x + 400, unit.position.y)
+    target = WorldPosition(unit.position.x + 260, unit.position.y)
     command = make_command("move", [unit.id], target_pos=target)
 
     world.enqueue_command(unit.id, command)
@@ -90,6 +94,122 @@ def test_move_targets_below_ui_stop_at_map_bottom() -> None:
     assert world.command_queues[unit.id].peek() is None
 
 
+def test_resource_nodes_block_direct_unit_movement() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    movement = MovementSystem(unreachable_timeout_ms=10_000)
+    world.update_entity_position(
+        unit.id,
+        WorldPosition(mine.bounds[0] - 90, mine.position.y),
+    )
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=mine.position))
+    for _ in range(100):
+        movement.update(world, 100)
+        if world.command_queues[unit.id].peek() is None:
+            break
+
+    assert not position_blocked_by_hard_obstacle(world, unit.position, ignore_id=unit.id)
+    assert world.command_queues[unit.id].peek() is None
+
+
+def test_units_steer_around_resource_nodes_when_target_is_behind_them() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    movement = MovementSystem(unreachable_timeout_ms=10_000)
+    world.update_entity_position(
+        unit.id,
+        WorldPosition(mine.bounds[0] - 120, mine.position.y),
+    )
+    target = WorldPosition(mine.bounds[0] + mine.bounds[2] + 140, mine.position.y)
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))
+    for _ in range(30):
+        movement.update(world, 100)
+
+    assert not position_blocked_by_hard_obstacle(world, unit.position, ignore_id=unit.id)
+    assert unit.position.y != mine.position.y
+
+
+def test_move_command_inserts_detour_waypoints_around_resource_blocker() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    left, _top, width, _height = mine.blocking_bounds
+    start = WorldPosition(left - 150, mine.position.y)
+    target = WorldPosition(left + width + 150, mine.position.y)
+    movement = MovementSystem(unreachable_timeout_ms=10_000)
+    world.update_entity_position(unit.id, start)
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))
+    movement.update(world, 16)
+
+    commands = world.command_queues[unit.id].commands
+    assert len(commands) >= 2
+    assert commands[0].payload["path_detour"] is True
+    assert commands[0].target_pos is not None
+    assert commands[0].target_pos.y != target.y
+    _left, top, _width, height = mine.blocking_bounds
+    bottom = top + height
+    detour_margin = DETOUR_MARGIN + RESOURCE_OBSTACLE_CLEARANCE + 0.001
+    assert (
+        abs(commands[0].target_pos.y - top) <= detour_margin
+        or abs(commands[0].target_pos.y - bottom) <= detour_margin
+    )
+    assert commands[-1].target_pos == target
+    assert (
+        first_hard_obstacle_on_segment(
+            world,
+            unit.position,
+            commands[0].target_pos,
+            ignore_id=unit.id,
+        )
+        is None
+    )
+
+
+def test_move_target_inside_resource_blocker_is_projected_outside() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    world.update_entity_position(
+        unit.id,
+        WorldPosition(mine.blocking_bounds[0] - 150, mine.position.y),
+    )
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=mine.position))
+    MovementSystem(unreachable_timeout_ms=10_000).update(world, 16)
+
+    final_target = world.command_queues[unit.id].commands[-1].target_pos
+    assert final_target is not None
+    assert final_target != mine.position
+    assert not position_blocked_by_hard_obstacle(world, final_target, ignore_id=unit.id)
+
+
+def test_unit_reaches_target_behind_resource_using_detour_waypoints() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    left, _top, width, _height = mine.blocking_bounds
+    start = WorldPosition(left - 180, mine.position.y)
+    target = WorldPosition(left + width + 180, mine.position.y)
+    movement = MovementSystem(unreachable_timeout_ms=10_000)
+    unit.speed = 180
+    world.update_entity_position(unit.id, start)
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))
+    for _ in range(100):
+        movement.update(world, 100)
+        if world.command_queues[unit.id].peek() is None:
+            break
+
+    assert world.command_queues[unit.id].peek() is None
+    assert unit_distance_from_position(unit, target) <= movement.arrival_radius + 1
+    assert not position_blocked_by_hard_obstacle(world, unit.position, ignore_id=unit.id)
+
+
 def test_group_move_finishes_near_slot_without_exact_pixel_snap() -> None:
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
@@ -111,7 +231,7 @@ def test_group_move_finishes_near_slot_without_exact_pixel_snap() -> None:
 def test_unreachable_move_command_times_out_at_closest_reached_position() -> None:
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
-    target = WorldPosition(unit.position.x + 500, unit.position.y)
+    target = WorldPosition(unit.position.x + 220, unit.position.y)
     movement = MovementSystem(unreachable_timeout_ms=100)
 
     world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from math import hypot
 
 from house_of_wolves.core.contracts import Command, CommandQueue, EntityId, WorldPosition
+from house_of_wolves.systems.commands import make_command
+from house_of_wolves.systems.pathing import move_waypoints_around_blockers
 from house_of_wolves.world.collision import (
     MAX_COLLISION_ADJUSTMENT,
     MAX_SHOVE_PUSH,
@@ -38,6 +40,7 @@ class MovementSystem:
 
     arrival_radius: float = 4.0
     group_arrival_radius: float = 16.0
+    detour_arrival_radius: float = 12.0
     shared_destination_radius: float = UNIT_COLLISION_RADIUS * 1.5
     collision_slide_px: float = MAX_COLLISION_ADJUSTMENT
     max_shove_px: float = MAX_SHOVE_PUSH
@@ -74,17 +77,25 @@ class MovementSystem:
             queue.pop_next()
             self._clear_progress(entity_id)
             return
+        command = self._plan_path_if_needed(world, entity_id, queue, command)
+        if command is None or command.target_pos is None:
+            return
+        if _movement_paused_for_attack(command, world.elapsed_ms):
+            if hasattr(entity, "state"):
+                entity.state = "attacking"
+            return
 
-        target = clamp_unit_position_to_walkable_lane_for_height(
-            command.target_pos,
-            world.settings.world_height,
-        )
+        target, chasing_attack_target = _movement_target_for_command(world, command)
         progress = self._progress_for(entity_id, command, target, entity.position)
         dx = target.x - entity.position.x
         dy = target.y - entity.position.y
         distance = hypot(dx, dy)
+        if chasing_attack_target and distance <= _attack_range_for(entity):
+            if hasattr(entity, "state"):
+                entity.state = "attacking"
+            return
         arrival_radius = self._arrival_radius_for(command)
-        if distance <= arrival_radius:
+        if not chasing_attack_target and distance <= arrival_radius:
             if command.payload.get("group_move") is True:
                 self._finish_move(entity_id, queue)
                 if hasattr(entity, "state"):
@@ -104,7 +115,10 @@ class MovementSystem:
             if hasattr(entity, "state"):
                 entity.state = "idle"
             return
-        if self._arrived_near_shared_destination(world, entity_id, target, distance):
+        if (
+            not chasing_attack_target
+            and self._arrived_near_shared_destination(world, entity_id, target, distance)
+        ):
             self._finish_move(entity_id, queue)
             if hasattr(entity, "state"):
                 entity.state = "idle"
@@ -118,9 +132,9 @@ class MovementSystem:
         finish_after_move = False
         if step >= distance:
             new_position = target
-            finish_after_move = True
+            finish_after_move = not chasing_attack_target
             if hasattr(entity, "state"):
-                entity.state = "idle"
+                entity.state = "moving" if chasing_attack_target else "idle"
         else:
             ratio = step / distance
             new_position = WorldPosition(
@@ -159,7 +173,8 @@ class MovementSystem:
                 old_position,
                 new_position,
             )
-            self._stop_if_unreachable(world, entity_id, queue, target, progress, dt_ms)
+            if not chasing_attack_target:
+                self._stop_if_unreachable(world, entity_id, queue, target, progress, dt_ms)
 
     def _arrived_near_shared_destination(
         self,
@@ -175,9 +190,52 @@ class MovementSystem:
         )
 
     def _arrival_radius_for(self, command: Command) -> float:
+        if command.payload.get("path_detour") is True:
+            return self.detour_arrival_radius
         if command.payload.get("group_move") is True:
             return self.group_arrival_radius
         return self.arrival_radius
+
+    def _plan_path_if_needed(
+        self,
+        world: WorldState,
+        entity_id: EntityId,
+        queue: CommandQueue,
+        command: Command,
+    ) -> Command | None:
+        if command.payload.get("path_planned") is True:
+            return command
+        if _payload_entity_id(command, "attack_move_chase_target_id") is not None:
+            return command
+        entity = world.entities.get(entity_id)
+        if entity is None or command.target_pos is None:
+            return command
+
+        waypoints = move_waypoints_around_blockers(
+            world,
+            entity_id,
+            entity.position,
+            command.target_pos,
+        )
+        if not waypoints:
+            command.payload["path_planned"] = True
+            return command
+        if len(waypoints) == 1 and _distance(waypoints[0], command.target_pos) < 0.001:
+            command.payload["path_planned"] = True
+            return command
+
+        replacement = [
+            _copy_move_command_with_target(
+                command,
+                waypoint,
+                queued=command.queued if index == 0 else True,
+                path_detour=index < len(waypoints) - 1,
+            )
+            for index, waypoint in enumerate(waypoints)
+        ]
+        queue.commands[0:1] = replacement
+        self._clear_progress(entity_id)
+        return queue.peek()
 
     def _progress_for(
         self,
@@ -297,8 +355,71 @@ def _is_movable(entity: object) -> bool:
     )
 
 
+def _copy_move_command_with_target(
+    command: Command,
+    target_pos: WorldPosition,
+    *,
+    queued: bool,
+    path_detour: bool,
+) -> Command:
+    payload = dict(command.payload)
+    payload["path_planned"] = True
+    if path_detour:
+        payload["path_detour"] = True
+    else:
+        payload.pop("path_detour", None)
+    return make_command(
+        "move",
+        command.issuer_ids,
+        target_pos=target_pos,
+        queued=queued,
+        **payload,
+    )
+
+
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
     return hypot(first.x - second.x, first.y - second.y)
+
+
+def _movement_paused_for_attack(command: Command, elapsed_ms: int) -> bool:
+    pause_until = command.payload.get("pause_movement_until_ms")
+    return isinstance(pause_until, int) and pause_until > elapsed_ms
+
+
+def _movement_target_for_command(
+    world: WorldState,
+    command: Command,
+) -> tuple[WorldPosition, bool]:
+    assert command.target_pos is not None
+    chase_target_id = _payload_entity_id(command, "attack_move_chase_target_id")
+    if command.payload.get("attack_move") is True and chase_target_id is not None:
+        chase_target = world.entities.get(chase_target_id)
+        if chase_target is not None and getattr(chase_target, "alive", False):
+            return (
+                clamp_unit_position_to_walkable_lane_for_height(
+                    chase_target.position,
+                    world.settings.world_height,
+                ),
+                True,
+            )
+    return (
+        clamp_unit_position_to_walkable_lane_for_height(
+            command.target_pos,
+            world.settings.world_height,
+        ),
+        False,
+    )
+
+
+def _payload_entity_id(command: Command, key: str) -> EntityId | None:
+    value = command.payload.get(key)
+    if value is None:
+        return None
+    return EntityId(int(value))
+
+
+def _attack_range_for(entity: object) -> float:
+    return max(0.0, float(getattr(entity, "attack_range", 0.0)))
 
 
 def _nearest_friendly_collision_position(

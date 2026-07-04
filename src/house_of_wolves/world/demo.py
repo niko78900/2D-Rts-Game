@@ -5,8 +5,8 @@ from __future__ import annotations
 from house_of_wolves.core.contracts import Footprint, WorldPosition
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
+from house_of_wolves.entities.combat_unit import CombatUnit
 from house_of_wolves.entities.resource_node import ResourceNode
-from house_of_wolves.entities.unit import Unit
 from house_of_wolves.world.camera import Camera
 from house_of_wolves.world.terrain import terrain_bands_for_height, terrain_layout_for_height
 from house_of_wolves.world.world import WorldState
@@ -35,6 +35,9 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
         terrain.unit_walkable_top_y + unit_lane_height * 0.35,
         speed=92,
         hp=40,
+        damage=6,
+        attack_range=115,
+        attack_cooldown_ms=900,
     )
     _add_unit(
         world,
@@ -43,6 +46,9 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
         terrain.unit_walkable_top_y + unit_lane_height * 0.38,
         speed=78,
         hp=70,
+        damage=12,
+        attack_range=42,
+        attack_cooldown_ms=950,
     )
     _add_unit(
         world,
@@ -51,7 +57,11 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
         terrain.unit_walkable_top_y + unit_lane_height * 0.33,
         speed=82,
         hp=55,
+        damage=10,
+        attack_range=220,
+        attack_cooldown_ms=1100,
     )
+    _add_enemy_unit(world, 1520, terrain.unit_walkable_top_y + unit_lane_height * 0.36)
 
     _add_tree(world, 760, terrain.unit_walkable_top_y + unit_lane_height * 0.38)
     _add_gold_mine(world, 1120, terrain.unit_walkable_top_y + unit_lane_height * 0.43)
@@ -68,15 +78,39 @@ def _add_unit(
     *,
     speed: float,
     hp: int,
+    damage: int,
+    attack_range: float,
+    attack_cooldown_ms: int,
 ) -> None:
-    entity = Unit(
+    entity = CombatUnit(
         id=world.allocate_entity_id(),
         owner="frontier",
         position=WorldPosition(x, y),
         footprint=Footprint(38, 58),
         hp=hp,
+        max_hp=hp,
         tags=("unit", unit_id, "selectable", "movable"),
         speed=speed,
+        attack_range=attack_range,
+        damage=damage,
+        attack_cooldown_ms=attack_cooldown_ms,
+    )
+    world.add_entity(entity)
+
+
+def _add_enemy_unit(world: WorldState, x: float, y: float) -> None:
+    entity = CombatUnit(
+        id=world.allocate_entity_id(),
+        owner="wolves",
+        position=WorldPosition(x, y),
+        footprint=Footprint(38, 58),
+        hp=85,
+        max_hp=85,
+        tags=("unit", "raider_swordsman", "enemy", "selectable", "movable"),
+        speed=76,
+        attack_range=38,
+        damage=13,
+        attack_cooldown_ms=950,
     )
     world.add_entity(entity)
 
@@ -88,12 +122,15 @@ def _add_tree(world: WorldState, x: float, y: float) -> None:
         position=WorldPosition(x, y),
         footprint=Footprint(82, 126),
         hp=1,
+        max_hp=1,
         tags=("resource", "wood_tree", "selectable"),
         resource_type="wood",
         amount_remaining=250,
+        max_amount_remaining=250,
         gather_time_ms=900,
         harvest_slots=2,
         depleted_replacement="tree_stump",
+        blocking_footprint=Footprint(42, 92),
     )
     world.add_entity(entity)
 
@@ -105,12 +142,15 @@ def _add_gold_mine(world: WorldState, x: float, y: float) -> None:
         position=WorldPosition(x, y),
         footprint=Footprint(132, 86),
         hp=1,
+        max_hp=1,
         tags=("resource", "gold_mine", "selectable"),
         resource_type="gold",
         amount_remaining=400,
+        max_amount_remaining=400,
         gather_time_ms=1200,
         harvest_slots=3,
         depleted_replacement="gold_mine_empty",
+        blocking_footprint=Footprint(124, 64),
     )
     world.add_entity(entity)
 
@@ -122,6 +162,7 @@ def _add_hut(world: WorldState, x: float, y: float) -> None:
         position=WorldPosition(x, y),
         footprint=Footprint(150, 116),
         hp=650,
+        max_hp=650,
         tags=("building", "hut", "selectable"),
         build_time_ms=12000,
         complete=True,

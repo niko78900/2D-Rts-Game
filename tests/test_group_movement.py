@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from house_of_wolves.core.contracts import EntityId, WorldPosition
 from house_of_wolves.systems.group_movement import (
+    FORMATION_SLOT_SPACING_X,
     assign_units_to_slots,
     generate_loose_formation_slots,
     issue_group_move_command,
@@ -38,9 +39,40 @@ def test_generate_loose_formation_slots_preserves_spatial_layout() -> None:
     assert len({slot.position for slot in assignments}) == len(units)
 
 
+def test_assignment_uses_row_tolerant_order_for_nearly_aligned_units() -> None:
+    units = [
+        FakeUnit(EntityId(1), WorldPosition(100, 504)),
+        FakeUnit(EntityId(2), WorldPosition(500, 496)),
+    ]
+    slots = [WorldPosition(900, 520), WorldPosition(960, 520)]
+
+    assignments = assign_units_to_slots(units, slots)
+    by_id = {assignment.entity_id: assignment.position for assignment in assignments}
+
+    assert by_id[EntityId(1)] == slots[0]
+    assert by_id[EntityId(2)] == slots[1]
+
+
+def test_generate_loose_formation_slots_caps_oversized_selection_spread() -> None:
+    units = [
+        FakeUnit(EntityId(1), WorldPosition(100, 520)),
+        FakeUnit(EntityId(2), WorldPosition(1100, 516)),
+    ]
+    center = WorldPosition(700, 520)
+
+    slots = generate_loose_formation_slots(center, units)
+    xs = [slot.x for slot in slots]
+
+    assert max(xs) - min(xs) <= FORMATION_SLOT_SPACING_X * 1.5
+    assert all(abs(slot.x - center.x) <= FORMATION_SLOT_SPACING_X for slot in slots)
+
+
 def test_issue_group_move_command_assigns_unique_targets() -> None:
     world = create_demo_world()
-    units = [entity for entity in world.entities.values() if "unit" in entity.tags]
+    units = [
+        entity for entity in world.entities.values()
+        if "unit" in entity.tags and entity.owner == "frontier"
+    ]
 
     assignments = issue_group_move_command(
         world,
@@ -62,7 +94,10 @@ def test_issue_group_move_command_assigns_unique_targets() -> None:
 
 def test_normal_group_move_replaces_existing_queue() -> None:
     world = create_demo_world()
-    units = [entity for entity in world.entities.values() if "unit" in entity.tags]
+    units = [
+        entity for entity in world.entities.values()
+        if "unit" in entity.tags and entity.owner == "frontier"
+    ]
 
     issue_group_move_command(world, [unit.id for unit in units], WorldPosition(900, 520))
     issue_group_move_command(
@@ -78,7 +113,10 @@ def test_normal_group_move_replaces_existing_queue() -> None:
 
 def test_shift_queued_group_move_preserves_formation_indices() -> None:
     world = create_demo_world()
-    units = [entity for entity in world.entities.values() if "unit" in entity.tags]
+    units = [
+        entity for entity in world.entities.values()
+        if "unit" in entity.tags and entity.owner == "frontier"
+    ]
     unit_ids = [unit.id for unit in units]
 
     issue_group_move_command(world, unit_ids, WorldPosition(900, 520))

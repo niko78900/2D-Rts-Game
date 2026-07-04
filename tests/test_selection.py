@@ -7,7 +7,7 @@ from house_of_wolves.world.demo import create_demo_world
 
 def test_selection_pick_click_add_and_clear() -> None:
     world = create_demo_world()
-    units = [entity for entity in world.entities.values() if "unit" in entity.tags]
+    units = _player_selectable_units(world)
     selection = SelectionSystem()
 
     picked = selection.select_at(world, units[0].position)
@@ -23,7 +23,7 @@ def test_selection_pick_click_add_and_clear() -> None:
 
 def test_box_select_replaces_or_adds_visible_units() -> None:
     world = create_demo_world()
-    units = [entity for entity in world.entities.values() if "unit" in entity.tags]
+    units = _player_selectable_units(world)
     selection = SelectionSystem()
 
     selected = selection.box_select(world, _bounds_around(units))
@@ -53,7 +53,7 @@ def test_selection_can_pick_buildings_and_resource_objects() -> None:
 
 def test_shift_clicking_building_or_resource_replaces_selection_instead_of_adding() -> None:
     world = create_demo_world()
-    units = [entity for entity in world.entities.values() if "unit" in entity.tags]
+    units = _player_selectable_units(world)
     building = next(entity for entity in world.entities.values() if "building" in entity.tags)
     resource = next(entity for entity in world.entities.values() if "resource" in entity.tags)
     selection = SelectionSystem()
@@ -69,7 +69,7 @@ def test_shift_clicking_building_or_resource_replaces_selection_instead_of_addin
 
 def test_shift_clicking_unit_replaces_existing_building_or_resource_selection() -> None:
     world = create_demo_world()
-    unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
+    unit = _player_selectable_units(world)[0]
     building = next(entity for entity in world.entities.values() if "building" in entity.tags)
     selection = SelectionSystem()
 
@@ -81,7 +81,7 @@ def test_shift_clicking_unit_replaces_existing_building_or_resource_selection() 
 
 def test_box_select_only_selects_units_even_when_objects_overlap_bounds() -> None:
     world = create_demo_world()
-    units = [entity for entity in world.entities.values() if "unit" in entity.tags]
+    units = _player_selectable_units(world)
     selection = SelectionSystem()
 
     selected = selection.box_select(world, _bounds_around(world.entities.values()))
@@ -91,6 +91,68 @@ def test_box_select_only_selects_units_even_when_objects_overlap_bounds() -> Non
         "unit" in world.entities[entity_id].tags
         for entity_id in selection.state.selected_ids
     )
+
+
+def test_clicking_enemy_unit_selects_it_for_stats_only() -> None:
+    world = create_demo_world()
+    enemy = _enemy_units(world)[0]
+    selection = SelectionSystem()
+
+    picked = selection.select_at(world, enemy.position)
+
+    assert picked == enemy.id
+    assert selection.state.selected_ids == [enemy.id]
+
+
+def test_shift_clicking_enemy_replaces_friendly_unit_selection() -> None:
+    world = create_demo_world()
+    units = _player_selectable_units(world)
+    enemy = _enemy_units(world)[0]
+    selection = SelectionSystem()
+    selection.state.replace([unit.id for unit in units[:2]])
+
+    selection.select_at(world, enemy.position, add=True)
+
+    assert selection.state.selected_ids == [enemy.id]
+
+
+def test_shift_clicking_friendly_unit_replaces_enemy_selection() -> None:
+    world = create_demo_world()
+    unit = _player_selectable_units(world)[0]
+    enemy = _enemy_units(world)[0]
+    selection = SelectionSystem()
+    selection.state.replace([enemy.id])
+
+    selection.select_at(world, unit.position, add=True)
+
+    assert selection.state.selected_ids == [unit.id]
+
+
+def test_box_select_ignores_enemy_units() -> None:
+    world = create_demo_world()
+    selection = SelectionSystem()
+
+    selected = selection.box_select(world, _bounds_around(world.entities.values()))
+
+    assert selected == [unit.id for unit in _player_selectable_units(world)]
+    assert _enemy_units(world)[0].id not in selected
+
+
+def _player_selectable_units(world: object) -> list[object]:
+    return [
+        entity for entity in world.entities.values()
+        if "unit" in entity.tags
+        and "selectable" in entity.tags
+        and entity.owner == "frontier"
+    ]
+
+
+def _enemy_units(world: object) -> list[object]:
+    return [
+        entity for entity in world.entities.values()
+        if "unit" in entity.tags
+        and "enemy" in entity.tags
+    ]
 
 
 def _bounds_around(entities: object) -> tuple[float, float, float, float]:

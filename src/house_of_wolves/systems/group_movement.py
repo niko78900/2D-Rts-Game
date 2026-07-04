@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import ceil, sqrt
 from typing import Protocol
@@ -17,6 +18,10 @@ from house_of_wolves.world.world import WorldState
 
 FORMATION_SLOT_SPACING_X = UNIT_HITBOX_RADIUS * 1.85
 FORMATION_SLOT_SPACING_Y = UNIT_HITBOX_RADIUS * 1.35
+FORMATION_ROW_THRESHOLD = FORMATION_SLOT_SPACING_Y * 0.85
+FORMATION_FOOTPRINT_PADDING = 1.35
+MAX_FORMATION_ASPECT = 2.8
+MIN_FLAT_FORMATION_ASPECT = 1.8
 
 
 class PositionedUnit(Protocol):
@@ -47,6 +52,7 @@ def generate_loose_formation_slots(
     sorted_units = sort_units_spatially(units)
     rows = _cluster_rows(sorted_units)
     group_center = _center_of_units(sorted_units)
+    aspect = _group_aspect(sorted_units)
     raw_slots: list[WorldPosition] = []
     for row in rows:
         row_center_x = sum(unit.position.x for unit in row) / len(row)
@@ -62,8 +68,9 @@ def generate_loose_formation_slots(
                 _clamp(WorldPosition(center.x + offset_x, center.y + offset_y), world_height)
             )
 
+    raw_slots = _limit_formation_footprint(raw_slots, center, len(units), aspect, world_height)
     if _slots_too_tight(raw_slots):
-        raw_slots = _grid_slots(center, len(units), _group_aspect(sorted_units), world_height)
+        raw_slots = _grid_slots(center, len(units), aspect, world_height)
     return sort_slots_spatially(_relax_slots(raw_slots, world_height))
 
 
@@ -87,6 +94,7 @@ def issue_group_move_command(
     clicked_pos: WorldPosition,
     *,
     queued: bool = False,
+    attack_move: bool = False,
 ) -> list[AssignedMoveSlot]:
     """Issue one move command per unit, using stable loose formation slots."""
 
@@ -114,17 +122,22 @@ def issue_group_move_command(
             formation_index=assignment.formation_index,
             formation_size=len(assignments),
             clicked_pos=clicked_pos.to_json(),
+            attack_move=attack_move,
         )
         world.enqueue_command(assignment.entity_id, command)
     return assignments
 
 
 def sort_units_spatially(units: list[PositionedUnit]) -> list[PositionedUnit]:
-    return sorted(units, key=lambda unit: (unit.position.y, unit.position.x, int(unit.id)))
+    return _sort_positioned_rows(
+        units,
+        lambda unit: unit.position,
+        tie_breaker=lambda unit: int(unit.id),
+    )
 
 
 def sort_slots_spatially(slots: list[WorldPosition]) -> list[WorldPosition]:
-    return sorted(slots, key=lambda slot: (slot.y, slot.x))
+    return _sort_positioned_rows(slots, lambda slot: slot)
 
 
 def _movable_units_for_ids(world: WorldState, unit_ids: list[EntityId]) -> list[PositionedUnit]:
@@ -178,15 +191,14 @@ def _center_of_units(units: list[PositionedUnit]) -> WorldPosition:
 
 
 def _cluster_rows(units: list[PositionedUnit]) -> list[list[PositionedUnit]]:
-    sorted_units = sort_units_spatially(units)
+    sorted_units = sorted(units, key=lambda unit: (unit.position.y, unit.position.x, int(unit.id)))
     rows: list[list[PositionedUnit]] = []
-    row_threshold = FORMATION_SLOT_SPACING_Y * 0.85
     for unit in sorted_units:
         if not rows:
             rows.append([unit])
             continue
         row_center_y = sum(item.position.y for item in rows[-1]) / len(rows[-1])
-        if abs(unit.position.y - row_center_y) <= row_threshold:
+        if abs(unit.position.y - row_center_y) <= FORMATION_ROW_THRESHOLD:
             rows[-1].append(unit)
         else:
             rows.append([unit])
@@ -215,8 +227,7 @@ def _grid_slots(
     aspect: float,
     world_height: int | float,
 ) -> list[WorldPosition]:
-    columns = max(1, min(count, ceil(sqrt(count * aspect))))
-    rows = ceil(count / columns)
+    columns, rows = _grid_dimensions(count, aspect)
     slots: list[WorldPosition] = []
     for index in range(count):
         row = index // columns
@@ -235,9 +246,90 @@ def _group_aspect(units: list[PositionedUnit]) -> float:
     ys = [unit.position.y for unit in units]
     width = max(xs) - min(xs)
     height = max(ys) - min(ys)
-    if height <= FORMATION_SLOT_SPACING_Y * 0.5:
-        return max(1.8, width / FORMATION_SLOT_SPACING_X)
-    return max(0.45, min(2.8, width / height))
+    if height <= FORMATION_ROW_THRESHOLD:
+        return min(
+            MAX_FORMATION_ASPECT,
+            max(MIN_FLAT_FORMATION_ASPECT, width / FORMATION_SLOT_SPACING_X),
+        )
+    return max(0.45, min(MAX_FORMATION_ASPECT, width / height))
+
+
+def _limit_formation_footprint(
+    slots: list[WorldPosition],
+    center: WorldPosition,
+    count: int,
+    aspect: float,
+    world_height: int | float,
+) -> list[WorldPosition]:
+    if count <= 1 or len(slots) <= 1:
+        return slots
+
+    columns, rows = _grid_dimensions(count, aspect)
+    max_width = max(
+        FORMATION_SLOT_SPACING_X,
+        (columns - 1) * FORMATION_SLOT_SPACING_X * FORMATION_FOOTPRINT_PADDING,
+    )
+    max_height = max(
+        FORMATION_SLOT_SPACING_Y,
+        (rows - 1) * FORMATION_SLOT_SPACING_Y * FORMATION_FOOTPRINT_PADDING,
+    )
+
+    xs = [slot.x for slot in slots]
+    ys = [slot.y for slot in slots]
+    width = max(xs) - min(xs)
+    height = max(ys) - min(ys)
+    scale_x = 1.0 if width <= max_width or width == 0 else max_width / width
+    scale_y = 1.0 if height <= max_height or height == 0 else max_height / height
+    if scale_x == 1.0 and scale_y == 1.0:
+        return slots
+
+    return [
+        _clamp(
+            WorldPosition(
+                center.x + ((slot.x - center.x) * scale_x),
+                center.y + ((slot.y - center.y) * scale_y),
+            ),
+            world_height,
+        )
+        for slot in slots
+    ]
+
+
+def _grid_dimensions(count: int, aspect: float) -> tuple[int, int]:
+    columns = max(1, min(count, ceil(sqrt(count * aspect))))
+    rows = ceil(count / columns)
+    return columns, rows
+
+
+def _sort_positioned_rows[T](
+    items: list[T],
+    position_for: Callable[[T], WorldPosition],
+    *,
+    tie_breaker: Callable[[T], int] | None = None,
+) -> list[T]:
+    def keyed(item: T) -> tuple[float, float, int]:
+        position = position_for(item)
+        tie_value = tie_breaker(item) if tie_breaker is not None else 0
+        return (position.y, position.x, tie_value)
+
+    sorted_items = sorted(items, key=keyed)
+    rows: list[list[T]] = []
+    for item in sorted_items:
+        position = position_for(item)
+        if not rows:
+            rows.append([item])
+            continue
+        row_center_y = sum(position_for(row_item).y for row_item in rows[-1]) / len(rows[-1])
+        if abs(position.y - row_center_y) <= FORMATION_ROW_THRESHOLD:
+            rows[-1].append(item)
+        else:
+            rows.append([item])
+
+    ordered: list[T] = []
+    for row in rows:
+        row.sort(key=lambda item: (position_for(item).x, position_for(item).y, keyed(item)[2]))
+        ordered.extend(row)
+    return ordered
 
 
 def _relax_slots(

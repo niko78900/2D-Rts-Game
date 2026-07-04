@@ -16,11 +16,27 @@ MAX_COLLISION_ADJUSTMENT = 5.0
 MAX_SEPARATION_PUSH = 2.0
 SHOVE_INFLUENCE_RADIUS = UNIT_COLLISION_RADIUS * 1.35
 MAX_SHOVE_PUSH = 4.0
+HARD_OBSTACLE_CLEARANCE = UNIT_HITBOX_RADIUS
+RESOURCE_OBSTACLE_CLEARANCE = 4.0
 _EPSILON = 0.0001
 
 
 def is_unit(entity: object) -> bool:
     return "unit" in getattr(entity, "tags", ())
+
+
+def is_hard_obstacle(entity: object) -> bool:
+    tags = set(getattr(entity, "tags", ()))
+    return getattr(entity, "alive", False) and bool(tags & {"building", "resource"})
+
+
+def blocking_bounds_for_entity(entity: object) -> tuple[float, float, float, float]:
+    """Return the movement-blocking bounds for an entity."""
+
+    blocking_bounds = getattr(entity, "blocking_bounds", None)
+    if blocking_bounds is not None:
+        return blocking_bounds
+    return entity.bounds
 
 
 def unit_distance(first: Any, second: Any) -> float:
@@ -86,6 +102,18 @@ def resolve_unit_position(
     """Softly slide a moving unit away from occupied pixels without teleporting."""
 
     desired = _clamp_for_world(world, desired)
+    entity = world.entities.get(entity_id)
+    origin = _clamp_for_world(
+        world,
+        current or (entity.position if entity is not None else desired),
+    )
+    desired = _resolve_hard_obstacles(
+        world,
+        entity_id,
+        origin,
+        desired,
+        max_adjustment=max_adjustment,
+    )
     if not occupied_by_unit(
         world,
         desired,
@@ -96,11 +124,6 @@ def resolve_unit_position(
     ):
         return desired
 
-    entity = world.entities.get(entity_id)
-    origin = _clamp_for_world(
-        world,
-        current or (entity.position if entity is not None else desired)
-    )
     adjusted = desired
     for _ in range(2):
         blocker, distance = _closest_overlapping_unit(
@@ -150,7 +173,14 @@ def resolve_unit_position(
                 adjusted.x + normal_x * push,
                 adjusted.y + normal_y * push,
             )
-        adjusted = _clamp_for_world(world, adjusted)
+            adjusted = _clamp_for_world(world, adjusted)
+        adjusted = _resolve_hard_obstacles(
+            world,
+            entity_id,
+            origin,
+            adjusted,
+            max_adjustment=max_adjustment,
+        )
 
     return _clamp_for_world(world, adjusted)
 
@@ -193,11 +223,19 @@ def separate_overlapping_units(
                 scale = max_push / length
                 dx *= scale
                 dy *= scale
+            target = _clamp_for_world(
+                world,
+                WorldPosition(unit.position.x + dx, unit.position.y + dy),
+            )
             world.update_entity_position(
                 unit.id,
-                _clamp_for_world(
+                resolve_unit_position(
                     world,
-                    WorldPosition(unit.position.x + dx, unit.position.y + dy)
+                    unit.id,
+                    target,
+                    current=unit.position,
+                    max_adjustment=max_push,
+                    friendly_ghost_ids=friendly_ghost_ids,
                 ),
             )
             moved = True
@@ -446,7 +484,10 @@ def nearest_free_position(
     """Find a deterministic nearby unoccupied position around a desired point."""
 
     desired = _clamp_for_world(world, desired)
-    if not occupied_by_unit(world, desired, ignore_id=ignore_id, min_distance=min_distance):
+    if (
+        not occupied_by_unit(world, desired, ignore_id=ignore_id, min_distance=min_distance)
+        and not position_blocked_by_hard_obstacle(world, desired, ignore_id=ignore_id)
+    ):
         return desired
 
     for radius in range(round(min_distance), 280, round(min_distance)):
@@ -460,9 +501,86 @@ def nearest_free_position(
                 candidate,
                 ignore_id=ignore_id,
                 min_distance=min_distance,
+            ) and not position_blocked_by_hard_obstacle(
+                world,
+                candidate,
+                ignore_id=ignore_id,
             ):
                 return candidate
     return desired
+
+
+def position_blocked_by_hard_obstacle(
+    world: WorldState,
+    position: WorldPosition,
+    *,
+    ignore_id: EntityId | None = None,
+    clearance: float = HARD_OBSTACLE_CLEARANCE,
+) -> bool:
+    return _hard_obstacle_at_position(
+        world,
+        position,
+        ignore_id=ignore_id,
+        clearance=clearance,
+    ) is not None
+
+
+def project_position_out_of_hard_obstacles(
+    world: WorldState,
+    position: WorldPosition,
+    *,
+    ignore_id: EntityId | None = None,
+    clearance: float = HARD_OBSTACLE_CLEARANCE,
+) -> WorldPosition:
+    """Move a target to the nearest valid point outside hard obstacle blockers."""
+
+    adjusted = _clamp_for_world(world, position)
+    for _ in range(6):
+        obstacle = _hard_obstacle_at_position(
+            world,
+            adjusted,
+            ignore_id=ignore_id,
+            clearance=clearance,
+        )
+        if obstacle is None:
+            return adjusted
+        adjusted = _clamp_for_world(
+            world,
+            _nearest_point_outside_rect(
+                adjusted,
+                _inflated_obstacle_rect(obstacle, clearance=clearance),
+            ),
+        )
+
+    return nearest_free_position(
+        world,
+        adjusted,
+        ignore_id=ignore_id,
+        min_distance=max(1.0, clearance),
+    )
+
+
+def first_hard_obstacle_on_segment(
+    world: WorldState,
+    origin: WorldPosition,
+    desired: WorldPosition,
+    *,
+    ignore_id: EntityId | None = None,
+    clearance: float = HARD_OBSTACLE_CLEARANCE,
+) -> tuple[Any, tuple[float, float, float, float]] | None:
+    """Return the first hard blocker crossed by a unit-sized movement segment."""
+
+    collision = _first_hard_obstacle_collision(
+        world,
+        ignore_id,
+        origin,
+        desired,
+        clearance=clearance,
+    )
+    if collision is None:
+        return None
+    obstacle, inflated_rect, _normal_x, _normal_y, _entry_t = collision
+    return obstacle, inflated_rect
 
 
 def _ring_offsets(radius: int) -> tuple[tuple[float, float], ...]:
@@ -482,6 +600,251 @@ def _clamp_for_world(world: WorldState, position: WorldPosition) -> WorldPositio
     return clamp_unit_position_to_walkable_lane_for_height(
         position,
         world.settings.world_height,
+    )
+
+
+def _resolve_hard_obstacles(
+    world: WorldState,
+    entity_id: EntityId,
+    origin: WorldPosition,
+    desired: WorldPosition,
+    *,
+    max_adjustment: float,
+) -> WorldPosition:
+    adjusted = desired
+    for _ in range(3):
+        collision = _first_hard_obstacle_collision(world, entity_id, origin, adjusted)
+        if collision is None:
+            return adjusted
+        _blocker, inflated_rect, normal_x, normal_y, entry_t = collision
+        if _point_in_rect(origin, inflated_rect):
+            adjusted = _clamp_for_world(world, _nearest_point_outside_rect(origin, inflated_rect))
+            continue
+        move_x = adjusted.x - origin.x
+        move_y = adjusted.y - origin.y
+        move_length = hypot(move_x, move_y)
+        if move_length <= _EPSILON:
+            adjusted = _nearest_point_outside_rect(adjusted, inflated_rect)
+            continue
+
+        boundary_t = max(0.0, entry_t - 0.02)
+        base = WorldPosition(origin.x + move_x * boundary_t, origin.y + move_y * boundary_t)
+        inward_amount = move_x * normal_x + move_y * normal_y
+        slide_x = move_x - normal_x * inward_amount
+        slide_y = move_y - normal_y * inward_amount
+        slide_length = hypot(slide_x, slide_y)
+        if slide_length <= _EPSILON:
+            candidates = _perpendicular_slide_candidates(
+                world,
+                entity_id,
+                base,
+                normal_x,
+                normal_y,
+                adjusted,
+                max_adjustment,
+            )
+            if candidates:
+                adjusted = candidates[0]
+                continue
+            adjusted = _nearest_point_outside_rect(base, inflated_rect)
+            continue
+
+        remaining = move_length * max(0.0, 1.0 - boundary_t)
+        slide_distance = min(max_adjustment, remaining)
+        candidate = _clamp_for_world(
+            world,
+            WorldPosition(
+                base.x + (slide_x / slide_length) * slide_distance,
+                base.y + (slide_y / slide_length) * slide_distance,
+            ),
+        )
+        if not position_blocked_by_hard_obstacle(world, candidate, ignore_id=entity_id):
+            adjusted = candidate
+            continue
+        adjusted = _nearest_point_outside_rect(base, inflated_rect)
+    return _clamp_for_world(world, adjusted)
+
+
+def _first_hard_obstacle_collision(
+    world: WorldState,
+    ignore_id: EntityId | None,
+    origin: WorldPosition,
+    desired: WorldPosition,
+    *,
+    clearance: float = HARD_OBSTACLE_CLEARANCE,
+) -> tuple[Any, tuple[float, float, float, float], float, float, float] | None:
+    first_collision: (
+        tuple[Any, tuple[float, float, float, float], float, float, float] | None
+    ) = None
+    first_t = 2.0
+    for obstacle in _hard_obstacles(world, ignore_id=ignore_id):
+        inflated_rect = _inflated_obstacle_rect(obstacle, clearance=clearance)
+        if _point_in_rect(desired, inflated_rect):
+            collision = _segment_rect_entry(origin, desired, inflated_rect)
+            if collision is None:
+                normal_x, normal_y = _nearest_rect_normal(desired, inflated_rect)
+                entry_t = 0.0
+            else:
+                entry_t, normal_x, normal_y = collision
+            if entry_t < first_t:
+                first_t = entry_t
+                first_collision = (obstacle, inflated_rect, normal_x, normal_y, entry_t)
+            continue
+        collision = _segment_rect_entry(origin, desired, inflated_rect)
+        if collision is None:
+            continue
+        entry_t, normal_x, normal_y = collision
+        if 0.0 <= entry_t <= 1.0 and entry_t < first_t:
+            first_t = entry_t
+            first_collision = (obstacle, inflated_rect, normal_x, normal_y, entry_t)
+    return first_collision
+
+
+def _hard_obstacle_at_position(
+    world: WorldState,
+    position: WorldPosition,
+    *,
+    ignore_id: EntityId | None,
+    clearance: float,
+) -> Any | None:
+    for obstacle in _hard_obstacles(world, ignore_id=ignore_id):
+        if _point_in_rect(position, _inflated_obstacle_rect(obstacle, clearance=clearance)):
+            return obstacle
+    return None
+
+
+def _hard_obstacles(world: WorldState, *, ignore_id: EntityId | None) -> list[Any]:
+    return [
+        entity
+        for entity in world.entities.values()
+        if entity.id != ignore_id and is_hard_obstacle(entity)
+    ]
+
+
+def _inflated_obstacle_rect(
+    obstacle: Any,
+    *,
+    clearance: float = HARD_OBSTACLE_CLEARANCE,
+) -> tuple[float, float, float, float]:
+    clearance = _clearance_for_obstacle(obstacle, clearance)
+    left, top, width, height = blocking_bounds_for_entity(obstacle)
+    return (
+        left - clearance,
+        top - clearance,
+        left + width + clearance,
+        top + height + clearance,
+    )
+
+
+def _clearance_for_obstacle(obstacle: Any, requested_clearance: float) -> float:
+    if "resource" in getattr(obstacle, "tags", ()):
+        return min(requested_clearance, RESOURCE_OBSTACLE_CLEARANCE)
+    return requested_clearance
+
+
+def _point_in_rect(position: WorldPosition, rect: tuple[float, float, float, float]) -> bool:
+    left, top, right, bottom = rect
+    return left <= position.x <= right and top <= position.y <= bottom
+
+
+def _segment_rect_entry(
+    origin: WorldPosition,
+    desired: WorldPosition,
+    rect: tuple[float, float, float, float],
+) -> tuple[float, float, float] | None:
+    left, top, right, bottom = rect
+    dx = desired.x - origin.x
+    dy = desired.y - origin.y
+    t_min = 0.0
+    t_max = 1.0
+    normal = (0.0, 0.0)
+    for axis_origin, axis_delta, min_side, max_side, min_normal, max_normal in (
+        (origin.x, dx, left, right, (-1.0, 0.0), (1.0, 0.0)),
+        (origin.y, dy, top, bottom, (0.0, -1.0), (0.0, 1.0)),
+    ):
+        if abs(axis_delta) <= _EPSILON:
+            if axis_origin < min_side or axis_origin > max_side:
+                return None
+            continue
+        inv_delta = 1.0 / axis_delta
+        t1 = (min_side - axis_origin) * inv_delta
+        t2 = (max_side - axis_origin) * inv_delta
+        enter_normal = min_normal
+        if t1 > t2:
+            t1, t2 = t2, t1
+            enter_normal = max_normal
+        if t1 > t_min:
+            t_min = t1
+            normal = enter_normal
+        t_max = min(t_max, t2)
+        if t_min > t_max:
+            return None
+    if t_max < 0.0 or t_min > 1.0:
+        return None
+    if _point_in_rect(origin, rect):
+        normal = _nearest_rect_normal(origin, rect)
+        t_min = 0.0
+    return (max(0.0, t_min), normal[0], normal[1])
+
+
+def _nearest_rect_normal(
+    position: WorldPosition,
+    rect: tuple[float, float, float, float],
+) -> tuple[float, float]:
+    left, top, right, bottom = rect
+    distances = (
+        (abs(position.x - left), -1.0, 0.0),
+        (abs(right - position.x), 1.0, 0.0),
+        (abs(position.y - top), 0.0, -1.0),
+        (abs(bottom - position.y), 0.0, 1.0),
+    )
+    _distance_to_side, normal_x, normal_y = min(distances, key=lambda item: item[0])
+    return normal_x, normal_y
+
+
+def _nearest_point_outside_rect(
+    position: WorldPosition,
+    rect: tuple[float, float, float, float],
+) -> WorldPosition:
+    left, top, right, bottom = rect
+    normal_x, normal_y = _nearest_rect_normal(position, rect)
+    if normal_x < 0:
+        return WorldPosition(left - _EPSILON, position.y)
+    if normal_x > 0:
+        return WorldPosition(right + _EPSILON, position.y)
+    if normal_y < 0:
+        return WorldPosition(position.x, top - _EPSILON)
+    return WorldPosition(position.x, bottom + _EPSILON)
+
+
+def _perpendicular_slide_candidates(
+    world: WorldState,
+    entity_id: EntityId,
+    base: WorldPosition,
+    normal_x: float,
+    normal_y: float,
+    desired: WorldPosition,
+    max_adjustment: float,
+) -> list[WorldPosition]:
+    tangent_x, tangent_y = -normal_y, normal_x
+    candidates = [
+        _clamp_for_world(
+            world,
+            WorldPosition(base.x + tangent_x * max_adjustment, base.y + tangent_y * max_adjustment),
+        ),
+        _clamp_for_world(
+            world,
+            WorldPosition(base.x - tangent_x * max_adjustment, base.y - tangent_y * max_adjustment),
+        ),
+    ]
+    open_candidates = [
+        candidate
+        for candidate in candidates
+        if not position_blocked_by_hard_obstacle(world, candidate, ignore_id=entity_id)
+    ]
+    return sorted(
+        open_candidates,
+        key=lambda candidate: hypot(candidate.x - desired.x, candidate.y - desired.y),
     )
 
 
