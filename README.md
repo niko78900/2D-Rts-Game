@@ -1,10 +1,9 @@
 # House of Wolves Remastered
 
-Architecture scaffold for a faithful-first Pygame remaster of the 2013 side-scrolling RTS.
+Playable scaffold for a faithful-first Pygame remaster of the 2013 side-scrolling RTS.
 
-This repository is intentionally scaffold-only right now. It defines the package layout,
-data contracts, starter JSON content, schema validation, placeholder asset generation, and
-tests that future gameplay work can build on. It does not yet include a playable game loop.
+This repository defines the package layout, data contracts, starter JSON content, schema
+validation, placeholder asset generation, tests, and the current minimal playable slice.
 
 ## Setup
 
@@ -29,10 +28,20 @@ The validation mode loads and validates the JSON definitions, then prints a cont
 python -m house_of_wolves
 ```
 
+Fullscreen is the default play mode. Use borderless windowed mode for debugging:
+
+```powershell
+python -m house_of_wolves --windowed
+```
+
+The in-game `Settings` button in the top-right HUD can toggle between fullscreen and
+borderless windowed mode.
+
 You can also double-click `launch_game.cmd` from the project folder.
 
 This opens the current minimal Pygame slice: placeholder map, camera panning, unit selection,
-and right-click movement. It is not a full RTS prototype yet.
+loose group movement, basic production, drop-off flags, shoving, and right-click movement. It
+is not a full RTS prototype yet.
 
 Select the hut and click `Produce Settler` or `Produce Spearman` to spawn a unit. New units
 walk to the hut's blue drop-off flag.

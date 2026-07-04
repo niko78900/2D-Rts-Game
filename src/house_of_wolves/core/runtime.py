@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import hypot
 
 import pygame
@@ -11,11 +11,15 @@ from house_of_wolves.core.contracts import EntityId
 from house_of_wolves.core.renderer import GameRenderer, ScreenRect
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
-from house_of_wolves.systems.commands import make_command
+from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.systems.movement import MovementSystem
 from house_of_wolves.systems.production import ProductionError, produce_unit
 from house_of_wolves.systems.selection import SelectionSystem
 from house_of_wolves.world.demo import create_demo_world
+from house_of_wolves.world.terrain import (
+    clamp_unit_position_to_walkable_lane_for_height,
+    terrain_bands_for_height,
+)
 from house_of_wolves.world.world import WorldState
 
 
@@ -31,9 +35,11 @@ class GameRuntime:
     screen: pygame.Surface | None = None
     clock: pygame.time.Clock | None = None
     renderer: GameRenderer | None = None
+    display_flags: int = 0
     drag_start_screen: tuple[int, int] | None = None
     drag_current_screen: tuple[int, int] | None = None
     active_dropoff_building_id: EntityId | None = None
+    settings_menu_open: bool = False
 
     def __post_init__(self) -> None:
         if self.world.settings != self.settings:
@@ -42,14 +48,45 @@ class GameRuntime:
     def initialize(self) -> None:
         pygame.init()
         pygame.display.set_caption(self.settings.window_title)
-        self.screen = pygame.display.set_mode(self.settings.virtual_size)
+        self._set_display_mode(rebuild_world=True)
         self.clock = pygame.time.Clock()
-        self.renderer = GameRenderer(self.settings)
         self.running = True
 
     def shutdown(self) -> None:
         self.running = False
         pygame.quit()
+
+    def _set_display_mode(self, *, rebuild_world: bool) -> None:
+        flags = pygame.FULLSCREEN if self.settings.fullscreen else pygame.NOFRAME
+        size = (0, 0) if self.settings.fullscreen else self.settings.virtual_size
+        self.display_flags = flags
+        self.screen = pygame.display.set_mode(size, flags)
+        self._apply_display_size(self.screen.get_size(), rebuild_world=rebuild_world)
+        self.renderer = GameRenderer(self.settings)
+
+    def _apply_display_size(self, size: tuple[int, int], *, rebuild_world: bool) -> None:
+        width, height = size
+        if (
+            width == self.settings.virtual_width
+            and height == self.settings.virtual_height
+            and height == self.settings.world_height
+        ):
+            return
+        self.settings = replace(
+            self.settings,
+            virtual_width=width,
+            virtual_height=height,
+            world_height=height,
+        )
+        if rebuild_world:
+            self.world = create_demo_world(self.settings)
+            return
+        self.world.settings = self.settings
+        self.world.camera.viewport_width = width
+        self.world.camera.viewport_height = height
+        self.world.camera.world_height = height
+        self.world.camera.clamp()
+        self.world.terrain_bands = terrain_bands_for_height(height)
 
     def run(self, max_frames: int | None = None) -> int:
         self.initialize()
@@ -78,9 +115,17 @@ class GameRuntime:
             self.running = False
             return
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            self.running = False
+            if self.settings_menu_open:
+                self.settings_menu_open = False
+            else:
+                self.running = False
+            return
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+            self._toggle_fullscreen()
             return
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self._handle_settings_click(event.pos):
+                return
             if self._handle_ability_click(event.pos):
                 return
             if self._handle_dropoff_placement(event.pos):
@@ -139,7 +184,10 @@ class GameRuntime:
         if not isinstance(building, Building):
             self.active_dropoff_building_id = None
             return False
-        building.dropoff_point = self.world.camera.screen_to_world(*screen_pos)
+        building.dropoff_point = clamp_unit_position_to_walkable_lane_for_height(
+            self.world.camera.screen_to_world(*screen_pos),
+            self.world.settings.world_height,
+        )
         self.active_dropoff_building_id = None
         return True
 
@@ -176,12 +224,35 @@ class GameRuntime:
             fps,
             self._current_drag_rect(),
             self._active_ability_label(),
+            self.settings_menu_open,
+            self.settings.fullscreen,
         )
 
     def _active_ability_label(self) -> str | None:
         if self.active_dropoff_building_id is not None:
             return "Dropoff"
         return None
+
+    def _handle_settings_click(self, screen_pos: tuple[int, int]) -> bool:
+        if self.screen is None or self.renderer is None:
+            return False
+        if self.renderer.settings_button_rect(self.screen).collidepoint(screen_pos):
+            self.settings_menu_open = not self.settings_menu_open
+            return True
+        if not self.settings_menu_open:
+            return False
+        if self.renderer.settings_display_toggle_rect(self.screen).collidepoint(screen_pos):
+            self._toggle_fullscreen()
+            return True
+        if self.renderer.settings_menu_contains(self.screen, screen_pos):
+            return True
+        self.settings_menu_open = False
+        return True
+
+    def _toggle_fullscreen(self) -> None:
+        self.settings_menu_open = False
+        self.settings = replace(self.settings, fullscreen=not self.settings.fullscreen)
+        self._set_display_mode(rebuild_world=False)
 
     def _update_camera(self, dt_ms: int) -> None:
         direction = 0
@@ -228,10 +299,11 @@ class GameRuntime:
         ]
         if not movable_ids:
             return
-        target_pos = self.world.camera.screen_to_world(*screen_pos)
-        command = make_command("move", movable_ids, target_pos=target_pos, queued=queued)
-        for entity_id in movable_ids:
-            self.world.enqueue_command(entity_id, command)
+        target_pos = clamp_unit_position_to_walkable_lane_for_height(
+            self.world.camera.screen_to_world(*screen_pos),
+            self.world.settings.world_height,
+        )
+        issue_group_move_command(self.world, movable_ids, target_pos, queued=queued)
 
     def _current_drag_rect(self) -> ScreenRect | None:
         if self.drag_start_screen is None or self.drag_current_screen is None:

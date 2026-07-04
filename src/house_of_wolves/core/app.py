@@ -35,12 +35,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate data files and exit without launching the playable slice.",
     )
+    parser.add_argument(
+        "--windowed",
+        action="store_true",
+        help="Launch in a fixed-size window instead of fullscreen.",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    app = GameApp(AppSettings())
+    app = GameApp(AppSettings(fullscreen=not args.windowed))
     if args.validate:
         summary = app.validation_summary()
         joined = ", ".join(f"{name}={count}" for name, count in summary.items())

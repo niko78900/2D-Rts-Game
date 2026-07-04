@@ -8,17 +8,22 @@ from dataclasses import dataclass, field
 import pygame
 
 from house_of_wolves.core.contracts import Command, EntityId, WorldPosition
-from house_of_wolves.core.settings import AppSettings
+from house_of_wolves.core.settings import UI_PANEL_HEIGHT, AppSettings
 from house_of_wolves.systems.selection import SelectionState
 from house_of_wolves.ui.selected_panel import SelectedPanel, selected_panel_for
+from house_of_wolves.world.terrain import terrain_layout_for_height
 from house_of_wolves.world.world import WorldState
 
 ScreenRect = tuple[int, int, int, int]
-PANEL_HEIGHT = 112
+PANEL_HEIGHT = UI_PANEL_HEIGHT
 ABILITY_START_X = 520
 ABILITY_START_Y_OFFSET = 18
 ABILITY_ROW_HEIGHT = 30
 ABILITY_CHIP_HEIGHT = 24
+SETTINGS_BUTTON_WIDTH = 96
+SETTINGS_BUTTON_HEIGHT = 28
+SETTINGS_MENU_WIDTH = 260
+SETTINGS_MENU_HEIGHT = 96
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +56,8 @@ class GameRenderer:
         fps: float,
         drag_rect: ScreenRect | None = None,
         active_ability: str | None = None,
+        settings_open: bool = False,
+        fullscreen: bool = True,
     ) -> None:
         self._draw_background(surface, world)
         self._draw_entities(surface, world, selection.selected_ids)
@@ -60,24 +67,57 @@ class GameRenderer:
             self._draw_drag_rect(surface, drag_rect)
         self._draw_hud(surface, world, selection, fps)
         self._draw_selected_panel(surface, world, selection, active_ability)
+        self._draw_settings_button(surface)
+        if settings_open:
+            self._draw_settings_menu(surface, fullscreen)
 
     def _draw_background(self, surface: pygame.Surface, world: WorldState) -> None:
-        surface.fill((112, 168, 202))
         width, height = surface.get_size()
-        horizon_y = 360
-        pygame.draw.rect(surface, (86, 147, 80), (0, horizon_y, width, height - horizon_y))
-        pygame.draw.rect(surface, (72, 113, 65), (0, 612, width, 46))
-        pygame.draw.rect(surface, (55, 79, 49), (0, 650, width, 70))
+        layout = terrain_layout_for_height(height)
+        sky_bottom = round(layout.sky_bottom_y)
+        building_top = round(layout.building_lane_top_y)
+        building_bottom = round(layout.building_lane_bottom_y)
+        ground_top = round(layout.unit_walkable_top_y)
+        ground_bottom = round(layout.unit_walkable_bottom_y)
+        surface.fill((112, 168, 202))
+        pygame.draw.rect(
+            surface,
+            (95, 151, 82),
+            (0, building_top, width, building_bottom - building_top),
+        )
+        pygame.draw.rect(
+            surface,
+            (86, 147, 80),
+            (0, ground_top, width, ground_bottom - ground_top),
+        )
+        pygame.draw.line(surface, (64, 112, 64), (0, ground_top), (width, ground_top), 2)
+        pygame.draw.rect(
+            surface,
+            (72, 113, 65),
+            (0, max(ground_top, ground_bottom - 46), width, 46),
+        )
+        pygame.draw.line(surface, (128, 114, 76), (0, ground_bottom), (width, ground_bottom), 2)
 
         camera_x = world.camera.x
         for base_x in range(-600, self.settings.world_width + 800, 520):
             screen_x = round(base_x - camera_x * 0.25)
-            points = [(screen_x, 360), (screen_x + 180, 230), (screen_x + 390, 360)]
+            points = [
+                (screen_x, sky_bottom),
+                (screen_x + 180, round(sky_bottom * 0.64)),
+                (screen_x + 390, sky_bottom),
+            ]
             pygame.draw.polygon(surface, (90, 130, 118), points)
 
         for x in range(-200, self.settings.world_width + 400, 300):
             screen_x = round(x - camera_x)
-            pygame.draw.line(surface, (65, 96, 55), (screen_x, 638), (screen_x + 170, 638), 3)
+            lane_y = round(ground_top + ((ground_bottom - ground_top) * 0.96))
+            pygame.draw.line(
+                surface,
+                (65, 96, 55),
+                (screen_x, lane_y),
+                (screen_x + 170, lane_y),
+                3,
+            )
 
     def _draw_entities(
         self,
@@ -236,12 +276,55 @@ class GameRenderer:
         )
         self._draw_text(surface, resources, (16, 10), self.font)
         status = f"Selected: {len(selection.selected_ids)}   FPS: {fps:0.0f}"
-        self._draw_text(surface, status, (surface.get_width() - 250, 10), self.font)
+        self._draw_text(surface, status, (surface.get_width() - 380, 10), self.font)
         hint = (
             "A/D or arrows pan | left click/drag select | right click move | "
             "Shift queues | Esc quits"
         )
         self._draw_text(surface, hint, (16, 34), self.small_font, color=(210, 214, 198))
+
+    def _draw_settings_button(self, surface: pygame.Surface) -> None:
+        rect = self.settings_button_rect(surface)
+        pygame.draw.rect(surface, (52, 63, 58), rect, border_radius=4)
+        pygame.draw.rect(surface, (136, 152, 116), rect, width=1, border_radius=4)
+        text = self.small_font.render("Settings", True, (244, 238, 213))
+        surface.blit(text, text.get_rect(center=rect.center))
+
+    def _draw_settings_menu(self, surface: pygame.Surface, fullscreen: bool) -> None:
+        rect = self.settings_menu_rect(surface)
+        pygame.draw.rect(surface, (24, 29, 28), rect, border_radius=6)
+        pygame.draw.rect(surface, (128, 114, 76), rect, width=2, border_radius=6)
+        self._draw_text(surface, "Settings", (rect.left + 14, rect.top + 12), self.font)
+
+        toggle = self.settings_display_toggle_rect(surface)
+        label = "Display: Fullscreen" if fullscreen else "Display: Borderless"
+        pygame.draw.rect(surface, (64, 75, 61), toggle, border_radius=4)
+        pygame.draw.rect(surface, (136, 152, 116), toggle, width=1, border_radius=4)
+        text = self.small_font.render(label, True, (244, 238, 213))
+        surface.blit(text, text.get_rect(center=toggle.center))
+
+    def settings_button_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        return pygame.Rect(
+            surface.get_width() - SETTINGS_BUTTON_WIDTH - 16,
+            12,
+            SETTINGS_BUTTON_WIDTH,
+            SETTINGS_BUTTON_HEIGHT,
+        )
+
+    def settings_menu_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        return pygame.Rect(
+            surface.get_width() - SETTINGS_MENU_WIDTH - 16,
+            52,
+            SETTINGS_MENU_WIDTH,
+            SETTINGS_MENU_HEIGHT,
+        )
+
+    def settings_display_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        menu = self.settings_menu_rect(surface)
+        return pygame.Rect(menu.left + 14, menu.top + 48, menu.width - 28, 30)
+
+    def settings_menu_contains(self, surface: pygame.Surface, screen_pos: tuple[int, int]) -> bool:
+        return self.settings_menu_rect(surface).collidepoint(screen_pos)
 
     def _draw_selected_panel(
         self,
