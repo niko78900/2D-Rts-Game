@@ -6,9 +6,12 @@ from math import cos, hypot, pi, sin
 from typing import Any
 
 from house_of_wolves.core.contracts import EntityId, WorldPosition
+from house_of_wolves.world.terrain import clamp_unit_position_to_walkable_lane_for_height
 from house_of_wolves.world.world import WorldState
 
-UNIT_COLLISION_RADIUS = 22.0
+UNIT_HITBOX_RADIUS = 22.0
+UNIT_CLIP_FRACTION = 1 / 3
+UNIT_COLLISION_RADIUS = UNIT_HITBOX_RADIUS * (1 - UNIT_CLIP_FRACTION)
 MAX_COLLISION_ADJUSTMENT = 5.0
 MAX_SEPARATION_PUSH = 2.0
 SHOVE_INFLUENCE_RADIUS = UNIT_COLLISION_RADIUS * 1.35
@@ -31,9 +34,17 @@ def occupied_by_unit(
     position: WorldPosition,
     *,
     ignore_id: EntityId | None = None,
+    source_id: EntityId | None = None,
+    friendly_ghost_ids: set[EntityId] | None = None,
     min_distance: float = UNIT_COLLISION_RADIUS,
 ) -> bool:
-    nearest = nearest_unit_distance(world, position, ignore_id=ignore_id)
+    nearest = nearest_unit_distance(
+        world,
+        position,
+        ignore_id=ignore_id,
+        source_id=source_id,
+        friendly_ghost_ids=friendly_ghost_ids,
+    )
     return nearest is not None and nearest < min_distance
 
 
@@ -42,10 +53,19 @@ def nearest_unit_distance(
     position: WorldPosition,
     *,
     ignore_id: EntityId | None = None,
+    source_id: EntityId | None = None,
+    friendly_ghost_ids: set[EntityId] | None = None,
 ) -> float | None:
     nearest: float | None = None
+    source_id = source_id or ignore_id
     for entity in world.entities.values():
-        if not is_unit(entity) or entity.id == ignore_id:
+        if _skip_unit_collision(
+            world,
+            source_id,
+            entity,
+            ignore_id=ignore_id,
+            friendly_ghost_ids=friendly_ghost_ids,
+        ):
             continue
         distance = hypot(entity.position.x - position.x, entity.position.y - position.y)
         if nearest is None or distance < nearest:
@@ -61,20 +81,33 @@ def resolve_unit_position(
     current: WorldPosition | None = None,
     min_distance: float = UNIT_COLLISION_RADIUS,
     max_adjustment: float = MAX_COLLISION_ADJUSTMENT,
+    friendly_ghost_ids: set[EntityId] | None = None,
 ) -> WorldPosition:
     """Softly slide a moving unit away from occupied pixels without teleporting."""
 
-    if not occupied_by_unit(world, desired, ignore_id=entity_id, min_distance=min_distance):
+    desired = _clamp_for_world(world, desired)
+    if not occupied_by_unit(
+        world,
+        desired,
+        ignore_id=entity_id,
+        source_id=entity_id,
+        friendly_ghost_ids=friendly_ghost_ids,
+        min_distance=min_distance,
+    ):
         return desired
 
     entity = world.entities.get(entity_id)
-    origin = current or (entity.position if entity is not None else desired)
+    origin = _clamp_for_world(
+        world,
+        current or (entity.position if entity is not None else desired)
+    )
     adjusted = desired
     for _ in range(2):
         blocker, distance = _closest_overlapping_unit(
             world,
             entity_id,
             adjusted,
+            friendly_ghost_ids=friendly_ghost_ids,
             min_distance=min_distance,
         )
         if blocker is None:
@@ -117,8 +150,9 @@ def resolve_unit_position(
                 adjusted.x + normal_x * push,
                 adjusted.y + normal_y * push,
             )
+        adjusted = _clamp_for_world(world, adjusted)
 
-    return adjusted
+    return _clamp_for_world(world, adjusted)
 
 
 def separate_overlapping_units(
@@ -127,9 +161,11 @@ def separate_overlapping_units(
     min_distance: float = UNIT_COLLISION_RADIUS,
     max_push: float = MAX_SEPARATION_PUSH,
     iterations: int = 1,
+    friendly_ghost_ids: set[EntityId] | None = None,
 ) -> None:
     """Push overlapping units apart so crowds slide instead of locking together."""
 
+    friendly_ghost_ids = friendly_ghost_ids or set()
     for _ in range(iterations):
         units = sorted(
             (entity for entity in world.entities.values() if is_unit(entity)),
@@ -138,7 +174,14 @@ def separate_overlapping_units(
         offsets: dict[EntityId, list[float]] = {entity.id: [0.0, 0.0] for entity in units}
         for index, first in enumerate(units):
             for second in units[index + 1 :]:
-                _add_pair_separation(offsets, first, second, min_distance, max_push)
+                _add_pair_separation(
+                    offsets,
+                    first,
+                    second,
+                    min_distance,
+                    max_push,
+                    friendly_ghost_ids,
+                )
 
         moved = False
         for unit in units:
@@ -152,7 +195,10 @@ def separate_overlapping_units(
                 dy *= scale
             world.update_entity_position(
                 unit.id,
-                WorldPosition(unit.position.x + dx, unit.position.y + dy),
+                _clamp_for_world(
+                    world,
+                    WorldPosition(unit.position.x + dx, unit.position.y + dy)
+                ),
             )
             moved = True
         if not moved:
@@ -167,6 +213,7 @@ def shove_units_from_movement(
     *,
     influence_radius: float = SHOVE_INFLUENCE_RADIUS,
     max_push: float = MAX_SHOVE_PUSH,
+    friendly_ghost_ids: set[EntityId] | None = None,
 ) -> None:
     """Nudge units in front of a mover so crowds give way under pressure."""
 
@@ -178,9 +225,17 @@ def shove_units_from_movement(
 
     direction_x = move_x / move_length
     direction_y = move_y / move_length
+    mover = world.entities.get(mover_id)
+    friendly_ghost_ids = friendly_ghost_ids or set()
     shove_candidates: list[tuple[float, Any, float, float]] = []
     for entity in world.entities.values():
         if not is_unit(entity) or entity.id == mover_id:
+            continue
+        if (
+            mover is not None
+            and _same_owner(mover, entity)
+            and (mover_id in friendly_ghost_ids or entity.id in friendly_ghost_ids)
+        ):
             continue
         projection, side_distance = _movement_segment_distance(
             origin,
@@ -223,7 +278,10 @@ def shove_units_from_movement(
         shove_candidates,
         key=lambda item: item[0],
     ):
-        target = WorldPosition(entity.position.x + push_x, entity.position.y + push_y)
+        target = _clamp_for_world(
+            world,
+            WorldPosition(entity.position.x + push_x, entity.position.y + push_y)
+        )
         world.update_entity_position(
             entity.id,
             resolve_unit_position(
@@ -232,6 +290,7 @@ def shove_units_from_movement(
                 target,
                 current=entity.position,
                 max_adjustment=max_push,
+                friendly_ghost_ids=friendly_ghost_ids,
             ),
         )
 
@@ -242,7 +301,13 @@ def _add_pair_separation(
     second: Any,
     min_distance: float,
     max_push: float,
+    friendly_ghost_ids: set[EntityId],
 ) -> None:
+    if _same_owner(first, second) and (
+        first.id in friendly_ghost_ids or second.id in friendly_ghost_ids
+    ):
+        return
+
     dx = second.position.x - first.position.x
     dy = second.position.y - first.position.y
     distance = hypot(dx, dy)
@@ -303,12 +368,19 @@ def _closest_overlapping_unit(
     entity_id: EntityId,
     position: WorldPosition,
     *,
+    friendly_ghost_ids: set[EntityId] | None,
     min_distance: float,
 ) -> tuple[Any | None, float]:
     closest: Any | None = None
     closest_distance = min_distance
     for entity in world.entities.values():
-        if not is_unit(entity) or entity.id == entity_id:
+        if _skip_unit_collision(
+            world,
+            entity_id,
+            entity,
+            ignore_id=entity_id,
+            friendly_ghost_ids=friendly_ghost_ids,
+        ):
             continue
         distance = hypot(entity.position.x - position.x, entity.position.y - position.y)
         if distance < closest_distance:
@@ -373,12 +445,16 @@ def nearest_free_position(
 ) -> WorldPosition:
     """Find a deterministic nearby unoccupied position around a desired point."""
 
+    desired = _clamp_for_world(world, desired)
     if not occupied_by_unit(world, desired, ignore_id=ignore_id, min_distance=min_distance):
         return desired
 
     for radius in range(round(min_distance), 280, round(min_distance)):
         for dx, dy in _ring_offsets(radius):
-            candidate = WorldPosition(desired.x + dx, desired.y + dy)
+            candidate = _clamp_for_world(
+                world,
+                WorldPosition(desired.x + dx, desired.y + dy)
+            )
             if not occupied_by_unit(
                 world,
                 candidate,
@@ -400,3 +476,34 @@ def _ring_offsets(radius: int) -> tuple[tuple[float, float], ...]:
         (-radius, radius),
         (-radius, -radius),
     )
+
+
+def _clamp_for_world(world: WorldState, position: WorldPosition) -> WorldPosition:
+    return clamp_unit_position_to_walkable_lane_for_height(
+        position,
+        world.settings.world_height,
+    )
+
+
+def _skip_unit_collision(
+    world: WorldState,
+    source_id: EntityId | None,
+    entity: Any,
+    *,
+    ignore_id: EntityId | None,
+    friendly_ghost_ids: set[EntityId] | None,
+) -> bool:
+    if not is_unit(entity) or entity.id == ignore_id:
+        return True
+    if source_id is None or not friendly_ghost_ids:
+        return False
+    source = world.entities.get(source_id)
+    return (
+        source is not None
+        and _same_owner(source, entity)
+        and (source_id in friendly_ghost_ids or entity.id in friendly_ghost_ids)
+    )
+
+
+def _same_owner(first: Any, second: Any) -> bool:
+    return getattr(first, "owner", None) == getattr(second, "owner", None)

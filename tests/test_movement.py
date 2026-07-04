@@ -1,10 +1,23 @@
 from __future__ import annotations
 
-from house_of_wolves.core.contracts import WorldPosition
+from house_of_wolves.core.contracts import Footprint, WorldPosition
+from house_of_wolves.entities.unit import Unit
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.movement import MovementSystem
-from house_of_wolves.world.collision import UNIT_COLLISION_RADIUS, unit_distance
+from house_of_wolves.world.collision import (
+    UNIT_CLIP_FRACTION,
+    UNIT_COLLISION_RADIUS,
+    UNIT_HITBOX_RADIUS,
+    resolve_unit_position,
+    unit_distance,
+)
 from house_of_wolves.world.demo import create_demo_world
+from house_of_wolves.world.terrain import UNIT_WALKABLE_TOP_Y, terrain_layout_for_height
+
+
+def test_unit_collision_allows_one_third_hitbox_clipping() -> None:
+    assert UNIT_CLIP_FRACTION == 1 / 3
+    assert UNIT_COLLISION_RADIUS == UNIT_HITBOX_RADIUS * (1 - UNIT_CLIP_FRACTION)
 
 
 def test_movement_consumes_move_command_and_updates_spatial_hash() -> None:
@@ -46,6 +59,53 @@ def test_units_resolve_around_same_destination_instead_of_overlapping() -> None:
         unit_distance_from_position(unit, target) <= movement.shared_destination_radius
         for unit in units
     )
+
+
+def test_move_targets_inside_building_lane_stop_at_unit_lane_edge() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
+    movement = MovementSystem()
+    target = WorldPosition(unit.position.x + 120, UNIT_WALKABLE_TOP_Y - 80)
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))
+    for _ in range(50):
+        movement.update(world, 100)
+
+    assert unit.position.y >= UNIT_WALKABLE_TOP_Y
+    assert world.command_queues[unit.id].peek() is None
+
+
+def test_move_targets_below_ui_stop_at_map_bottom() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
+    movement = MovementSystem()
+    map_bottom = terrain_layout_for_height(world.settings.world_height).unit_walkable_bottom_y
+    target = WorldPosition(unit.position.x + 80, world.settings.world_height + 200)
+
+    world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=target))
+    for _ in range(80):
+        movement.update(world, 100)
+
+    assert unit.position.y <= map_bottom
+    assert world.command_queues[unit.id].peek() is None
+
+
+def test_group_move_finishes_near_slot_without_exact_pixel_snap() -> None:
+    world = create_demo_world()
+    unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
+    original_position = unit.position
+    target = WorldPosition(unit.position.x + 10, unit.position.y)
+    movement = MovementSystem()
+
+    world.enqueue_command(
+        unit.id,
+        make_command("move", [unit.id], target_pos=target, group_move=True, formation_index=0),
+    )
+    movement.update(world, 16)
+
+    assert unit.position == original_position
+    assert world.command_queues[unit.id].peek() is None
+    assert unit.state == "idle"
 
 
 def test_unreachable_move_command_times_out_at_closest_reached_position() -> None:
@@ -92,6 +152,76 @@ def test_moving_unit_shoves_blocking_unit_forward() -> None:
     assert blocker.position.x > original_blocker_position.x
     assert 0 < shove_distance <= movement.max_shove_px + 3
     assert world.command_queues[blocker.id].peek() is None
+
+
+def test_repeated_friendly_collisions_enable_temporary_ghosting_without_canceling_move() -> None:
+    world = create_demo_world()
+    mover, blocker, second_blocker = [
+        entity for entity in world.entities.values() if "unit" in entity.tags
+    ][:3]
+    movement = MovementSystem(
+        max_shove_px=0,
+        unreachable_timeout_ms=100_000,
+        friendly_ghost_collision_limit=3,
+        friendly_ghost_area_px=80,
+        friendly_ghost_duration_ms=600,
+    )
+
+    world.update_entity_position(mover.id, WorldPosition(360, 500))
+    world.update_entity_position(blocker.id, WorldPosition(366, 500))
+    world.update_entity_position(second_blocker.id, WorldPosition(366, 506))
+    world.enqueue_command(
+        mover.id,
+        make_command("move", [mover.id], target_pos=WorldPosition(620, 500)),
+    )
+
+    for _ in range(8):
+        movement.update(world, 16)
+        progress = movement._progress_by_entity.get(mover.id)
+        if progress is not None and progress.friendly_ghost_until_ms > world.elapsed_ms:
+            break
+
+    progress = movement._progress_by_entity[mover.id]
+    assert progress.friendly_ghost_until_ms > world.elapsed_ms
+    assert world.command_queues[mover.id].peek() is not None
+
+
+def test_friendly_ghosting_passes_same_team_units_but_not_enemy_units() -> None:
+    world = create_demo_world()
+    mover, friendly_blocker = [
+        entity for entity in world.entities.values() if "unit" in entity.tags
+    ][:2]
+    enemy = Unit(
+        id=world.allocate_entity_id(),
+        owner="wolves",
+        position=WorldPosition(430, 500),
+        footprint=Footprint(38, 58),
+        hp=60,
+        tags=("unit", "enemy", "movable"),
+        speed=70,
+    )
+    world.update_entity_position(mover.id, WorldPosition(360, 500))
+    world.update_entity_position(friendly_blocker.id, WorldPosition(390, 500))
+    world.add_entity(enemy)
+
+    ghosted = {mover.id}
+    friendly_result = resolve_unit_position(
+        world,
+        mover.id,
+        friendly_blocker.position,
+        current=mover.position,
+        friendly_ghost_ids=ghosted,
+    )
+    enemy_result = resolve_unit_position(
+        world,
+        mover.id,
+        enemy.position,
+        current=mover.position,
+        friendly_ghost_ids=ghosted,
+    )
+
+    assert friendly_result == friendly_blocker.position
+    assert enemy_result != enemy.position
 
 
 def test_overlapping_idle_units_are_pushed_apart_on_update() -> None:

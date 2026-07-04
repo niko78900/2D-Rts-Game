@@ -10,11 +10,13 @@ from house_of_wolves.world.collision import (
     MAX_COLLISION_ADJUSTMENT,
     MAX_SHOVE_PUSH,
     UNIT_COLLISION_RADIUS,
+    is_unit,
     occupied_by_unit,
     resolve_unit_position,
     separate_overlapping_units,
     shove_units_from_movement,
 )
+from house_of_wolves.world.terrain import clamp_unit_position_to_walkable_lane_for_height
 from house_of_wolves.world.world import WorldState
 
 
@@ -25,6 +27,9 @@ class MovementProgress:
     command_token: int
     best_distance: float
     stagnant_ms: int = 0
+    friendly_collision_anchor: WorldPosition | None = None
+    friendly_collision_count: int = 0
+    friendly_ghost_until_ms: int = 0
 
 
 @dataclass(slots=True)
@@ -32,18 +37,23 @@ class MovementSystem:
     """Consumes move commands and advances movable units toward their destination."""
 
     arrival_radius: float = 4.0
+    group_arrival_radius: float = 16.0
     shared_destination_radius: float = UNIT_COLLISION_RADIUS * 1.5
     collision_slide_px: float = MAX_COLLISION_ADJUSTMENT
     max_shove_px: float = MAX_SHOVE_PUSH
     unreachable_timeout_ms: int = 1500
     min_progress_px: float = 0.75
+    friendly_ghost_collision_limit: int = 10
+    friendly_ghost_area_px: float = 12.0
+    friendly_ghost_reset_distance_px: float = 24.0
+    friendly_ghost_duration_ms: int = 750
     _progress_by_entity: dict[EntityId, MovementProgress] = field(default_factory=dict)
 
     def update(self, world: WorldState, dt_ms: int) -> None:
         world.elapsed_ms += dt_ms
         for entity_id in list(world.command_queues):
             self._update_entity(world, entity_id, dt_ms)
-        separate_overlapping_units(world)
+        separate_overlapping_units(world, friendly_ghost_ids=self._active_friendly_ghost_ids(world))
 
     def _update_entity(self, world: WorldState, entity_id: EntityId, dt_ms: int) -> None:
         entity = world.entities.get(entity_id)
@@ -65,12 +75,21 @@ class MovementSystem:
             self._clear_progress(entity_id)
             return
 
-        target = command.target_pos
+        target = clamp_unit_position_to_walkable_lane_for_height(
+            command.target_pos,
+            world.settings.world_height,
+        )
         progress = self._progress_for(entity_id, command, target, entity.position)
         dx = target.x - entity.position.x
         dy = target.y - entity.position.y
         distance = hypot(dx, dy)
-        if distance <= self.arrival_radius:
+        arrival_radius = self._arrival_radius_for(command)
+        if distance <= arrival_radius:
+            if command.payload.get("group_move") is True:
+                self._finish_move(entity_id, queue)
+                if hasattr(entity, "state"):
+                    entity.state = "idle"
+                return
             world.update_entity_position(
                 entity_id,
                 resolve_unit_position(
@@ -116,7 +135,9 @@ class MovementSystem:
             entity.position,
             new_position,
             max_push=min(self.max_shove_px, max(step * 0.55, 0.0)),
+            friendly_ghost_ids=self._active_friendly_ghost_ids(world),
         )
+        old_position = entity.position
         world.update_entity_position(
             entity_id,
             resolve_unit_position(
@@ -125,11 +146,19 @@ class MovementSystem:
                 new_position,
                 current=entity.position,
                 max_adjustment=self.collision_slide_px,
+                friendly_ghost_ids=self._active_friendly_ghost_ids(world),
             ),
         )
         if finish_after_move:
             self._finish_move(entity_id, queue)
         else:
+            self._update_friendly_ghosting(
+                world,
+                entity_id,
+                progress,
+                old_position,
+                new_position,
+            )
             self._stop_if_unreachable(world, entity_id, queue, target, progress, dt_ms)
 
     def _arrived_near_shared_destination(
@@ -144,6 +173,11 @@ class MovementSystem:
             target,
             ignore_id=entity_id,
         )
+
+    def _arrival_radius_for(self, command: Command) -> float:
+        if command.payload.get("group_move") is True:
+            return self.group_arrival_radius
+        return self.arrival_radius
 
     def _progress_for(
         self,
@@ -161,6 +195,64 @@ class MovementSystem:
             )
             self._progress_by_entity[entity_id] = progress
         return progress
+
+    def _update_friendly_ghosting(
+        self,
+        world: WorldState,
+        entity_id: EntityId,
+        progress: MovementProgress,
+        previous_position: WorldPosition,
+        attempted_position: WorldPosition,
+    ) -> None:
+        entity = world.entities.get(entity_id)
+        if entity is None:
+            self._clear_progress(entity_id)
+            return
+
+        if progress.friendly_ghost_until_ms > world.elapsed_ms:
+            progress.friendly_collision_anchor = None
+            progress.friendly_collision_count = 0
+            return
+
+        moved_distance = _distance(previous_position, entity.position)
+        if moved_distance >= self.friendly_ghost_reset_distance_px:
+            self._reset_friendly_collision_progress(progress)
+
+        collision_position = _nearest_friendly_collision_position(
+            world,
+            entity_id,
+            attempted_position,
+        ) or _nearest_friendly_collision_position(world, entity_id, entity.position)
+        if collision_position is None:
+            self._reset_friendly_collision_progress(progress)
+            return
+
+        if (
+            progress.friendly_collision_anchor is None
+            or _distance(collision_position, progress.friendly_collision_anchor)
+            > self.friendly_ghost_area_px
+        ):
+            progress.friendly_collision_anchor = collision_position
+            progress.friendly_collision_count = 1
+            return
+
+        progress.friendly_collision_count += 1
+        if progress.friendly_collision_count < self.friendly_ghost_collision_limit:
+            return
+
+        progress.friendly_ghost_until_ms = world.elapsed_ms + self.friendly_ghost_duration_ms
+        self._reset_friendly_collision_progress(progress)
+
+    def _reset_friendly_collision_progress(self, progress: MovementProgress) -> None:
+        progress.friendly_collision_anchor = None
+        progress.friendly_collision_count = 0
+
+    def _active_friendly_ghost_ids(self, world: WorldState) -> set[EntityId]:
+        return {
+            entity_id
+            for entity_id, progress in self._progress_by_entity.items()
+            if progress.friendly_ghost_until_ms > world.elapsed_ms
+        }
 
     def _stop_if_unreachable(
         self,
@@ -201,10 +293,34 @@ class MovementSystem:
 def _is_movable(entity: object) -> bool:
     return (
         getattr(entity, "alive", False)
-        and getattr(entity, "owner", None) == "frontier"
         and "movable" in getattr(entity, "tags", ())
     )
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
     return hypot(first.x - second.x, first.y - second.y)
+
+
+def _nearest_friendly_collision_position(
+    world: WorldState,
+    entity_id: EntityId,
+    position: WorldPosition,
+) -> WorldPosition | None:
+    entity = world.entities.get(entity_id)
+    if entity is None:
+        return None
+
+    nearest_position: WorldPosition | None = None
+    nearest_distance = UNIT_COLLISION_RADIUS
+    for other in world.entities.values():
+        if (
+            other.id == entity_id
+            or not is_unit(other)
+            or getattr(other, "owner", None) != getattr(entity, "owner", None)
+        ):
+            continue
+        distance = _distance(other.position, position)
+        if distance < nearest_distance:
+            nearest_position = other.position
+            nearest_distance = distance
+    return nearest_position
