@@ -16,6 +16,7 @@ from house_of_wolves.systems.economy import (
     GATHER_SWING_MS,
     GATHER_SWINGS_PER_LOAD,
     GOLD_RESPAWN_DELAY_MS,
+    MAX_ACTIVE_GOLD_NODES,
     MAX_ACTIVE_TREES,
     RESPAWN_AVOID_RADIUS,
     RESPAWN_RETRY_MS,
@@ -162,6 +163,9 @@ def test_completed_player_huts_are_the_only_deposit_hubs() -> None:
 def test_auto_gather_avoids_unsafe_resource_nodes() -> None:
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    enemy = next(entity for entity in world.entities.values() if entity.owner == "wolves")
+    _remove_resource_nodes(world, "iron")
+    _add_extra_resource_node(world, "iron", enemy.position)
 
     assignments, message = assign_auto_gather_targets(
         world,
@@ -179,7 +183,6 @@ def test_auto_gather_redistributes_settlers_across_safe_nodes() -> None:
     settlers = [entity for entity in world.entities.values() if "settler" in entity.tags]
     first = settlers[0]
     second = _add_settler_like(world, WorldPosition(first.position.x + 34, first.position.y))
-    _add_extra_resource_node(world, "wood", WorldPosition(930, first.position.y + 40))
 
     assignments, message = assign_auto_gather_targets(
         world,
@@ -196,6 +199,7 @@ def test_auto_gather_redistributes_settlers_across_safe_nodes() -> None:
 def test_destroyed_tree_respawns_after_exact_delay() -> None:
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    starting_ids = {node.id for node in active_resource_nodes(world, "wood")}
     destroyed_position = tree.position
     tree.hp = 0
     tree.amount_remaining = 0
@@ -206,7 +210,7 @@ def test_destroyed_tree_respawns_after_exact_delay() -> None:
     system.update(world, 1)
 
     assert tree.id not in world.entities
-    assert active_resource_nodes(world, "wood") == []
+    assert len(active_resource_nodes(world, "wood")) == MAX_ACTIVE_TREES - 1
     assert len(system.respawns) == 1
     assert system.respawns[0].resource_type == "wood"
     assert system.respawns[0].due_ms == TREE_RESPAWN_DELAY_MS
@@ -215,22 +219,18 @@ def test_destroyed_tree_respawns_after_exact_delay() -> None:
     system.update(world, 16)
 
     spawned = active_resource_nodes(world, "wood")
-    assert len(spawned) == 1
-    assert spawned[0].hp == WOOD_RESOURCE_HP
-    assert spawned[0].amount_remaining == WOOD_RESOURCE_HP
-    assert _distance(spawned[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
+    new_trees = [node for node in spawned if node.id not in starting_ids]
+    assert len(spawned) == MAX_ACTIVE_TREES
+    assert len(new_trees) == 1
+    assert new_trees[0].hp == WOOD_RESOURCE_HP
+    assert new_trees[0].amount_remaining == WOOD_RESOURCE_HP
+    assert _distance(new_trees[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
     assert system.respawns == []
 
 
 def test_tree_respawn_retries_when_active_tree_cap_is_full() -> None:
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
-    for index in range(MAX_ACTIVE_TREES - 1):
-        _add_extra_resource_node(
-            world,
-            "wood",
-            WorldPosition(1700 + (index * 70), tree.position.y),
-        )
     system = EconomySystem()
     system.respawns.append(ResourceRespawn("wood", world.elapsed_ms, tree.position))
 
@@ -245,6 +245,7 @@ def test_wood_gatherer_waits_for_new_tree_when_none_are_active() -> None:
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    _remove_resource_nodes(world, "wood", keep_ids={tree.id})
     interaction_point = resource_interaction_position(world, tree, settler.id)
     world.update_entity_position(settler.id, interaction_point)
     tree.hp = 0
@@ -282,6 +283,7 @@ def test_wood_gatherer_waits_for_new_tree_when_none_are_active() -> None:
 def test_destroyed_mine_resource_respawns_after_exact_delay() -> None:
     world = create_demo_world()
     gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    starting_ids = {node.id for node in active_resource_nodes(world, "gold")}
     destroyed_position = gold.position
     gold.hp = 0
     gold.amount_remaining = 0
@@ -292,35 +294,31 @@ def test_destroyed_mine_resource_respawns_after_exact_delay() -> None:
     system.update(world, 1)
 
     assert gold.id not in world.entities
-    assert active_resource_nodes(world, "gold") == []
+    assert len(active_resource_nodes(world, "gold")) == MAX_ACTIVE_GOLD_NODES - 1
     assert len(system.respawns) == 1
     assert system.respawns[0].resource_type == "gold"
     assert system.respawns[0].due_ms == GOLD_RESPAWN_DELAY_MS
 
     world.elapsed_ms = GOLD_RESPAWN_DELAY_MS - 1
     system.update(world, 16)
-    assert active_resource_nodes(world, "gold") == []
+    assert len(active_resource_nodes(world, "gold")) == MAX_ACTIVE_GOLD_NODES - 1
 
     world.elapsed_ms = GOLD_RESPAWN_DELAY_MS
     system.update(world, 16)
 
     spawned = active_resource_nodes(world, "gold")
-    assert len(spawned) == 1
-    assert spawned[0].hp == GOLD_RESOURCE_HP
-    assert spawned[0].amount_remaining == GOLD_RESOURCE_HP
-    assert _distance(spawned[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
+    new_gold = [node for node in spawned if node.id not in starting_ids]
+    assert len(spawned) == MAX_ACTIVE_GOLD_NODES
+    assert len(new_gold) == 1
+    assert new_gold[0].hp == GOLD_RESOURCE_HP
+    assert new_gold[0].amount_remaining == GOLD_RESOURCE_HP
+    assert _distance(new_gold[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
     assert system.respawns == []
 
 
 def test_mine_respawn_skips_when_resource_type_is_at_cap() -> None:
     world = create_demo_world()
     gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
-    for index in range(4):
-        _add_extra_resource_node(
-            world,
-            "gold",
-            WorldPosition(1700 + (index * 140), gold.position.y),
-        )
     system = EconomySystem()
     system.respawns.append(ResourceRespawn("gold", world.elapsed_ms, gold.position))
 
@@ -333,6 +331,7 @@ def test_mine_respawn_skips_when_resource_type_is_at_cap() -> None:
 def test_mine_respawn_retries_when_no_valid_spawn_location_exists() -> None:
     world = create_demo_world()
     gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    world.remove_entity(gold.id)
     world.add_entity(
         Building(
             id=world.allocate_entity_id(),
@@ -349,9 +348,22 @@ def test_mine_respawn_retries_when_no_valid_spawn_location_exists() -> None:
 
     system.update(world, 16)
 
-    assert len(active_resource_nodes(world, "gold")) == 1
+    assert len(active_resource_nodes(world, "gold")) == MAX_ACTIVE_GOLD_NODES - 1
     assert len(system.respawns) == 1
     assert system.respawns[0].due_ms == world.elapsed_ms + RESPAWN_RETRY_MS
+
+
+def _remove_resource_nodes(
+    world: object,
+    resource_type: str,
+    *,
+    keep_ids: set[object] | None = None,
+) -> None:
+    kept = keep_ids or set()
+    for resource in list(active_resource_nodes(world, resource_type)):
+        if resource.id in kept:
+            continue
+        world.remove_entity(resource.id)
 
 
 def _add_settler_like(world, position: WorldPosition):

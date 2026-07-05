@@ -98,6 +98,7 @@ def test_resource_nodes_block_direct_unit_movement() -> None:
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    _remove_other_resource_nodes(world, mine.id)
     movement = MovementSystem(unreachable_timeout_ms=10_000)
     world.update_entity_position(
         unit.id,
@@ -118,6 +119,7 @@ def test_units_steer_around_resource_nodes_when_target_is_behind_them() -> None:
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    _remove_other_resource_nodes(world, mine.id)
     movement = MovementSystem(unreachable_timeout_ms=10_000)
     world.update_entity_position(
         unit.id,
@@ -137,6 +139,7 @@ def test_move_command_inserts_detour_waypoints_around_resource_blocker() -> None
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    _remove_other_resource_nodes(world, mine.id)
     left, _top, width, _height = mine.blocking_bounds
     start = WorldPosition(left - 150, mine.position.y)
     target = WorldPosition(left + width + 150, mine.position.y)
@@ -174,6 +177,7 @@ def test_move_target_inside_resource_blocker_is_projected_outside() -> None:
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    _remove_other_resource_nodes(world, mine.id)
     world.update_entity_position(
         unit.id,
         WorldPosition(mine.blocking_bounds[0] - 150, mine.position.y),
@@ -192,6 +196,7 @@ def test_unit_reaches_target_behind_resource_using_detour_waypoints() -> None:
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    _remove_other_resource_nodes(world, mine.id)
     left, _top, width, _height = mine.blocking_bounds
     start = WorldPosition(left - 180, mine.position.y)
     target = WorldPosition(left + width + 180, mine.position.y)
@@ -364,3 +369,9 @@ def test_overlapping_idle_units_are_pushed_apart_on_update() -> None:
 
 def unit_distance_from_position(unit: object, position: WorldPosition) -> float:
     return ((unit.position.x - position.x) ** 2 + (unit.position.y - position.y) ** 2) ** 0.5
+
+
+def _remove_other_resource_nodes(world: object, keep_id: object) -> None:
+    for entity in list(world.entities.values()):
+        if "resource" in entity.tags and entity.id != keep_id:
+            world.remove_entity(entity.id)
