@@ -209,6 +209,38 @@ def test_regular_move_command_does_not_trigger_idle_guard_attack() -> None:
     assert command.payload.get("attack_move") is not True
 
 
+def test_gather_move_is_abandoned_when_enemy_can_attack_worker() -> None:
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
+    for entity in world.entities.values():
+        if "unit" in entity.tags and entity.owner == "frontier" and entity.id != settler.id:
+            world.update_entity_position(
+                entity.id,
+                WorldPosition(settler.position.x - 320, settler.position.y),
+            )
+    world.update_entity_position(
+        enemy.id,
+        WorldPosition(settler.position.x + enemy.attack_range, settler.position.y),
+    )
+    starting_hp = enemy.hp
+    world.enqueue_command(
+        settler.id,
+        make_command(
+            "move",
+            [settler.id],
+            target_pos=WorldPosition(settler.position.x + 200, settler.position.y),
+            gather_move=True,
+        ),
+    )
+
+    CombatSystem().update(world, 16)
+
+    assert world.command_queues[settler.id].peek() is None
+    assert enemy.hp == starting_hp - settler.damage
+    assert settler.state == "attacking"
+
+
 def test_enemy_raider_deals_melee_damage_when_player_unit_is_in_range() -> None:
     world = create_demo_world()
     raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)

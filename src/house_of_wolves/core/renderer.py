@@ -122,6 +122,7 @@ class GameRenderer:
         if drag_rect is not None:
             self._draw_drag_rect(surface, drag_rect)
         self._draw_hud(surface, world, selection, fps)
+        self._draw_notifications(surface, world)
         self._draw_selected_panel(surface, world, selection, active_ability, ability_override)
         self._draw_settings_button(surface)
         if settings_open:
@@ -529,6 +530,15 @@ class GameRenderer:
             "Shift queues | Esc quits"
         )
         self._draw_text(surface, hint, (16, 34), self.small_font, color=(210, 214, 198))
+
+    def _draw_notifications(self, surface: pygame.Surface, world: WorldState) -> None:
+        for index, notification in enumerate(world.notifications[-4:]):
+            text = self.small_font.render(notification.message, True, (247, 229, 169))
+            rect = text.get_rect(midtop=(surface.get_width() // 2, 62 + index * 24))
+            background = rect.inflate(18, 8)
+            pygame.draw.rect(surface, (36, 42, 38), background, border_radius=4)
+            pygame.draw.rect(surface, (128, 114, 76), background, width=1, border_radius=4)
+            surface.blit(text, rect)
 
     def _draw_settings_button(self, surface: pygame.Surface) -> None:
         rect = self.settings_button_rect(surface)

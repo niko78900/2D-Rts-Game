@@ -6,7 +6,7 @@ from house_of_wolves.core.contracts import Footprint, WorldPosition
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.combat_unit import CombatUnit
-from house_of_wolves.entities.resource_node import ResourceNode
+from house_of_wolves.entities.resource_node import ResourceNode, resource_hp_for_type
 from house_of_wolves.world.camera import Camera
 from house_of_wolves.world.terrain import terrain_bands_for_height, terrain_layout_for_height
 from house_of_wolves.world.world import WorldState
@@ -65,6 +65,8 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
 
     _add_tree(world, 760, terrain.unit_walkable_top_y + unit_lane_height * 0.38)
     _add_gold_mine(world, 1120, terrain.unit_walkable_top_y + unit_lane_height * 0.43)
+    _add_stone_outcrop(world, 1320, terrain.unit_walkable_top_y + unit_lane_height * 0.62)
+    _add_iron_deposit(world, 1420, terrain.unit_walkable_top_y + unit_lane_height * 0.28)
     _add_hut(world, 230, terrain.building_lane_bottom_y)
 
     return world
@@ -116,17 +118,18 @@ def _add_enemy_unit(world: WorldState, x: float, y: float) -> None:
 
 
 def _add_tree(world: WorldState, x: float, y: float) -> None:
+    hp = resource_hp_for_type("wood")
     entity = ResourceNode(
         id=world.allocate_entity_id(),
         owner="neutral",
         position=WorldPosition(x, y),
         footprint=Footprint(82, 126),
-        hp=1,
-        max_hp=1,
+        hp=hp,
+        max_hp=hp,
         tags=("resource", "wood_tree", "selectable"),
         resource_type="wood",
-        amount_remaining=250,
-        max_amount_remaining=250,
+        amount_remaining=hp,
+        max_amount_remaining=hp,
         gather_time_ms=900,
         harvest_slots=2,
         depleted_replacement="tree_stump",
@@ -136,21 +139,64 @@ def _add_tree(world: WorldState, x: float, y: float) -> None:
 
 
 def _add_gold_mine(world: WorldState, x: float, y: float) -> None:
+    hp = resource_hp_for_type("gold")
     entity = ResourceNode(
         id=world.allocate_entity_id(),
         owner="neutral",
         position=WorldPosition(x, y),
         footprint=Footprint(132, 86),
-        hp=1,
-        max_hp=1,
+        hp=hp,
+        max_hp=hp,
         tags=("resource", "gold_mine", "selectable"),
         resource_type="gold",
-        amount_remaining=400,
-        max_amount_remaining=400,
+        amount_remaining=hp,
+        max_amount_remaining=hp,
         gather_time_ms=1200,
         harvest_slots=3,
         depleted_replacement="gold_mine_empty",
         blocking_footprint=Footprint(124, 64),
+    )
+    world.add_entity(entity)
+
+
+def _add_stone_outcrop(world: WorldState, x: float, y: float) -> None:
+    hp = resource_hp_for_type("stone")
+    entity = ResourceNode(
+        id=world.allocate_entity_id(),
+        owner="neutral",
+        position=WorldPosition(x, y),
+        footprint=Footprint(118, 74),
+        hp=hp,
+        max_hp=hp,
+        tags=("resource", "stone_outcrop", "selectable"),
+        resource_type="stone",
+        amount_remaining=hp,
+        max_amount_remaining=hp,
+        gather_time_ms=1200,
+        harvest_slots=3,
+        depleted_replacement="stone_rubble",
+        blocking_footprint=Footprint(104, 54),
+    )
+    world.add_entity(entity)
+
+
+def _add_iron_deposit(world: WorldState, x: float, y: float) -> None:
+    hp = resource_hp_for_type("iron")
+    entity = ResourceNode(
+        id=world.allocate_entity_id(),
+        owner="neutral",
+        position=WorldPosition(x, y),
+        footprint=Footprint(118, 74),
+        hp=hp,
+        max_hp=hp,
+        tags=("resource", "iron_deposit", "selectable"),
+        resource_type="iron",
+        amount_remaining=hp,
+        max_amount_remaining=hp,
+        gather_time_ms=1200,
+        harvest_slots=3,
+        depleted_replacement="empty_iron_deposit",
+        blocking_footprint=Footprint(104, 54),
     )
     world.add_entity(entity)
 

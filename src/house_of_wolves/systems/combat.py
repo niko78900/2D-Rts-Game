@@ -41,6 +41,10 @@ class CombatSystem:
             if command.type == "attack":
                 self._update_attack_command(world, entity, command, dt_ms)
                 continue
+            if _is_gather_related_command(command):
+                if self._update_gather_defense(world, entity, dt_ms):
+                    continue
+                continue
             if not _is_attack_move_command(command):
                 continue
             target = _locked_or_nearest_enemy_unit(
@@ -108,6 +112,24 @@ class CombatSystem:
             return
         _move_entity_toward(world, entity, target.position, dt_ms)
 
+    def _update_gather_defense(
+        self,
+        world: WorldState,
+        entity: object,
+        dt_ms: int,
+    ) -> bool:
+        target = _nearest_enemy_threatening_unit(world, entity.id)
+        if target is None:
+            return False
+        queue = world.command_queues.get(entity.id)
+        if queue is not None:
+            queue.clear()
+        if _distance(entity.position, target.position) > _attack_range_for(entity):
+            _move_entity_toward(world, entity, target.position, dt_ms)
+            return True
+        _attack_target(world, entity, target)
+        return True
+
 
 def _current_command(world: WorldState, entity_id: EntityId) -> Command | None:
     queue = world.command_queues.get(entity_id)
@@ -116,6 +138,10 @@ def _current_command(world: WorldState, entity_id: EntityId) -> Command | None:
 
 def _is_attack_move_command(command: Command) -> bool:
     return command.type == "move" and command.payload.get("attack_move") is True
+
+
+def _is_gather_related_command(command: Command) -> bool:
+    return command.type == "gather" or command.payload.get("gather_move") is True
 
 
 def _nearest_enemy_unit(
@@ -137,6 +163,27 @@ def _nearest_enemy_unit(
             continue
         distance = _distance(entity.position, other.position)
         if distance <= nearest_distance:
+            nearest = other
+            nearest_distance = distance
+    return nearest
+
+
+def _nearest_enemy_threatening_unit(
+    world: WorldState,
+    entity_id: EntityId,
+) -> object | None:
+    entity = world.entities.get(entity_id)
+    if entity is None:
+        return None
+    nearest: object | None = None
+    nearest_distance = float("inf")
+    for other in world.entities.values():
+        if not _is_enemy_unit(entity, other):
+            continue
+        distance = _distance(entity.position, other.position)
+        if distance > _attack_range_for(other) + 12:
+            continue
+        if distance < nearest_distance:
             nearest = other
             nearest_distance = distance
     return nearest

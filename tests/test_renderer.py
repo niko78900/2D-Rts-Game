@@ -193,7 +193,7 @@ def test_selected_panel_for_resource_shows_remaining_amount_and_gather_ability()
     panel = selected_panel_for(world, [tree.id])
 
     assert panel.title == "Tree"
-    assert panel.health == "Health: 1    Remaining Wood: 250"
+    assert panel.health == "Health: 150    Remaining Wood: 150"
     assert "Gather Wood" in panel.abilities
 
 
@@ -225,7 +225,7 @@ def test_status_bar_for_damaged_unit_uses_green_red_health_ratio() -> None:
 def test_status_bar_for_resource_uses_yellow_depletion_ratio() -> None:
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
-    tree.amount_remaining = 125
+    tree.amount_remaining = 75
 
     spec = status_bar_for_entity(tree)
 

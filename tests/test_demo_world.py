@@ -16,9 +16,9 @@ def test_demo_world_bootstrap_creates_expected_placeholder_entities() -> None:
     assert sum("unit" in tags and "selectable" in tags for tags in tag_sets) == 4
     assert sum("enemy" in tags for tags in tag_sets) == 1
     assert any("raider_swordsman" in tags for tags in tag_sets)
-    assert sum("resource" in tags for tags in tag_sets) == 2
+    assert sum("resource" in tags for tags in tag_sets) == 4
     assert sum("building" in tags for tags in tag_sets) == 1
-    assert sum("selectable" in tags for tags in tag_sets) == 7
+    assert sum("selectable" in tags for tags in tag_sets) == 9
     assert all("movable" in tags for tags in tag_sets if "unit" in tags)
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     assert hut.position.y == BUILDING_LANE_BOTTOM_Y

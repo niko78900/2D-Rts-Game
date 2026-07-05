@@ -86,6 +86,8 @@ def entity_display_name(entity: Any) -> str:
         "hut": "Hut",
         "wood_tree": "Tree",
         "gold_mine": "Gold Mine",
+        "stone_outcrop": "Stone Outcrop",
+        "iron_deposit": "Ore Deposit",
     }
     for tag in getattr(entity, "tags", ()):
         if tag in names:
@@ -110,7 +112,7 @@ def entity_health_text(entity: Any) -> str:
     tags = set(getattr(entity, "tags", ()))
     hp = max(0, int(getattr(entity, "hp", 0)))
     if "resource" in tags:
-        amount = max(0, int(getattr(entity, "amount_remaining", 0)))
+        amount = _resource_remaining(entity)
         resource_type = display_resource_type(str(getattr(entity, "resource_type", "resource")))
         return f"Health: {hp}    Remaining {resource_type}: {amount}"
     return f"Health: {hp}"
@@ -197,6 +199,13 @@ def display_resource_type(resource_type: str) -> str:
     if resource_type == "iron":
         return "Ore"
     return resource_type.title()
+
+
+def _resource_remaining(entity: Any) -> int:
+    amount = getattr(entity, "amount_remaining", None)
+    if amount is not None:
+        return max(0, int(amount))
+    return max(0, int(getattr(entity, "hp", 0)))
 
 
 def selection_breakdown(entities: list[Any]) -> str:

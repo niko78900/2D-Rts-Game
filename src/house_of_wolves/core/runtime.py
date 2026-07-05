@@ -30,7 +30,12 @@ from house_of_wolves.entities.resource_node import ResourceNode
 from house_of_wolves.systems.combat import CombatSystem
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.construction import ConstructionSystem, starting_construction_hp
-from house_of_wolves.systems.economy import EconomySystem
+from house_of_wolves.systems.economy import (
+    EconomySystem,
+    assign_auto_gather_targets,
+    completed_deposit_huts,
+    resource_interaction_position,
+)
 from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.systems.movement import MovementSystem
 from house_of_wolves.systems.production import ProductionError, produce_unit
@@ -229,7 +234,10 @@ class GameRuntime:
             return self._handle_build_menu_ability(ability)
         if self.active_building_placement is not None:
             return self._handle_build_placement_ability(ability)
-        if ability in {"Move", "Attack", "Attack Move"} or ability in GATHER_RESOURCE_TYPES:
+        if ability in GATHER_RESOURCE_TYPES:
+            self._issue_auto_gather(GATHER_RESOURCE_TYPES[ability])
+            return True
+        if ability in {"Move", "Attack", "Attack Move"}:
             return self._activate_command_ability(ability)
         if ability == "Stop":
             self.active_dropoff_building_id = None
@@ -448,15 +456,14 @@ class GameRuntime:
         if action == KEYBIND_ATTACK_MOVE:
             return self._activate_command_ability("Attack Move")
         if action in KEYBIND_GATHER_ACTIONS:
-            return self._activate_command_ability(KEYBIND_GATHER_ACTIONS[action])
+            self._issue_auto_gather(GATHER_RESOURCE_TYPES[KEYBIND_GATHER_ACTIONS[action]])
+            return True
         return False
 
     def _activate_command_ability(self, ability: str) -> bool:
         if ability == "Attack" and not self._selected_player_attack_unit_ids():
             return True
         if ability in {"Move", "Attack Move"} and not self._selected_player_movable_unit_ids():
-            return True
-        if ability in GATHER_RESOURCE_TYPES and not self._selected_builder_ids():
             return True
         self.active_dropoff_building_id = None
         self.build_menu_open = False
@@ -477,6 +484,7 @@ class GameRuntime:
         self.movement_system.update(self.world, dt_ms)
         self.construction_system.update(self.world, dt_ms)
         self.economy_system.update(self.world, dt_ms)
+        self.world.update_notifications(dt_ms)
 
     def render(self) -> None:
         if self.screen is None or self.renderer is None:
@@ -683,6 +691,31 @@ class GameRuntime:
             return
         self._order_selected_gatherers_to_resource(target, queued=queued)
 
+    def _issue_auto_gather(self, resource_type: str) -> None:
+        gatherer_ids = self._selected_builder_ids()
+        if not gatherer_ids:
+            return
+        self.active_dropoff_building_id = None
+        self.active_command_ability = None
+        self.build_menu_open = False
+        self.active_building_placement = None
+        assignments, message = assign_auto_gather_targets(
+            self.world,
+            gatherer_ids,
+            resource_type,
+            owner="frontier",
+        )
+        if message is not None:
+            self.world.notify(message)
+            return
+        for gatherer_id, resource in assignments.items():
+            self._order_gatherer_to_resource(
+                resource,
+                gatherer_id,
+                queued=False,
+                manual=False,
+            )
+
     def _stop_selected_units(self) -> None:
         for entity_id in self._selected_player_movable_unit_ids():
             queue = self.world.command_queues.get(entity_id)
@@ -870,28 +903,47 @@ class GameRuntime:
         gatherer_ids = self._selected_builder_ids()
         if not gatherer_ids:
             return
-        for index, gatherer_id in enumerate(gatherer_ids):
-            interaction_point = self._resource_interaction_point(
+        if not completed_deposit_huts(self.world, "frontier"):
+            self.world.notify("Needs hut to deposit.")
+            return
+        for gatherer_id in gatherer_ids:
+            self._order_gatherer_to_resource(
                 resource,
                 gatherer_id,
-                index=index,
-                total=len(gatherer_ids),
+                queued=queued,
+                manual=True,
             )
-            self.world.enqueue_command(
-                gatherer_id,
-                make_command("move", [gatherer_id], target_pos=interaction_point, queued=queued),
-            )
-            self.world.enqueue_command(
-                gatherer_id,
-                make_command(
-                    "gather",
-                    [gatherer_id],
-                    target_entity_id=resource.id,
-                    target_pos=interaction_point,
-                    queued=True,
-                    resource_type=resource.resource_type,
-                ),
-            )
+
+    def _order_gatherer_to_resource(
+        self,
+        resource: ResourceNode,
+        gatherer_id: EntityId,
+        *,
+        queued: bool,
+        manual: bool,
+    ) -> None:
+        interaction_point = resource_interaction_position(
+            self.world,
+            resource,
+            gatherer_id,
+        )
+        self.world.enqueue_command(
+            gatherer_id,
+            make_command("move", [gatherer_id], target_pos=interaction_point, queued=queued),
+        )
+        self.world.enqueue_command(
+            gatherer_id,
+            make_command(
+                "gather",
+                [gatherer_id],
+                target_entity_id=resource.id,
+                target_pos=interaction_point,
+                queued=True,
+                resource_type=resource.resource_type,
+                current_resource_id=resource.id.to_json(),
+                manual=manual,
+            ),
+        )
 
     def _builder_interaction_point(
         self,

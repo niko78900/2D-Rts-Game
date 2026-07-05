@@ -571,7 +571,7 @@ def test_runtime_attack_hotkey_then_enemy_click_issues_attack_command() -> None:
         runtime.shutdown()
 
 
-def test_runtime_gather_button_then_resource_click_queues_move_and_gather() -> None:
+def test_runtime_gather_button_auto_queues_move_and_gather() -> None:
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -581,10 +581,6 @@ def test_runtime_gather_button_then_resource_click_queues_move_and_gather() -> N
             entity for entity in runtime.world.entities.values() if "wood_tree" in entity.tags
         )
         runtime.selection_system.state.replace([settler.id])
-        left, top, width, height = tree.bounds
-        screen_pos = runtime.world.camera.world_to_screen(
-            WorldPosition(left + (width / 2), top + (height / 2))
-        )
 
         runtime.handle_event(
             pygame.event.Event(
@@ -592,32 +588,35 @@ def test_runtime_gather_button_then_resource_click_queues_move_and_gather() -> N
                 {"button": 1, "pos": ability_center(runtime, "Gather Wood")},
             )
         )
-        assert runtime.active_command_ability == "Gather Wood"
-
-        runtime.handle_event(
-            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": screen_pos})
-        )
 
         commands = runtime.world.command_queues[settler.id].commands
         assert [command.type for command in commands[:2]] == ["move", "gather"]
         assert commands[1].target_entity_id == tree.id
         assert commands[1].payload["resource_type"] == "wood"
+        assert commands[1].payload["manual"] is False
         assert runtime.active_command_ability is None
     finally:
         runtime.shutdown()
 
 
-def test_runtime_gather_hotkey_activates_gather_gold_command() -> None:
+def test_runtime_gather_hotkey_auto_queues_gather_gold_command() -> None:
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
     try:
         settler = selected_settler(runtime)
+        mine = next(
+            entity for entity in runtime.world.entities.values() if "gold_mine" in entity.tags
+        )
         runtime.selection_system.state.replace([settler.id])
 
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_g}))
 
-        assert runtime.active_command_ability == "Gather Gold"
+        commands = runtime.world.command_queues[settler.id].commands
+        assert [command.type for command in commands[:2]] == ["move", "gather"]
+        assert commands[1].target_entity_id == mine.id
+        assert commands[1].payload["resource_type"] == "gold"
+        assert runtime.active_command_ability is None
     finally:
         runtime.shutdown()
 
@@ -645,6 +644,7 @@ def test_runtime_right_click_resource_orders_selected_settlers_to_gather() -> No
         assert [command.type for command in commands[:2]] == ["move", "gather"]
         assert commands[1].target_entity_id == mine.id
         assert commands[1].payload["resource_type"] == "gold"
+        assert commands[1].payload["manual"] is True
     finally:
         runtime.shutdown()
 

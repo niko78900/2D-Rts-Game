@@ -18,6 +18,12 @@ if TYPE_CHECKING:
 
 
 @dataclass(slots=True)
+class Notification:
+    message: str
+    remaining_ms: int = 2500
+
+
+@dataclass(slots=True)
 class WorldState:
     """Single authoritative simulation container for the desktop RTS."""
 
@@ -30,6 +36,7 @@ class WorldState:
     resources: dict[str, int] = field(
         default_factory=lambda: {"wood": 0, "food": 0, "stone": 0, "iron": 0, "gold": 0}
     )
+    notifications: list[Notification] = field(default_factory=list)
     camera: Camera = field(default_factory=Camera)
     spatial_hash: SpatialHash = field(default_factory=SpatialHash)
     terrain_bands: tuple[TerrainBand, ...] = DEFAULT_TERRAIN_BANDS
@@ -58,6 +65,18 @@ class WorldState:
         self.entities.pop(entity_id, None)
         self.command_queues.pop(entity_id, None)
         self.spatial_hash.remove(entity_id)
+
+    def notify(self, message: str, *, duration_ms: int = 2500) -> None:
+        self.notifications.append(Notification(message, duration_ms))
+
+    def update_notifications(self, dt_ms: int) -> None:
+        for notification in self.notifications:
+            notification.remaining_ms -= max(0, int(dt_ms))
+        self.notifications = [
+            notification
+            for notification in self.notifications
+            if notification.remaining_ms > 0
+        ]
 
     def enqueue_command(self, entity_id: EntityId, command: Command) -> None:
         queue = self.command_queues.setdefault(entity_id, CommandQueue(entity_id))

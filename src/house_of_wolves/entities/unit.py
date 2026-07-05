@@ -12,3 +12,5 @@ class Unit(Entity):
     speed: float = 0
     state: str = "idle"
     attack_range: float = 0
+    carry_type: str | None = None
+    carry_amount: int = 0
