@@ -36,6 +36,8 @@ class AppSettings:
     ui_panel_height: int = UI_PANEL_HEIGHT
     world_width: int = 7200
     world_height: int = 720
+    default_unit_pop_cost: int = 1
+    hut_pop_cap_bonus: int = 5
     data_root: Path = DATA_ROOT
     schema_root: Path = SCHEMA_ROOT
     asset_root: Path = ASSET_ROOT

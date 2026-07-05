@@ -14,3 +14,4 @@ class Unit(Entity):
     attack_range: float = 0
     carry_type: str | None = None
     carry_amount: int = 0
+    population_cost: int = 1

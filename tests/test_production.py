@@ -18,6 +18,8 @@ def test_produce_unit_adds_unit_and_sends_it_to_building_dropoff_point() -> None
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     original_unit_count = sum("unit" in entity.tags for entity in world.entities.values())
     expected_spawn = available_spawn_position_for(world, hut)
+    starting_wood = world.resources["wood"]
+    starting_population = world.current_population
 
     unit = produce_unit(world, hut.id, "settler")
     command = world.command_queues[unit.id].peek()
@@ -30,6 +32,8 @@ def test_produce_unit_adds_unit_and_sends_it_to_building_dropoff_point() -> None
         sum("unit" in entity.tags for entity in world.entities.values())
         == original_unit_count + 1
     )
+    assert world.resources["wood"] == starting_wood - 20
+    assert world.current_population == starting_population + unit.population_cost
     assert command is not None
     assert command.type == "move"
     assert command.target_pos == hut.dropoff_point
@@ -41,6 +45,29 @@ def test_produce_unit_rejects_units_not_trained_by_building() -> None:
 
     with pytest.raises(ProductionError):
         produce_unit(world, hut.id, "archer")
+
+
+def test_produce_unit_rejects_when_population_cap_is_full() -> None:
+    world = create_demo_world()
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    produce_unit(world, hut.id, "settler")
+    produce_unit(world, hut.id, "settler")
+    unit_count = sum("unit" in entity.tags for entity in world.entities.values())
+
+    with pytest.raises(ProductionError, match="Population cap reached"):
+        produce_unit(world, hut.id, "settler")
+
+    assert world.current_population == world.max_population
+    assert sum("unit" in entity.tags for entity in world.entities.values()) == unit_count
+
+
+def test_produce_unit_rejects_when_resources_are_missing() -> None:
+    world = create_demo_world()
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    world.resources["wood"] = 0
+
+    with pytest.raises(ProductionError, match="Not enough wood"):
+        produce_unit(world, hut.id, "settler")
 
 
 def test_available_spawn_position_moves_away_from_occupied_exit() -> None:

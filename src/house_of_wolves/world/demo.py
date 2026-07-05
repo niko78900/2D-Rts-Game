@@ -26,7 +26,7 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
     world.terrain_bands = terrain_bands_for_height(app_settings.world_height)
     terrain = terrain_layout_for_height(app_settings.world_height)
     unit_lane_height = terrain.unit_walkable_bottom_y - terrain.unit_walkable_top_y
-    world.resources.update({"wood": 120, "food": 80, "stone": 40, "iron": 0, "gold": 0})
+    world.resources.update({"wood": 120, "food": 80, "stone": 40, "iron": 20, "gold": 0})
 
     _add_unit(
         world,
@@ -214,7 +214,7 @@ def _add_hut(world: WorldState, x: float, y: float) -> None:
         complete=True,
         functions=Building.production_functions(
             dropoff=True,
-            population_cap_bonus=5,
+            population_cap_bonus=world.settings.hut_pop_cap_bonus,
             trainable_units=("settler", "spearman"),
         ),
         dropoff_point=WorldPosition(

@@ -35,6 +35,8 @@ SETTINGS_MENU_HEIGHT = 564
 KEYBIND_ROW_HEIGHT = 24
 KEYBIND_ROW_GAP = 6
 KEYBIND_START_Y_OFFSET = 250
+KEYBIND_ROWS_PER_COLUMN = 9
+KEYBIND_COLUMN_GAP = 8
 STATUS_BAR_HEIGHT = 6
 STATUS_BAR_TOP_MARGIN = 9
 HEALTH_FILL = (54, 174, 86)
@@ -528,13 +530,14 @@ class GameRenderer:
             for name in ("wood", "food", "stone", "iron", "gold")
         )
         self._draw_text(surface, resources, (16, 10), self.font)
+        population = f"Population: {world.current_population} / {world.max_population}"
+        self._draw_text(surface, population, (16, 34), self.small_font, color=(221, 204, 145))
         status = f"Selected: {len(selection.selected_ids)}   FPS: {fps:0.0f}"
         self._draw_text(surface, status, (surface.get_width() - 380, 10), self.font)
         hint = (
-            "A/D or arrows pan | left click/drag select | right click move | "
-            "Shift queues | Esc quits"
+            "A/D or arrows pan | select, right click, shift queue | Ctrl+1-9 groups"
         )
-        self._draw_text(surface, hint, (16, 34), self.small_font, color=(210, 214, 198))
+        self._draw_text(surface, hint, (260, 34), self.small_font, color=(210, 214, 198))
 
     def _draw_notifications(self, surface: pygame.Surface, world: WorldState) -> None:
         for index, notification in enumerate(world.notifications[-4:]):
@@ -686,10 +689,14 @@ class GameRenderer:
     def settings_keybind_rect(self, surface: pygame.Surface, action: str) -> pygame.Rect:
         menu = self.settings_menu_rect(surface)
         index = KEYBIND_ACTION_ORDER.index(action)
+        column = index // KEYBIND_ROWS_PER_COLUMN
+        row = index % KEYBIND_ROWS_PER_COLUMN
+        usable_width = menu.width - 28
+        column_width = (usable_width - KEYBIND_COLUMN_GAP) // 2
         return pygame.Rect(
-            menu.left + 14,
-            menu.top + KEYBIND_START_Y_OFFSET + index * (KEYBIND_ROW_HEIGHT + KEYBIND_ROW_GAP),
-            menu.width - 28,
+            menu.left + 14 + column * (column_width + KEYBIND_COLUMN_GAP),
+            menu.top + KEYBIND_START_Y_OFFSET + row * (KEYBIND_ROW_HEIGHT + KEYBIND_ROW_GAP),
+            column_width,
             KEYBIND_ROW_HEIGHT,
         )
 
@@ -793,8 +800,12 @@ class GameRenderer:
         ability_y = panel_top + ABILITY_START_Y_OFFSET
         buttons: list[AbilityButton] = []
         abilities = ability_override if ability_override is not None else panel.abilities
-        for ability in abilities:
-            display_label = ability_display_label(ability, self.settings.keybindings)
+        for index, ability in enumerate(abilities):
+            display_label = ability_display_label(
+                ability,
+                self.settings.keybindings,
+                slot_index=index,
+            )
             text = self.small_font.render(display_label, True, (244, 238, 213))
             chip = text.get_rect()
             chip.width += 18

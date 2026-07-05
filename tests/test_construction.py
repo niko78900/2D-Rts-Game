@@ -100,6 +100,38 @@ def test_construction_speed_boost_caps_at_ten_builders() -> None:
     assert site.hp == construction_hp_for_progress(650, 0.5)
 
 
+def test_hut_population_bonus_counts_only_after_completion_and_removal() -> None:
+    world = create_demo_world()
+    starting_cap = world.max_population
+    site = _add_hut_site(world, build_time_ms=100)
+
+    assert world.max_population == starting_cap
+
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    world.update_entity_position(settler.id, site.position)
+    world.enqueue_command(
+        settler.id,
+        make_command(
+            "build",
+            [settler.id],
+            target_entity_id=site.id,
+            target_pos=site.position,
+            building_id="hut",
+        ),
+    )
+
+    ConstructionSystem().update(world, 100)
+
+    assert site.complete is True
+    assert world.max_population == starting_cap + site.production_config.population_cap_bonus
+
+    current_population = world.current_population
+    world.remove_entity(site.id)
+
+    assert world.max_population == starting_cap
+    assert world.current_population == current_population
+
+
 def test_construction_site_starts_at_ten_percent_hp() -> None:
     world = create_demo_world()
     site = _add_hut_site(world, build_time_ms=1000)

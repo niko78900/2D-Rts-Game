@@ -139,6 +139,7 @@ class ConstructionSystem:
         if progress >= 1.0:
             site.complete = True
             site.hp = _max_hp(site)
+            world.recalculate_population()
             for active_builder in builders:
                 active_builder.queue.pop_next()
                 builder = world.entities.get(active_builder.builder_id)

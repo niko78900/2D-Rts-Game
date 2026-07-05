@@ -19,6 +19,8 @@ ABILITY_ORDER = (
     "Gather Gold",
     "Gather Ore",
     "Gather Stone",
+    "Train Settler",
+    "Train Spearman",
     "Dropoff",
 )
 
@@ -154,10 +156,10 @@ def entity_abilities(entity: Any) -> tuple[str, ...]:
         functions = getattr(entity, "functions", {})
         if not bool(getattr(entity, "complete", True)):
             return ()
+        for unit_id in functions.get("trainable_units", []):
+            abilities.append(f"Train {entity_display_from_id(str(unit_id))}")
         if functions.get("dropoff"):
             abilities.append("Dropoff")
-        for unit_id in functions.get("trainable_units", []):
-            abilities.append(f"Produce {entity_display_from_id(str(unit_id))}")
     if "resource" in tags:
         resource_type = str(getattr(entity, "resource_type", "resource"))
         abilities.append(f"Gather {display_resource_type(resource_type)}")

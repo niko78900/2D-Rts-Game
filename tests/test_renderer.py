@@ -171,8 +171,8 @@ def test_selected_panel_for_building_shows_production_options() -> None:
 
     assert panel.title == "Hut"
     assert panel.health == "Health: 650"
-    assert "Produce Settler" in panel.abilities
-    assert "Produce Spearman" in panel.abilities
+    assert "Train Settler" in panel.abilities
+    assert "Train Spearman" in panel.abilities
 
 
 def test_selected_panel_for_incomplete_hut_hides_production_options() -> None:
@@ -387,14 +387,15 @@ def test_renderer_hit_tests_selected_panel_ability_buttons() -> None:
         surface = pygame.Surface(AppSettings().virtual_size)
         selection = type("Selection", (), {"selected_ids": [hut.id]})()
         panel = selected_panel_for(world, [hut.id])
-        produce_settler = next(
+        train_settler = next(
             button for button in renderer.ability_buttons_for_panel(surface, panel)
-            if button.label == "Produce Settler"
+            if button.label == "Train Settler"
         )
 
-        assert renderer.ability_at(surface, world, selection, produce_settler.rect.center) == (
-            "Produce Settler"
+        assert renderer.ability_at(surface, world, selection, train_settler.rect.center) == (
+            "Train Settler"
         )
+        assert train_settler.display_label == "Train Settler [Q]"
     finally:
         pygame.quit()
 
@@ -412,7 +413,7 @@ def test_renderer_shows_keybind_near_ability_button_but_hit_tests_base_label() -
             if button.label == "Build"
         )
 
-        assert build.display_label == "Build [B]"
+        assert build.display_label == "Build [A]"
     finally:
         pygame.quit()
 
@@ -423,8 +424,10 @@ def test_renderer_settings_keybind_rows_are_hit_testable() -> None:
         renderer = GameRenderer(AppSettings())
         surface = pygame.Surface(AppSettings().virtual_size)
         row = renderer.settings_keybind_rect(surface, "build")
+        slot_row = renderer.settings_keybind_rect(surface, "command_slot_1")
 
         assert renderer.settings_keybind_action_at(surface, row.center) == "build"
+        assert renderer.settings_keybind_action_at(surface, slot_row.center) == "command_slot_1"
     finally:
         pygame.quit()
 

@@ -8,7 +8,11 @@ import pygame
 
 from house_of_wolves.core.app import main
 from house_of_wolves.core.contracts import Footprint, WorldPosition
-from house_of_wolves.core.keybindings import KEYBIND_BUILD, KEYBIND_GATHER_GOLD
+from house_of_wolves.core.keybindings import (
+    KEYBIND_BUILD,
+    KEYBIND_COMMAND_SLOT_1,
+    KEYBIND_GATHER_GOLD,
+)
 from house_of_wolves.core.runtime import GameRuntime, _desktop_size_for_display
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.combat_unit import CombatUnit
@@ -105,6 +109,51 @@ def test_runtime_default_mode_is_borderless_on_primary_display() -> None:
         assert runtime.screen.get_size() == runtime.settings.virtual_size
         assert runtime.display_flags & pygame.NOFRAME
         assert runtime.world.settings.world_height == runtime.screen.get_height()
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_control_group_assign_and_recall() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        units = [
+            entity
+            for entity in runtime.world.entities.values()
+            if "unit" in entity.tags and entity.owner == "frontier"
+        ][:2]
+        runtime.selection_system.state.replace([unit.id for unit in units])
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1, "mod": pygame.KMOD_CTRL})
+        )
+        runtime.selection_system.state.clear()
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_1, "mod": 0}))
+
+        assert runtime.selection_system.state.selected_ids == [unit.id for unit in units]
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_double_click_selects_visible_same_type_units() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        first = selected_settler(runtime)
+        second = add_settler(runtime, first.position.x + 72, first.position.y)
+        screen_pos = runtime.world.camera.world_to_screen(first.position)
+
+        for _ in range(2):
+            runtime.handle_event(
+                pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": screen_pos})
+            )
+            runtime.handle_event(
+                pygame.event.Event(pygame.MOUSEBUTTONUP, {"button": 1, "pos": screen_pos})
+            )
+
+        assert runtime.selection_system.state.selected_ids == [first.id, second.id]
     finally:
         runtime.shutdown()
 
@@ -278,7 +327,7 @@ def test_runtime_clicking_hut_produce_button_spawns_unit() -> None:
         runtime.handle_event(
             pygame.event.Event(
                 pygame.MOUSEBUTTONDOWN,
-                {"button": 1, "pos": ability_center(runtime, "Produce Settler")},
+                {"button": 1, "pos": ability_center(runtime, "Train Settler")},
             )
         )
 
@@ -287,6 +336,49 @@ def test_runtime_clicking_hut_produce_button_spawns_unit() -> None:
             == unit_count + 1
         )
         assert runtime.drag_start_screen is None
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_hut_command_slot_hotkeys_train_units() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        hut = next(entity for entity in runtime.world.entities.values() if "hut" in entity.tags)
+        runtime.selection_system.state.replace([hut.id])
+        unit_count = sum("unit" in entity.tags for entity in runtime.world.entities.values())
+
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_w}))
+
+        units = [entity for entity in runtime.world.entities.values() if "unit" in entity.tags]
+        assert len(units) == unit_count + 2
+        assert any("settler" in unit.tags for unit in units if int(unit.id) > int(hut.id))
+        assert any("spearman" in unit.tags for unit in units if int(unit.id) > int(hut.id))
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_production_refuses_at_population_cap_with_message() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        hut = next(entity for entity in runtime.world.entities.values() if "hut" in entity.tags)
+        runtime.selection_system.state.replace([hut.id])
+
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
+        unit_count = sum("unit" in entity.tags for entity in runtime.world.entities.values())
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
+
+        assert runtime.world.current_population == runtime.world.max_population
+        assert (
+            sum("unit" in entity.tags for entity in runtime.world.entities.values())
+            == unit_count
+        )
+        assert runtime.world.notifications[-1].message == "Population cap reached."
     finally:
         runtime.shutdown()
 
@@ -534,7 +626,7 @@ def test_runtime_attack_move_hotkey_activates_attack_move_command() -> None:
         ]
         runtime.selection_system.state.replace([unit.id for unit in units])
 
-        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_r}))
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_e}))
 
         assert runtime.active_command_ability == "Attack Move"
     finally:
@@ -568,6 +660,78 @@ def test_runtime_attack_hotkey_then_enemy_click_issues_attack_command() -> None:
         assert command.type == "attack"
         assert command.target_entity_id == enemy.id
         assert runtime.active_command_ability is None
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_right_click_enemy_issues_attack_command() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        archer = next(
+            entity
+            for entity in runtime.world.entities.values()
+            if "archer" in entity.tags and entity.owner == "frontier"
+        )
+        enemy = next(
+            entity for entity in runtime.world.entities.values() if entity.owner == "wolves"
+        )
+        runtime.selection_system.state.replace([archer.id])
+        left, top, width, height = enemy.bounds
+        screen_pos = runtime.world.camera.world_to_screen(
+            WorldPosition(left + (width / 2), top + (height / 2))
+        )
+
+        runtime.handle_event(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 3, "pos": screen_pos},
+            )
+        )
+
+        command = runtime.world.command_queues[archer.id].peek()
+        assert command is not None
+        assert command.type == "attack"
+        assert command.target_entity_id == enemy.id
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_shift_right_click_enemy_queues_attack_after_move() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        archer = next(
+            entity
+            for entity in runtime.world.entities.values()
+            if "archer" in entity.tags and entity.owner == "frontier"
+        )
+        enemy = next(
+            entity for entity in runtime.world.entities.values() if entity.owner == "wolves"
+        )
+        runtime.selection_system.state.replace([archer.id])
+        runtime._issue_move((900, 520), queued=False)
+        left, top, width, height = enemy.bounds
+        screen_pos = runtime.world.camera.world_to_screen(
+            WorldPosition(left + (width / 2), top + (height / 2))
+        )
+
+        pygame.key.set_mods(pygame.KMOD_SHIFT)
+        try:
+            runtime.handle_event(
+                pygame.event.Event(
+                    pygame.MOUSEBUTTONDOWN,
+                    {"button": 3, "pos": screen_pos},
+                )
+            )
+        finally:
+            pygame.key.set_mods(0)
+
+        queue = runtime.world.command_queues[archer.id]
+        assert [command.type for command in queue.commands] == ["move", "attack"]
+        assert queue.commands[-1].target_entity_id == enemy.id
     finally:
         runtime.shutdown()
 
@@ -739,6 +903,36 @@ def test_runtime_settings_menu_rebinds_build_hotkey() -> None:
         assert runtime.rebinding_action is None
         assert runtime.settings.keybindings[KEYBIND_BUILD] == "n"
         assert runtime.renderer.settings.keybindings[KEYBIND_BUILD] == "n"
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_settings_menu_rebinds_command_slot_hotkey() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        assert runtime.screen is not None
+        assert runtime.renderer is not None
+        settings_center = runtime.renderer.settings_button_rect(runtime.screen).center
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": settings_center})
+        )
+        row_center = runtime.renderer.settings_keybind_rect(
+            runtime.screen,
+            KEYBIND_COMMAND_SLOT_1,
+        ).center
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": row_center})
+        )
+        assert runtime.rebinding_action == KEYBIND_COMMAND_SLOT_1
+
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_z}))
+
+        assert runtime.rebinding_action is None
+        assert runtime.settings.keybindings[KEYBIND_COMMAND_SLOT_1] == "z"
+        assert runtime.renderer.settings.keybindings[KEYBIND_COMMAND_SLOT_1] == "z"
     finally:
         runtime.shutdown()
 
@@ -994,6 +1188,51 @@ def test_runtime_dropoff_button_toggles_placement_mode() -> None:
         runtime.shutdown()
 
 
+def test_runtime_right_click_ground_with_hut_sets_rally_point() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        hut = next(entity for entity in runtime.world.entities.values() if "hut" in entity.tags)
+        runtime.selection_system.state.replace([hut.id])
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3, "pos": (900, 510)})
+        )
+
+        assert hut.dropoff_point == clamp_unit_position_to_walkable_lane_for_height(
+            runtime.world.camera.screen_to_world(900, 510),
+            runtime.world.settings.world_height,
+        )
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_right_click_blocked_ground_with_hut_refuses_rally_point() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        hut = next(entity for entity in runtime.world.entities.values() if "hut" in entity.tags)
+        mine = next(
+            entity for entity in runtime.world.entities.values() if "gold_mine" in entity.tags
+        )
+        runtime.selection_system.state.replace([hut.id])
+        original = hut.dropoff_point
+
+        runtime.handle_event(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 3, "pos": runtime.world.camera.world_to_screen(mine.position)},
+            )
+        )
+
+        assert hut.dropoff_point == original
+        assert runtime.world.notifications[-1].message == "Invalid rally point."
+    finally:
+        runtime.shutdown()
+
+
 def test_runtime_dropoff_mode_places_flag_on_next_map_click() -> None:
     runtime = GameRuntime(AppSettings())
 
@@ -1071,7 +1310,7 @@ def test_runtime_produced_unit_uses_updated_dropoff_point() -> None:
         runtime.handle_event(
             pygame.event.Event(
                 pygame.MOUSEBUTTONDOWN,
-                {"button": 1, "pos": ability_center(runtime, "Produce Spearman")},
+                    {"button": 1, "pos": ability_center(runtime, "Train Spearman")},
             )
         )
 
