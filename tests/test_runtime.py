@@ -11,6 +11,8 @@ from house_of_wolves.core.contracts import Footprint, WorldPosition
 from house_of_wolves.core.keybindings import (
     KEYBIND_BUILD,
     KEYBIND_COMMAND_SLOT_1,
+    KEYBIND_COMMAND_SLOT_5,
+    KEYBIND_COMMAND_SLOT_7,
     KEYBIND_GATHER_GOLD,
 )
 from house_of_wolves.core.runtime import GameRuntime, _desktop_size_for_display
@@ -111,6 +113,15 @@ def test_runtime_default_mode_is_borderless_on_primary_display() -> None:
         assert runtime.world.settings.world_height == runtime.screen.get_height()
     finally:
         runtime.shutdown()
+
+
+def test_default_command_slots_do_not_use_camera_pan_keys() -> None:
+    keybindings = AppSettings().keybindings
+
+    assert keybindings[KEYBIND_COMMAND_SLOT_5] == "z"
+    assert keybindings[KEYBIND_COMMAND_SLOT_7] == "x"
+    assert "a" not in keybindings.values()
+    assert "d" not in keybindings.values()
 
 
 def test_runtime_control_group_assign_and_recall() -> None:
@@ -547,6 +558,45 @@ def test_runtime_build_hotkey_opens_build_menu() -> None:
         runtime.selection_system.state.replace([settler.id])
 
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_b}))
+
+        assert runtime.build_menu_open is True
+        assert runtime._ability_override() == ("Hut", "Back")
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_build_hotkeys_do_not_bypass_mixed_selection_abilities() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        spearman = next(
+            entity for entity in runtime.world.entities.values() if "spearman" in entity.tags
+        )
+        archer = next(
+            entity for entity in runtime.world.entities.values() if "archer" in entity.tags
+        )
+        runtime.selection_system.state.replace([settler.id, spearman.id, archer.id])
+
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_b}))
+        assert runtime.build_menu_open is False
+
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_z}))
+        assert runtime.build_menu_open is False
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_command_slot_build_hotkey_works_for_settler_only_selection() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        runtime.selection_system.state.replace([settler.id])
+
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_z}))
 
         assert runtime.build_menu_open is True
         assert runtime._ability_override() == ("Hut", "Back")

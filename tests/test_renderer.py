@@ -413,7 +413,7 @@ def test_renderer_shows_keybind_near_ability_button_but_hit_tests_base_label() -
             if button.label == "Build"
         )
 
-        assert build.display_label == "Build [A]"
+        assert build.display_label == "Build [Z]"
     finally:
         pygame.quit()
 

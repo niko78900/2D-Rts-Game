@@ -527,7 +527,7 @@ class GameRuntime:
                 return self._handle_build_menu_ability("Hut")
             return False
         if action == KEYBIND_BUILD:
-            if not self._selected_builder_ids():
+            if not self._ability_available("Build"):
                 return True
             self.active_dropoff_building_id = None
             self.active_command_ability = None
@@ -535,11 +535,18 @@ class GameRuntime:
             self.build_menu_open = True
             return True
         if action == KEYBIND_ATTACK:
+            if not self._ability_available("Attack"):
+                return True
             return self._activate_command_ability("Attack")
         if action == KEYBIND_ATTACK_MOVE:
+            if not self._ability_available("Attack Move"):
+                return True
             return self._activate_command_ability("Attack Move")
         if action in KEYBIND_GATHER_ACTIONS:
-            self._issue_auto_gather(GATHER_RESOURCE_TYPES[KEYBIND_GATHER_ACTIONS[action]])
+            ability = KEYBIND_GATHER_ACTIONS[action]
+            if not self._ability_available(ability):
+                return True
+            self._issue_auto_gather(GATHER_RESOURCE_TYPES[ability])
             return True
         return False
 
@@ -558,15 +565,22 @@ class GameRuntime:
         return self._handle_ability(ability)
 
     def _ability_for_command_slot(self, slot_index: int) -> str | None:
-        abilities = self._ability_override()
-        if abilities is None:
-            abilities = selected_panel_for(
-                self.world,
-                self.selection_system.state.selected_ids,
-            ).abilities
+        abilities = self._available_abilities()
         if slot_index < 0 or slot_index >= len(abilities):
             return None
         return abilities[slot_index]
+
+    def _ability_available(self, ability: str) -> bool:
+        return ability in self._available_abilities()
+
+    def _available_abilities(self) -> tuple[str, ...]:
+        abilities = self._ability_override()
+        if abilities is not None:
+            return abilities
+        return selected_panel_for(
+            self.world,
+            self.selection_system.state.selected_ids,
+        ).abilities
 
     def _handle_control_group_hotkey(self, event: pygame.event.Event) -> bool:
         if self.settings_menu_open:
