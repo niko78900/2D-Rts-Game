@@ -234,8 +234,13 @@ class GameRenderer:
             pygame.draw.circle(surface, (46, 117, 65), (rect.centerx, rect.top + 42), 42)
             pygame.draw.circle(surface, (58, 137, 72), (rect.centerx - 24, rect.top + 54), 28)
         else:
+            inner_color = (197, 168, 78)
+            if "iron_deposit" in tags:
+                inner_color = (24, 24, 24)
+            elif "stone_outcrop" in tags:
+                inner_color = (154, 154, 148)
             pygame.draw.ellipse(surface, (112, 102, 82), rect)
-            pygame.draw.ellipse(surface, (197, 168, 78), rect.inflate(-30, -24))
+            pygame.draw.ellipse(surface, inner_color, rect.inflate(-30, -24))
 
     def _draw_resource_hitbox(
         self,

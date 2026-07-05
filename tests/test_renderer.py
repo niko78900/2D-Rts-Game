@@ -197,6 +197,18 @@ def test_selected_panel_for_resource_shows_remaining_amount_and_gather_ability()
     assert "Gather Wood" in panel.abilities
 
 
+def test_resource_placeholder_inner_colors_distinguish_ore_and_stone() -> None:
+    renderer = GameRenderer(AppSettings())
+    rect = pygame.Rect(20, 20, 90, 54)
+    surface = pygame.Surface((140, 100))
+
+    renderer._draw_resource(surface, rect, ("resource", "iron_deposit"))
+    assert surface.get_at(rect.center)[:3] == (24, 24, 24)
+
+    renderer._draw_resource(surface, rect, ("resource", "stone_outcrop"))
+    assert surface.get_at(rect.center)[:3] == (154, 154, 148)
+
+
 def test_selected_panel_for_enemy_unit_shows_stats_without_commands() -> None:
     world = create_demo_world()
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
