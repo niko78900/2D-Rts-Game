@@ -29,13 +29,24 @@ GATHER_SWINGS_PER_LOAD = 5
 GATHER_DAMAGE_PER_SWING = 1
 GATHER_SWING_MS = 650
 RESOURCE_DESTRUCTION_MS = 1500
-RESPAWN_MIN_MS = 60_000
-RESPAWN_MAX_MS = 180_000
-MAX_ACTIVE_RESOURCE_NODES = 15
+TREE_RESPAWN_DELAY_SECONDS = 60
+STONE_RESPAWN_DELAY_SECONDS = 60
+ORE_RESPAWN_DELAY_SECONDS = 60
+GOLD_RESPAWN_DELAY_SECONDS = 60
+TREE_RESPAWN_DELAY_MS = TREE_RESPAWN_DELAY_SECONDS * 1000
+STONE_RESPAWN_DELAY_MS = STONE_RESPAWN_DELAY_SECONDS * 1000
+ORE_RESPAWN_DELAY_MS = ORE_RESPAWN_DELAY_SECONDS * 1000
+GOLD_RESPAWN_DELAY_MS = GOLD_RESPAWN_DELAY_SECONDS * 1000
+MINE_RESPAWN_DELAY_MS = STONE_RESPAWN_DELAY_MS
+RESPAWN_RETRY_MS = 5000
+RESPAWN_AVOID_RADIUS = 140.0
+MAX_ACTIVE_TREES = 40
 MAX_ACTIVE_STONE_NODES = 5
 MAX_ACTIVE_IRON_NODES = 5
 MAX_ACTIVE_GOLD_NODES = 5
 AUTO_DISTRIBUTION_LOAD_PENALTY = 260.0
+MINE_RESOURCE_TYPES = ("stone", "iron", "gold")
+RESPAWNABLE_RESOURCE_TYPES = ("wood", "stone", "iron", "gold")
 
 GATHER_STATE_MOVING_TO_RESOURCE = "moving_to_resource"
 GATHER_STATE_GATHERING = "gathering"
@@ -97,6 +108,7 @@ class ResourceWallet:
 class ResourceRespawn:
     resource_type: str
     due_ms: int
+    destroyed_position: WorldPosition
 
 
 @dataclass(slots=True)
@@ -104,9 +116,12 @@ class EconomySystem:
     gather_interaction_range: float = 76.0
     deposit_interaction_range: float = 140.0
     gather_swing_ms: int = GATHER_SWING_MS
-    respawn_min_ms: int = RESPAWN_MIN_MS
-    respawn_max_ms: int = RESPAWN_MAX_MS
-    max_total_nodes: int = MAX_ACTIVE_RESOURCE_NODES
+    tree_respawn_delay_ms: int = TREE_RESPAWN_DELAY_MS
+    stone_respawn_delay_ms: int = STONE_RESPAWN_DELAY_MS
+    ore_respawn_delay_ms: int = ORE_RESPAWN_DELAY_MS
+    gold_respawn_delay_ms: int = GOLD_RESPAWN_DELAY_MS
+    respawn_retry_ms: int = RESPAWN_RETRY_MS
+    max_active_trees: int = MAX_ACTIVE_TREES
     max_nodes_by_type: dict[str, int] = field(
         default_factory=lambda: {
             "stone": MAX_ACTIVE_STONE_NODES,
@@ -114,7 +129,6 @@ class EconomySystem:
             "gold": MAX_ACTIVE_GOLD_NODES,
         }
     )
-    include_wood_in_total_cap: bool = True
     respawns: list[ResourceRespawn] = field(default_factory=list)
 
     def update(self, world: WorldState, dt_ms: int) -> None:
@@ -158,6 +172,10 @@ class EconomySystem:
 
         resource = _current_or_replacement_resource(world, command, resource_type, worker)
         if resource is None:
+            if self._should_wait_for_resource_respawn(world, command, resource_type):
+                command.payload["phase"] = GATHER_STATE_IDLE
+                _set_state(worker, GATHER_STATE_IDLE)
+                return
             _clear_gather_job(worker, queue)
             return
         command.payload["current_resource_id"] = resource.id.to_json()
@@ -207,6 +225,10 @@ class EconomySystem:
                 if replacement is None:
                     command.payload["successful_swings"] = swings
                     command.payload["swing_elapsed_ms"] = elapsed
+                    if self._should_wait_for_resource_respawn(world, command, resource_type):
+                        command.payload["phase"] = GATHER_STATE_IDLE
+                        _set_state(worker, GATHER_STATE_IDLE)
+                        return
                     _clear_gather_job(worker, queue)
                     return
                 resource = replacement
@@ -277,6 +299,10 @@ class EconomySystem:
 
         resource = _current_or_replacement_resource(world, command, resource_type, worker)
         if resource is None:
+            if self._should_wait_for_resource_respawn(world, command, resource_type):
+                command.payload["phase"] = GATHER_STATE_IDLE
+                _set_state(worker, GATHER_STATE_IDLE)
+                return
             _clear_gather_job(worker, queue)
             return
         command.payload["current_resource_id"] = resource.id.to_json()
@@ -299,13 +325,26 @@ class EconomySystem:
                 continue
             resource_type = resource.resource_type
             respawn_enabled = resource.respawn_enabled
+            destroyed_position = resource.position
             world.remove_entity(resource.id)
             if respawn_enabled:
-                self._schedule_respawn(world, resource_type)
+                self._schedule_respawn(world, resource_type, destroyed_position)
 
-    def _schedule_respawn(self, world: WorldState, resource_type: str) -> None:
-        delay = world.rng.randint(self.respawn_min_ms, self.respawn_max_ms)
-        self.respawns.append(ResourceRespawn(resource_type, world.elapsed_ms + delay))
+    def _schedule_respawn(
+        self,
+        world: WorldState,
+        resource_type: str,
+        destroyed_position: WorldPosition,
+    ) -> None:
+        if resource_type not in RESPAWNABLE_RESOURCE_TYPES:
+            return
+        self.respawns.append(
+            ResourceRespawn(
+                resource_type,
+                world.elapsed_ms + self._respawn_delay_for(resource_type),
+                destroyed_position,
+            )
+        )
 
     def _update_respawns(self, world: WorldState) -> None:
         pending: list[ResourceRespawn] = []
@@ -313,32 +352,74 @@ class EconomySystem:
             if respawn.due_ms > world.elapsed_ms:
                 pending.append(respawn)
                 continue
-            if not self._can_spawn_resource(world, respawn.resource_type):
-                respawn.due_ms = world.elapsed_ms + 5000
-                pending.append(respawn)
+            if respawn.resource_type not in RESPAWNABLE_RESOURCE_TYPES:
                 continue
-            if not self._spawn_resource(world, respawn.resource_type):
-                respawn.due_ms = world.elapsed_ms + 5000
+            if self._active_resource_count(world, respawn.resource_type) >= self._cap_for(
+                respawn.resource_type
+            ):
+                if respawn.resource_type == "wood":
+                    respawn.due_ms = world.elapsed_ms + self.respawn_retry_ms
+                    pending.append(respawn)
+                continue
+            if not self._spawn_resource(
+                world,
+                respawn.resource_type,
+                avoid_position=respawn.destroyed_position,
+            ):
+                respawn.due_ms = world.elapsed_ms + self.respawn_retry_ms
                 pending.append(respawn)
         self.respawns = pending
 
-    def _can_spawn_resource(self, world: WorldState, resource_type: str) -> bool:
-        if (
-            (self.include_wood_in_total_cap or resource_type != "wood")
-            and len(active_resource_nodes(world)) >= self.max_total_nodes
-        ):
-            return False
-        cap = self.max_nodes_by_type.get(resource_type)
-        return not (
-            cap is not None
-            and len(active_resource_nodes(world, resource_type)) >= cap
-        )
+    def _active_resource_count(self, world: WorldState, resource_type: str) -> int:
+        return len(active_resource_nodes(world, resource_type))
 
-    def _spawn_resource(self, world: WorldState, resource_type: str) -> bool:
+    def _cap_for(self, resource_type: str) -> int:
+        if resource_type == "wood":
+            return self.max_active_trees
+        return self.max_nodes_by_type.get(resource_type, 0)
+
+    def _respawn_delay_for(self, resource_type: str) -> int:
+        if resource_type == "wood":
+            return self.tree_respawn_delay_ms
+        if resource_type == "stone":
+            return self.stone_respawn_delay_ms
+        if resource_type == "iron":
+            return self.ore_respawn_delay_ms
+        if resource_type == "gold":
+            return self.gold_respawn_delay_ms
+        return 0
+
+    def _should_wait_for_resource_respawn(
+        self,
+        world: WorldState,
+        command: Command,
+        resource_type: str,
+    ) -> bool:
+        if resource_type != "wood":
+            return False
+        current = _resource_target(world, _payload_entity_id(command, "current_resource_id"))
+        target = _resource_target(world, command.target_entity_id)
+        for resource in (current, target):
+            if (
+                resource is not None
+                and resource.resource_type == "wood"
+                and resource.state == "destroying"
+            ):
+                return True
+        return any(respawn.resource_type == "wood" for respawn in self.respawns)
+
+    def _spawn_resource(
+        self,
+        world: WorldState,
+        resource_type: str,
+        *,
+        avoid_position: WorldPosition | None = None,
+    ) -> bool:
         spec = RESOURCE_NODE_SPECS.get(resource_type)
         if spec is None:
             return False
-        for _ in range(80):
+        fallback_position: WorldPosition | None = None
+        for _ in range(120):
             x = world.rng.uniform(320, max(321, world.settings.world_width - 320))
             y = world.rng.uniform(
                 _walkable_top(world) + 36,
@@ -347,25 +428,43 @@ class EconomySystem:
             position = WorldPosition(x, y)
             if not _resource_spawn_position_valid(world, position, spec):
                 continue
-            hp = resource_hp_for_type(resource_type)
-            node = ResourceNode(
-                id=world.allocate_entity_id(),
-                owner="neutral",
-                position=position,
-                footprint=spec["footprint"],
-                hp=hp,
-                max_hp=hp,
-                tags=spec["tags"],
-                resource_type=resource_type,
-                amount_remaining=hp,
-                max_amount_remaining=hp,
-                gather_time_ms=int(spec["gather_time_ms"]),
-                depleted_replacement=str(spec["depleted_replacement"]),
-                blocking_footprint=spec["blocking_footprint"],
-            )
-            world.add_entity(node)
+            if (
+                avoid_position is not None
+                and _distance(position, avoid_position) <= RESPAWN_AVOID_RADIUS
+            ):
+                fallback_position = fallback_position or position
+                continue
+            self._add_resource_node(world, resource_type, position, spec)
+            return True
+        if fallback_position is not None:
+            self._add_resource_node(world, resource_type, fallback_position, spec)
             return True
         return False
+
+    def _add_resource_node(
+        self,
+        world: WorldState,
+        resource_type: str,
+        position: WorldPosition,
+        spec: dict[str, Any],
+    ) -> None:
+        hp = resource_hp_for_type(resource_type)
+        node = ResourceNode(
+            id=world.allocate_entity_id(),
+            owner="neutral",
+            position=position,
+            footprint=spec["footprint"],
+            hp=hp,
+            max_hp=hp,
+            tags=spec["tags"],
+            resource_type=resource_type,
+            amount_remaining=hp,
+            max_amount_remaining=hp,
+            gather_time_ms=int(spec["gather_time_ms"]),
+            depleted_replacement=str(spec["depleted_replacement"]),
+            blocking_footprint=spec["blocking_footprint"],
+        )
+        world.add_entity(node)
 
 
 def completed_deposit_huts(world: WorldState, owner: str = "frontier") -> list[Building]:

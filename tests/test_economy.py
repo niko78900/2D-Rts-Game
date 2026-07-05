@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+from math import hypot
+
 from house_of_wolves.core.contracts import Footprint, WorldPosition
+from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.resource_node import ResourceNode, resource_hp_for_type
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.economy import (
     GATHER_CARRY_AMOUNT,
     GATHER_SWING_MS,
     GATHER_SWINGS_PER_LOAD,
+    MAX_ACTIVE_TREES,
+    MINE_RESPAWN_DELAY_MS,
+    RESPAWN_AVOID_RADIUS,
+    RESPAWN_RETRY_MS,
+    TREE_RESPAWN_DELAY_MS,
     EconomySystem,
+    ResourceRespawn,
+    active_resource_nodes,
     assign_auto_gather_targets,
     hut_deposit_position,
     resource_interaction_position,
@@ -143,22 +153,165 @@ def test_auto_gather_redistributes_settlers_across_safe_nodes() -> None:
     assert len({resource.id for resource in assignments.values()}) == 2
 
 
-def test_destroyed_resource_node_is_removed_and_respawned_later() -> None:
+def test_destroyed_tree_respawns_after_exact_delay() -> None:
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    destroyed_position = tree.position
     tree.hp = 0
     tree.amount_remaining = 0
     tree.state = "destroying"
     tree.destruction_remaining_ms = 1
-    system = EconomySystem(respawn_min_ms=0, respawn_max_ms=0)
+    system = EconomySystem()
 
     system.update(world, 1)
 
     assert tree.id not in world.entities
-    assert any(
-        isinstance(entity, ResourceNode) and entity.resource_type == "wood"
-        for entity in world.entities.values()
+    assert active_resource_nodes(world, "wood") == []
+    assert len(system.respawns) == 1
+    assert system.respawns[0].resource_type == "wood"
+    assert system.respawns[0].due_ms == TREE_RESPAWN_DELAY_MS
+
+    world.elapsed_ms = TREE_RESPAWN_DELAY_MS
+    system.update(world, 16)
+
+    spawned = active_resource_nodes(world, "wood")
+    assert len(spawned) == 1
+    assert spawned[0].hp == 150
+    assert spawned[0].amount_remaining == 150
+    assert _distance(spawned[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
+    assert system.respawns == []
+
+
+def test_tree_respawn_retries_when_active_tree_cap_is_full() -> None:
+    world = create_demo_world()
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    for index in range(MAX_ACTIVE_TREES - 1):
+        _add_extra_resource_node(
+            world,
+            "wood",
+            WorldPosition(1700 + (index * 70), tree.position.y),
+        )
+    system = EconomySystem()
+    system.respawns.append(ResourceRespawn("wood", world.elapsed_ms, tree.position))
+
+    system.update(world, 16)
+
+    assert len(active_resource_nodes(world, "wood")) == MAX_ACTIVE_TREES
+    assert len(system.respawns) == 1
+    assert system.respawns[0].due_ms == world.elapsed_ms + RESPAWN_RETRY_MS
+
+
+def test_wood_gatherer_waits_for_new_tree_when_none_are_active() -> None:
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    interaction_point = resource_interaction_position(world, tree, settler.id)
+    world.update_entity_position(settler.id, interaction_point)
+    tree.hp = 0
+    tree.amount_remaining = 0
+    tree.state = "destroying"
+    tree.destruction_remaining_ms = 1
+    system = EconomySystem()
+    world.enqueue_command(
+        settler.id,
+        make_command(
+            "gather",
+            [settler.id],
+            target_entity_id=tree.id,
+            target_pos=interaction_point,
+            resource_type="wood",
+            current_resource_id=tree.id.to_json(),
+        ),
     )
+
+    system.update(world, 1)
+
+    command = world.command_queues[settler.id].peek()
+    assert command is not None
+    assert command.type == "gather"
+    assert settler.state == "idle"
+
+    world.elapsed_ms = TREE_RESPAWN_DELAY_MS
+    system.update(world, 16)
+
+    commands = world.command_queues[settler.id].commands
+    assert [command.type for command in commands[:2]] == ["move", "gather"]
+    assert commands[1].payload["current_resource_id"] != tree.id.to_json()
+
+
+def test_destroyed_mine_resource_respawns_after_exact_delay() -> None:
+    world = create_demo_world()
+    gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    destroyed_position = gold.position
+    gold.hp = 0
+    gold.amount_remaining = 0
+    gold.state = "destroying"
+    gold.destruction_remaining_ms = 1
+    system = EconomySystem()
+
+    system.update(world, 1)
+
+    assert gold.id not in world.entities
+    assert active_resource_nodes(world, "gold") == []
+    assert len(system.respawns) == 1
+    assert system.respawns[0].resource_type == "gold"
+    assert system.respawns[0].due_ms == MINE_RESPAWN_DELAY_MS
+
+    world.elapsed_ms = MINE_RESPAWN_DELAY_MS - 1
+    system.update(world, 16)
+    assert active_resource_nodes(world, "gold") == []
+
+    world.elapsed_ms = MINE_RESPAWN_DELAY_MS
+    system.update(world, 16)
+
+    spawned = active_resource_nodes(world, "gold")
+    assert len(spawned) == 1
+    assert spawned[0].hp == 500
+    assert spawned[0].amount_remaining == 500
+    assert _distance(spawned[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
+    assert system.respawns == []
+
+
+def test_mine_respawn_skips_when_resource_type_is_at_cap() -> None:
+    world = create_demo_world()
+    gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    for index in range(4):
+        _add_extra_resource_node(
+            world,
+            "gold",
+            WorldPosition(1700 + (index * 140), gold.position.y),
+        )
+    system = EconomySystem()
+    system.respawns.append(ResourceRespawn("gold", world.elapsed_ms, gold.position))
+
+    system.update(world, 16)
+
+    assert len(active_resource_nodes(world, "gold")) == 5
+    assert system.respawns == []
+
+
+def test_mine_respawn_retries_when_no_valid_spawn_location_exists() -> None:
+    world = create_demo_world()
+    gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    world.add_entity(
+        Building(
+            id=world.allocate_entity_id(),
+            owner="frontier",
+            position=WorldPosition(world.settings.world_width / 2, world.settings.world_height),
+            footprint=Footprint(world.settings.world_width * 2, world.settings.world_height * 2),
+            hp=1,
+            max_hp=1,
+            tags=("building", "blocker"),
+        )
+    )
+    system = EconomySystem()
+    system.respawns.append(ResourceRespawn("gold", world.elapsed_ms, gold.position))
+
+    system.update(world, 16)
+
+    assert len(active_resource_nodes(world, "gold")) == 1
+    assert len(system.respawns) == 1
+    assert system.respawns[0].due_ms == world.elapsed_ms + RESPAWN_RETRY_MS
 
 
 def _add_settler_like(world, position: WorldPosition):
@@ -185,6 +338,12 @@ def _add_extra_resource_node(
     resource_type: str,
     position: WorldPosition,
 ) -> ResourceNode:
+    tags_by_type = {
+        "wood": ("resource", "wood_tree", "selectable"),
+        "stone": ("resource", "stone_outcrop", "selectable"),
+        "iron": ("resource", "iron_deposit", "selectable"),
+        "gold": ("resource", "gold_mine", "selectable"),
+    }
     hp = resource_hp_for_type(resource_type)
     node = ResourceNode(
         id=world.allocate_entity_id(),
@@ -193,7 +352,7 @@ def _add_extra_resource_node(
         footprint=Footprint(82, 126),
         hp=hp,
         max_hp=hp,
-        tags=("resource", "wood_tree", "selectable"),
+        tags=tags_by_type[resource_type],
         resource_type=resource_type,
         amount_remaining=hp,
         max_amount_remaining=hp,
@@ -202,3 +361,7 @@ def _add_extra_resource_node(
     )
     world.add_entity(node)
     return node
+
+
+def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    return hypot(first.x - second.x, first.y - second.y)
