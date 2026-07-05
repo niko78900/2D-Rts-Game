@@ -4,14 +4,19 @@ from math import hypot
 
 from house_of_wolves.core.contracts import Footprint, WorldPosition
 from house_of_wolves.entities.building import Building
-from house_of_wolves.entities.resource_node import ResourceNode, resource_hp_for_type
+from house_of_wolves.entities.resource_node import (
+    GOLD_RESOURCE_HP,
+    WOOD_RESOURCE_HP,
+    ResourceNode,
+    resource_hp_for_type,
+)
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.economy import (
     GATHER_CARRY_AMOUNT,
     GATHER_SWING_MS,
     GATHER_SWINGS_PER_LOAD,
+    GOLD_RESPAWN_DELAY_MS,
     MAX_ACTIVE_TREES,
-    MINE_RESPAWN_DELAY_MS,
     RESPAWN_AVOID_RADIUS,
     RESPAWN_RETRY_MS,
     TREE_RESPAWN_DELAY_MS,
@@ -19,6 +24,7 @@ from house_of_wolves.systems.economy import (
     ResourceRespawn,
     active_resource_nodes,
     assign_auto_gather_targets,
+    completed_deposit_huts,
     hut_deposit_position,
     resource_interaction_position,
 )
@@ -119,6 +125,40 @@ def test_gather_command_requires_completed_deposit_hut() -> None:
     ]
 
 
+def test_completed_player_huts_are_the_only_deposit_hubs() -> None:
+    world = create_demo_world()
+    completed_hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    incomplete_hut = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(completed_hut.position.x + 260, completed_hut.position.y),
+        footprint=completed_hut.footprint,
+        hp=65,
+        max_hp=650,
+        tags=("building", "hut", "selectable"),
+        complete=False,
+        functions=Building.production_functions(dropoff=True),
+        dropoff_point=completed_hut.dropoff_point,
+    )
+    enemy_hut = Building(
+        id=world.allocate_entity_id(),
+        owner="wolves",
+        position=WorldPosition(completed_hut.position.x + 520, completed_hut.position.y),
+        footprint=completed_hut.footprint,
+        hp=650,
+        max_hp=650,
+        tags=("building", "hut", "selectable"),
+        complete=True,
+        functions=Building.production_functions(dropoff=True),
+        dropoff_point=completed_hut.dropoff_point,
+    )
+    world.add_entity(incomplete_hut)
+    world.add_entity(enemy_hut)
+
+    assert completed_deposit_huts(world, "frontier") == [completed_hut]
+    assert completed_deposit_huts(world, "wolves") == [enemy_hut]
+
+
 def test_auto_gather_avoids_unsafe_resource_nodes() -> None:
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
@@ -176,8 +216,8 @@ def test_destroyed_tree_respawns_after_exact_delay() -> None:
 
     spawned = active_resource_nodes(world, "wood")
     assert len(spawned) == 1
-    assert spawned[0].hp == 150
-    assert spawned[0].amount_remaining == 150
+    assert spawned[0].hp == WOOD_RESOURCE_HP
+    assert spawned[0].amount_remaining == WOOD_RESOURCE_HP
     assert _distance(spawned[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
     assert system.respawns == []
 
@@ -255,19 +295,19 @@ def test_destroyed_mine_resource_respawns_after_exact_delay() -> None:
     assert active_resource_nodes(world, "gold") == []
     assert len(system.respawns) == 1
     assert system.respawns[0].resource_type == "gold"
-    assert system.respawns[0].due_ms == MINE_RESPAWN_DELAY_MS
+    assert system.respawns[0].due_ms == GOLD_RESPAWN_DELAY_MS
 
-    world.elapsed_ms = MINE_RESPAWN_DELAY_MS - 1
+    world.elapsed_ms = GOLD_RESPAWN_DELAY_MS - 1
     system.update(world, 16)
     assert active_resource_nodes(world, "gold") == []
 
-    world.elapsed_ms = MINE_RESPAWN_DELAY_MS
+    world.elapsed_ms = GOLD_RESPAWN_DELAY_MS
     system.update(world, 16)
 
     spawned = active_resource_nodes(world, "gold")
     assert len(spawned) == 1
-    assert spawned[0].hp == 500
-    assert spawned[0].amount_remaining == 500
+    assert spawned[0].hp == GOLD_RESOURCE_HP
+    assert spawned[0].amount_remaining == GOLD_RESOURCE_HP
     assert _distance(spawned[0].position, destroyed_position) > RESPAWN_AVOID_RADIUS
     assert system.respawns == []
 

@@ -12,6 +12,7 @@ from house_of_wolves.core.keybindings import KEYBIND_BUILD, KEYBIND_GATHER_GOLD
 from house_of_wolves.core.runtime import GameRuntime, _desktop_size_for_display
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.combat_unit import CombatUnit
+from house_of_wolves.systems.commands import make_command
 from house_of_wolves.ui.selected_panel import selected_panel_for
 from house_of_wolves.world.terrain import (
     clamp_unit_position_to_walkable_lane_for_height,
@@ -646,6 +647,44 @@ def test_runtime_right_click_resource_orders_selected_settlers_to_gather() -> No
         assert commands[1].payload["resource_type"] == "gold"
         assert commands[1].payload["manual"] is True
     finally:
+        runtime.shutdown()
+
+
+def test_runtime_shift_right_click_resource_appends_gather_after_existing_move() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        mine = next(
+            entity for entity in runtime.world.entities.values() if "gold_mine" in entity.tags
+        )
+        runtime.selection_system.state.replace([settler.id])
+        runtime.world.enqueue_command(
+            settler.id,
+            make_command(
+                "move",
+                [settler.id],
+                target_pos=WorldPosition(settler.position.x + 120, settler.position.y),
+            ),
+        )
+        left, top, width, height = mine.bounds
+        screen_pos = runtime.world.camera.world_to_screen(
+            WorldPosition(left + (width / 2), top + (height / 2))
+        )
+
+        pygame.key.set_mods(pygame.KMOD_SHIFT)
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3, "pos": screen_pos})
+        )
+        pygame.key.set_mods(0)
+
+        commands = runtime.world.command_queues[settler.id].commands
+        assert [command.type for command in commands[:3]] == ["move", "move", "gather"]
+        assert commands[2].target_entity_id == mine.id
+        assert commands[2].payload["manual"] is True
+    finally:
+        pygame.key.set_mods(0)
         runtime.shutdown()
 
 

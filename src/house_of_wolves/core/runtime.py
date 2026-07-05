@@ -40,7 +40,7 @@ from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.systems.movement import MovementSystem
 from house_of_wolves.systems.production import ProductionError, produce_unit
 from house_of_wolves.systems.selection import SelectionSystem
-from house_of_wolves.world.collision import blocking_bounds_for_entity, nearest_free_position
+from house_of_wolves.world.collision import nearest_free_position
 from house_of_wolves.world.demo import create_demo_world
 from house_of_wolves.world.terrain import (
     clamp_unit_position_to_walkable_lane_for_height,
@@ -347,14 +347,6 @@ class GameRuntime:
         attack_move = self.active_command_ability == "Attack Move"
         if self.active_command_ability == "Attack":
             self._issue_attack(screen_pos, queued=_shift_pressed())
-            self.active_command_ability = None
-            return True
-        if self.active_command_ability in GATHER_RESOURCE_TYPES:
-            self._issue_gather(
-                screen_pos,
-                GATHER_RESOURCE_TYPES[self.active_command_ability],
-                queued=_shift_pressed(),
-            )
             self.active_command_ability = None
             return True
         self._issue_move(screen_pos, queued=_shift_pressed(), attack_move=attack_move)
@@ -671,26 +663,6 @@ class GameRuntime:
                 make_command("attack", [entity_id], target_entity_id=target_id, queued=queued),
             )
 
-    def _issue_gather(
-        self,
-        screen_pos: tuple[int, int],
-        resource_type: str,
-        *,
-        queued: bool,
-    ) -> None:
-        target_id = self.selection_system.pick_at(
-            self.world,
-            self.world.camera.screen_to_world(*screen_pos),
-        )
-        if target_id is None:
-            return
-        target = self.world.entities.get(target_id)
-        if not isinstance(target, ResourceNode):
-            return
-        if not _resource_matches(target, resource_type):
-            return
-        self._order_selected_gatherers_to_resource(target, queued=queued)
-
     def _issue_auto_gather(self, resource_type: str) -> None:
         gatherer_ids = self._selected_builder_ids()
         if not gatherer_ids:
@@ -967,43 +939,6 @@ class GameRuntime:
             ignore_id=builder_id,
         )
 
-    def _resource_interaction_point(
-        self,
-        resource: ResourceNode,
-        gatherer_id: EntityId,
-        *,
-        index: int,
-        total: int,
-    ) -> WorldPosition:
-        left, top, width, height = blocking_bounds_for_entity(resource)
-        right = left + width
-        bottom = top + height
-        center_x = left + (width / 2)
-        center_y = top + (height / 2)
-        columns = max(1, min(5, total))
-        row = index // columns
-        column = index % columns
-        row_count = columns if row < (total // columns) else total - (row * columns)
-        row_count = max(1, row_count)
-        offset = (column - ((row_count - 1) / 2)) * 28
-        row_offset = row * 24
-        candidates = (
-            WorldPosition(center_x + offset, bottom + 30 + row_offset),
-            WorldPosition(center_x + offset, top - 18 - row_offset),
-            WorldPosition(left - 28 - row_offset, center_y + offset),
-            WorldPosition(right + 28 + row_offset, center_y + offset),
-        )
-        gatherer = self.world.entities.get(gatherer_id)
-        origin = gatherer.position if gatherer is not None else resource.position
-        ordered_candidates = sorted(candidates, key=lambda candidate: _distance(origin, candidate))
-        for candidate in ordered_candidates:
-            clamped = clamp_unit_position_to_walkable_lane_for_height(
-                candidate,
-                self.world.settings.world_height,
-            )
-            return nearest_free_position(self.world, clamped, ignore_id=gatherer_id)
-        return nearest_free_position(self.world, resource.position, ignore_id=gatherer_id)
-
     def _cancel_active_mode(self) -> bool:
         if (
             self.active_command_ability is None
@@ -1087,14 +1022,7 @@ def _bounds_intersect(
     )
 
 
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    return hypot(first.x - second.x, first.y - second.y)
-
-
 def _needs_repair(building: Building) -> bool:
     max_hp = int(getattr(building, "max_hp", 0) or getattr(building, "hp", 0))
     return max_hp > 0 and building.hp < max_hp
 
-
-def _resource_matches(resource: ResourceNode, resource_type: str) -> bool:
-    return resource.resource_type == resource_type and resource.amount_remaining > 0

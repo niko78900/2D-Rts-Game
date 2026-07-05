@@ -8,12 +8,14 @@ from house_of_wolves.core.contracts import Footprint
 from house_of_wolves.entities.base import Entity
 
 WOOD_RESOURCE_HP = 150
-MINERAL_RESOURCE_HP = 500
+STONE_RESOURCE_HP = 500
+ORE_RESOURCE_HP = 500
+GOLD_RESOURCE_HP = 500
 RESOURCE_NODE_HP_BY_TYPE = {
     "wood": WOOD_RESOURCE_HP,
-    "stone": MINERAL_RESOURCE_HP,
-    "iron": MINERAL_RESOURCE_HP,
-    "gold": MINERAL_RESOURCE_HP,
+    "stone": STONE_RESOURCE_HP,
+    "iron": ORE_RESOURCE_HP,
+    "gold": GOLD_RESOURCE_HP,
 }
 
 
@@ -37,4 +39,4 @@ class ResourceNode(Entity):
 
 
 def resource_hp_for_type(resource_type: str) -> int:
-    return RESOURCE_NODE_HP_BY_TYPE.get(resource_type, MINERAL_RESOURCE_HP)
+    return RESOURCE_NODE_HP_BY_TYPE.get(resource_type, STONE_RESOURCE_HP)

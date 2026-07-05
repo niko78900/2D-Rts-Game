@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from math import hypot
-from typing import Any
 
 from house_of_wolves.core.contracts import Command, CommandQueue, EntityId, Footprint, WorldPosition
 from house_of_wolves.entities.building import Building
@@ -37,7 +36,6 @@ TREE_RESPAWN_DELAY_MS = TREE_RESPAWN_DELAY_SECONDS * 1000
 STONE_RESPAWN_DELAY_MS = STONE_RESPAWN_DELAY_SECONDS * 1000
 ORE_RESPAWN_DELAY_MS = ORE_RESPAWN_DELAY_SECONDS * 1000
 GOLD_RESPAWN_DELAY_MS = GOLD_RESPAWN_DELAY_SECONDS * 1000
-MINE_RESPAWN_DELAY_MS = STONE_RESPAWN_DELAY_MS
 RESPAWN_RETRY_MS = 5000
 RESPAWN_AVOID_RADIUS = 140.0
 MAX_ACTIVE_TREES = 40
@@ -57,35 +55,45 @@ GATHER_STATE_RETURNING_TO_RESOURCE = "returning_to_resource"
 GATHER_STATE_IDLE = "idle"
 GATHER_STATE_DEFENDING = "defending"
 
+
+@dataclass(frozen=True, slots=True)
+class ResourceNodeSpec:
+    tags: tuple[str, ...]
+    footprint: Footprint
+    blocking_footprint: Footprint
+    gather_time_ms: int
+    depleted_replacement: str
+
+
 RESOURCE_NODE_SPECS = {
-    "wood": {
-        "tags": ("resource", "wood_tree", "selectable"),
-        "footprint": Footprint(82, 126),
-        "blocking_footprint": Footprint(42, 92),
-        "gather_time_ms": 900,
-        "depleted_replacement": "tree_stump",
-    },
-    "stone": {
-        "tags": ("resource", "stone_outcrop", "selectable"),
-        "footprint": Footprint(118, 74),
-        "blocking_footprint": Footprint(104, 54),
-        "gather_time_ms": 1200,
-        "depleted_replacement": "stone_rubble",
-    },
-    "iron": {
-        "tags": ("resource", "iron_deposit", "selectable"),
-        "footprint": Footprint(118, 74),
-        "blocking_footprint": Footprint(104, 54),
-        "gather_time_ms": 1200,
-        "depleted_replacement": "empty_iron_deposit",
-    },
-    "gold": {
-        "tags": ("resource", "gold_mine", "selectable"),
-        "footprint": Footprint(132, 86),
-        "blocking_footprint": Footprint(124, 64),
-        "gather_time_ms": 1200,
-        "depleted_replacement": "gold_mine_empty",
-    },
+    "wood": ResourceNodeSpec(
+        tags=("resource", "wood_tree", "selectable"),
+        footprint=Footprint(82, 126),
+        blocking_footprint=Footprint(42, 92),
+        gather_time_ms=900,
+        depleted_replacement="tree_stump",
+    ),
+    "stone": ResourceNodeSpec(
+        tags=("resource", "stone_outcrop", "selectable"),
+        footprint=Footprint(118, 74),
+        blocking_footprint=Footprint(104, 54),
+        gather_time_ms=1200,
+        depleted_replacement="stone_rubble",
+    ),
+    "iron": ResourceNodeSpec(
+        tags=("resource", "iron_deposit", "selectable"),
+        footprint=Footprint(118, 74),
+        blocking_footprint=Footprint(104, 54),
+        gather_time_ms=1200,
+        depleted_replacement="empty_iron_deposit",
+    ),
+    "gold": ResourceNodeSpec(
+        tags=("resource", "gold_mine", "selectable"),
+        footprint=Footprint(132, 86),
+        blocking_footprint=Footprint(124, 64),
+        gather_time_ms=1200,
+        depleted_replacement="gold_mine_empty",
+    ),
 }
 
 
@@ -357,6 +365,7 @@ class EconomySystem:
             if self._active_resource_count(world, respawn.resource_type) >= self._cap_for(
                 respawn.resource_type
             ):
+                # Trees are a renewable background pool; mines are strict capped rewards.
                 if respawn.resource_type == "wood":
                     respawn.due_ms = world.elapsed_ms + self.respawn_retry_ms
                     pending.append(respawn)
@@ -446,23 +455,23 @@ class EconomySystem:
         world: WorldState,
         resource_type: str,
         position: WorldPosition,
-        spec: dict[str, Any],
+        spec: ResourceNodeSpec,
     ) -> None:
         hp = resource_hp_for_type(resource_type)
         node = ResourceNode(
             id=world.allocate_entity_id(),
             owner="neutral",
             position=position,
-            footprint=spec["footprint"],
+            footprint=spec.footprint,
             hp=hp,
             max_hp=hp,
-            tags=spec["tags"],
+            tags=spec.tags,
             resource_type=resource_type,
             amount_remaining=hp,
             max_amount_remaining=hp,
-            gather_time_ms=int(spec["gather_time_ms"]),
-            depleted_replacement=str(spec["depleted_replacement"]),
-            blocking_footprint=spec["blocking_footprint"],
+            gather_time_ms=spec.gather_time_ms,
+            depleted_replacement=spec.depleted_replacement,
+            blocking_footprint=spec.blocking_footprint,
         )
         world.add_entity(node)
 
@@ -822,10 +831,9 @@ def _walkable_bottom(world: WorldState) -> float:
 def _resource_spawn_position_valid(
     world: WorldState,
     position: WorldPosition,
-    spec: dict[str, Any],
+    spec: ResourceNodeSpec,
 ) -> bool:
-    blocking_footprint = spec["blocking_footprint"]
-    bounds = blocking_footprint.bounds_at(position)
+    bounds = spec.blocking_footprint.bounds_at(position)
     if position_blocked_by_hard_obstacle(world, position):
         return False
     if occupied_by_unit(world, position, min_distance=70):
