@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import pytest
 
+from house_of_wolves.core.contracts import WorldPosition
+from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.unit import Unit
 from house_of_wolves.systems.production import (
+    PRODUCTION_BUILDING_SPECS,
     ProductionError,
     available_spawn_position_for,
     produce_unit,
     spawn_position_for,
+    unit_cost,
 )
 from house_of_wolves.world.collision import UNIT_COLLISION_RADIUS, nearest_unit_distance
 from house_of_wolves.world.demo import create_demo_world
@@ -47,6 +51,60 @@ def test_produce_unit_rejects_units_not_trained_by_building() -> None:
 
     with pytest.raises(ProductionError):
         produce_unit(world, hut.id, "archer")
+
+
+def test_barracks_trains_cheaper_spearmen_than_hut() -> None:
+    """Verify that Barracks train Spearmen with their cheaper first-pass cost."""
+    world = create_demo_world()
+    spec = PRODUCTION_BUILDING_SPECS["barracks"]
+    barracks = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(820, 300),
+        footprint=spec.footprint,
+        hp=spec.hp,
+        max_hp=spec.hp,
+        tags=("building", "barracks", "selectable"),
+        complete=True,
+        functions=Building.production_functions(trainable_units=spec.trainable_units),
+    )
+    world.add_entity(barracks)
+    world.resources.update({"wood": 1000, "food": 1000, "stone": 1000, "iron": 1000})
+    starting_wood = world.resources["wood"]
+    starting_food = world.resources["food"]
+
+    unit = produce_unit(world, barracks.id, "spearman")
+
+    assert "spearman" in unit.tags
+    assert unit_cost("spearman", barracks) == {"wood": 30, "food": 15}
+    assert unit_cost("spearman") != unit_cost("spearman", barracks)
+    assert world.resources["wood"] == starting_wood - 30
+    assert world.resources["food"] == starting_food - 15
+
+
+def test_archery_trains_archers() -> None:
+    """Verify that Archery buildings train player Archers."""
+    world = create_demo_world()
+    spec = PRODUCTION_BUILDING_SPECS["archery"]
+    archery = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(920, 300),
+        footprint=spec.footprint,
+        hp=spec.hp,
+        max_hp=spec.hp,
+        tags=("building", "archery", "selectable"),
+        complete=True,
+        functions=Building.production_functions(trainable_units=spec.trainable_units),
+    )
+    world.add_entity(archery)
+    world.resources.update({"wood": 1000, "food": 1000, "stone": 1000, "iron": 1000})
+
+    unit = produce_unit(world, archery.id, "archer")
+
+    assert "archer" in unit.tags
+    assert unit.hp == 25
+    assert unit.attack_range == 210
 
 
 def test_produce_unit_rejects_when_population_cap_is_full() -> None:

@@ -43,15 +43,15 @@
   },
   "barracks": {
     "display_name": "Barracks",
-    "stats": {"hp": 850, "footprint_px": [190, 135], "build_time_ms": 18000},
-    "cost": {"wood": 130, "food": 0, "stone": 60, "iron": 0, "gold": 0},
-    "functions": {"trainable_units": ["spearman", "swordsman", "knight"]},
+    "stats": {"hp": 700, "footprint_px": [190, 135], "build_time_ms": 14000},
+    "cost": {"wood": 100, "food": 0, "stone": 25, "iron": 0, "gold": 0},
+    "functions": {"trainable_units": ["spearman"]},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
-  "archery_range": {
-    "display_name": "Archery Range",
-    "stats": {"hp": 760, "footprint_px": [180, 125], "build_time_ms": 17000},
-    "cost": {"wood": 150, "food": 0, "stone": 40, "iron": 0, "gold": 0},
+  "archery": {
+    "display_name": "Archery",
+    "stats": {"hp": 560, "footprint_px": [180, 125], "build_time_ms": 12000},
+    "cost": {"wood": 90, "food": 0, "stone": 15, "iron": 0, "gold": 0},
     "functions": {"trainable_units": ["archer"]},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from house_of_wolves.core.contracts import WorldPosition
+from house_of_wolves.core.contracts import Footprint, WorldPosition
+from house_of_wolves.entities.building import Building
 from house_of_wolves.systems.combat import ATTACK_MOVE_CHASE_TIMEOUT_MS, CombatSystem
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.group_movement import issue_group_move_command
@@ -266,3 +267,24 @@ def test_enemy_raider_deals_melee_damage_when_player_unit_is_in_range() -> None:
 
     assert settler.hp == starting_hp - raider.damage
     assert raider.state == "attacking"
+
+
+def test_enemy_unit_can_damage_player_building() -> None:
+    """Verify that enemy combat units can attack and destroy player buildings."""
+    world = create_demo_world()
+    raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
+    building = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(raider.position.x + 30, raider.position.y),
+        footprint=Footprint(80, 80),
+        hp=1,
+        max_hp=100,
+        tags=("building", "test_target", "selectable"),
+        complete=True,
+    )
+    world.add_entity(building)
+
+    CombatSystem().update(world, 16)
+
+    assert building.id not in world.entities

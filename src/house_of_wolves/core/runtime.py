@@ -47,8 +47,13 @@ from house_of_wolves.systems.farming import (
 )
 from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.systems.movement import MovementSystem
-from house_of_wolves.systems.production import ProductionError, produce_unit
+from house_of_wolves.systems.production import (
+    PRODUCTION_BUILDING_SPECS,
+    ProductionError,
+    produce_unit,
+)
 from house_of_wolves.systems.selection import SelectionSystem
+from house_of_wolves.systems.waves import WaveSystem
 from house_of_wolves.ui.selected_panel import selected_panel_for
 from house_of_wolves.world.collision import nearest_free_position, position_blocked_by_hard_obstacle
 from house_of_wolves.world.demo import create_demo_world
@@ -64,9 +69,11 @@ HUT_FOOTPRINT = Footprint(150, 116)
 HUT_MAX_HP = 650
 HUT_BUILD_TIME_MS = 12_000
 HUT_BUILD_COST = {"wood": 50}
-BUILD_MENU_ABILITIES = ("Hut", "Chicken Farm", "Pig Farm", "Back")
+BUILD_MENU_ABILITIES = ("Hut", "Barracks", "Archery", "Chicken Farm", "Pig Farm", "Back")
 BUILDING_ID_BY_BUILD_ABILITY = {
     "Hut": HUT_BUILDING_ID,
+    "Barracks": "barracks",
+    "Archery": "archery",
     "Chicken Farm": CHICKEN_FARM_ID,
     "Pig Farm": PIG_FARM_ID,
 }
@@ -99,6 +106,7 @@ class GameRuntime:
     construction_system: ConstructionSystem = field(default_factory=ConstructionSystem)
     economy_system: EconomySystem = field(default_factory=EconomySystem)
     farm_system: FarmSystem = field(default_factory=FarmSystem)
+    wave_system: WaveSystem = field(default_factory=WaveSystem)
     running: bool = False
     screen: pygame.Surface | None = None
     clock: pygame.time.Clock | None = None
@@ -720,8 +728,17 @@ class GameRuntime:
         stats.counters.resource_searches += gather_stats.resource_searches
         with time_block(stats, "farming"):
             self.farm_system.update(self.world, dt_ms)
+        with time_block(stats, "waves"):
+            self.wave_system.update(self.world, dt_ms)
         with time_block(stats, "notifications"):
             self.world.update_notifications(dt_ms)
+        # Combat and waves can remove entities during the frame; keep selection
+        # state pointing only at live world objects before the next render/input pass.
+        self.selection_system.state.selected_ids = [
+            entity_id
+            for entity_id in self.selection_system.state.selected_ids
+            if entity_id in self.world.entities
+        ]
         stats.snapshot_world_counts(self.world)
 
     def render(self) -> None:
@@ -798,6 +815,15 @@ class GameRuntime:
         ):
             self._toggle_performance_overlay()
             return True
+        if self.renderer.settings_waves_toggle_rect(self.screen).collidepoint(screen_pos):
+            self._toggle_waves()
+            return True
+        if self.renderer.settings_wave_timer_toggle_rect(self.screen).collidepoint(screen_pos):
+            self._toggle_wave_timer()
+            return True
+        if self.renderer.settings_start_wave_rect(self.screen).collidepoint(screen_pos):
+            self.wave_system.start_wave_now(self.world)
+            return True
         keybind_action = self.renderer.settings_keybind_action_at(self.screen, screen_pos)
         if keybind_action is not None:
             self.rebinding_action = keybind_action
@@ -855,6 +881,21 @@ class GameRuntime:
         self.settings = replace(
             self.settings,
             show_performance_overlay=not self.settings.show_performance_overlay,
+        )
+        self.world.settings = self.settings
+        self.renderer = GameRenderer(self.settings)
+
+    def _toggle_waves(self) -> None:
+        """Toggle automatic enemy wave spawning."""
+        self.settings = replace(self.settings, waves_enabled=not self.settings.waves_enabled)
+        self.world.settings = self.settings
+        self.renderer = GameRenderer(self.settings)
+
+    def _toggle_wave_timer(self) -> None:
+        """Toggle timer-driven enemy wave spawning."""
+        self.settings = replace(
+            self.settings,
+            wave_timer_enabled=not self.settings.wave_timer_enabled,
         )
         self.world.settings = self.settings
         self.renderer = GameRenderer(self.settings)
@@ -1149,6 +1190,33 @@ class GameRuntime:
             self.world.add_entity(building)
             return building
 
+        if building_id in PRODUCTION_BUILDING_SPECS:
+            spec = PRODUCTION_BUILDING_SPECS[building_id]
+            # Dedicated military buildings share the construction/rally path used
+            # by huts, but their functions only expose trainable unit production.
+            building = Building(
+                id=self.world.allocate_entity_id(),
+                owner="frontier",
+                position=build_position,
+                footprint=spec.footprint,
+                hp=starting_construction_hp(spec.hp),
+                max_hp=spec.hp,
+                tags=("building", spec.building_id, "selectable"),
+                build_time_ms=spec.build_time_ms,
+                complete=False,
+                functions=Building.production_functions(
+                    trainable_units=spec.trainable_units,
+                ),
+                dropoff_point=WorldPosition(
+                    build_position.x + 220,
+                    terrain_layout_for_height(
+                        self.world.settings.world_height
+                    ).unit_walkable_top_y,
+                ),
+            )
+            self.world.add_entity(building)
+            return building
+
         spec = FARM_BUILDING_SPECS[building_id]
         farm = Building(
             id=self.world.allocate_entity_id(),
@@ -1173,12 +1241,16 @@ class GameRuntime:
         """Return the footprint for a buildable building type."""
         if building_id == HUT_BUILDING_ID:
             return HUT_FOOTPRINT
+        if building_id in PRODUCTION_BUILDING_SPECS:
+            return PRODUCTION_BUILDING_SPECS[building_id].footprint
         return FARM_BUILDING_SPECS[building_id].footprint
 
     def _building_cost(self, building_id: str) -> dict[str, int]:
         """Return the configured cost for building cost."""
         if building_id == HUT_BUILDING_ID:
             return HUT_BUILD_COST
+        if building_id in PRODUCTION_BUILDING_SPECS:
+            return PRODUCTION_BUILDING_SPECS[building_id].cost
         return FARM_BUILDING_SPECS[building_id].cost
 
     def _spend_building_cost(self, building_id: str) -> bool:
@@ -1465,7 +1537,13 @@ def _needs_repair(building: Building) -> bool:
 
 def _building_id_for_site(building: Building) -> str:
     """Return entity identifiers for building id for site."""
-    for building_id in (HUT_BUILDING_ID, CHICKEN_FARM_ID, PIG_FARM_ID):
+    for building_id in (
+        HUT_BUILDING_ID,
+        "barracks",
+        "archery",
+        CHICKEN_FARM_ID,
+        PIG_FARM_ID,
+    ):
         if building_id in building.tags:
             return building_id
     return HUT_BUILDING_ID

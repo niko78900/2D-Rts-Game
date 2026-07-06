@@ -25,6 +25,8 @@ from house_of_wolves.world.terrain import (
     terrain_layout_for_height,
 )
 
+BUILD_MENU_EXPECTED = ("Hut", "Barracks", "Archery", "Chicken Farm", "Pig Farm", "Back")
+
 
 def ability_center(runtime: GameRuntime, label: str) -> tuple[int, int]:
     """Provide test helper logic for ability center."""
@@ -88,7 +90,7 @@ def test_validate_cli_mode_keeps_data_validation_behavior(capsys) -> None:
 
     output = capsys.readouterr().out
     assert "House of Wolves scaffold validated" in output
-    assert "units=9" in output
+    assert "units=11" in output
 
 
 def test_runtime_initializes_updates_renders_and_shuts_down_windowless() -> None:
@@ -309,6 +311,52 @@ def test_runtime_settings_menu_toggles_unit_and_building_hitbox_debug_rendering(
         assert runtime.world.settings.show_building_hitboxes is True
         assert runtime.renderer.settings.show_building_hitboxes is True
         assert runtime.settings_menu_open is True
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_settings_menu_toggles_and_starts_enemy_waves() -> None:
+    """Verify that runtime settings controls toggle and manually start waves."""
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        assert runtime.screen is not None
+        assert runtime.renderer is not None
+        settings_center = runtime.renderer.settings_button_rect(runtime.screen).center
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": settings_center})
+        )
+        toggle_center = runtime.renderer.settings_waves_toggle_rect(runtime.screen).center
+        timer_center = runtime.renderer.settings_wave_timer_toggle_rect(runtime.screen).center
+        start_center = runtime.renderer.settings_start_wave_rect(runtime.screen).center
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": toggle_center})
+        )
+
+        assert runtime.settings.waves_enabled is False
+        assert runtime.world.settings.waves_enabled is False
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": timer_center})
+        )
+
+        assert runtime.settings.wave_timer_enabled is False
+        assert runtime.world.settings.wave_timer_enabled is False
+
+        starting_enemy_ids = {
+            entity.id for entity in runtime.world.entities.values() if entity.owner == "wolves"
+        }
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": start_center})
+        )
+
+        spawned_enemy_ids = {
+            entity.id for entity in runtime.world.entities.values() if entity.owner == "wolves"
+        } - starting_enemy_ids
+        assert len(spawned_enemy_ids) == 2
+        assert runtime.world.wave_number == 1
     finally:
         runtime.shutdown()
 
@@ -605,7 +653,7 @@ def test_runtime_build_button_replaces_unit_actions_with_build_choices() -> None
 
         assert runtime.build_menu_open is True
         assert runtime.active_building_placement is None
-        assert runtime._ability_override() == ("Hut", "Chicken Farm", "Pig Farm", "Back")
+        assert runtime._ability_override() == BUILD_MENU_EXPECTED
     finally:
         runtime.shutdown()
 
@@ -622,7 +670,7 @@ def test_runtime_build_hotkey_opens_build_menu() -> None:
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_b}))
 
         assert runtime.build_menu_open is True
-        assert runtime._ability_override() == ("Hut", "Chicken Farm", "Pig Farm", "Back")
+        assert runtime._ability_override() == BUILD_MENU_EXPECTED
     finally:
         runtime.shutdown()
 
@@ -663,7 +711,7 @@ def test_runtime_command_slot_build_hotkey_works_for_settler_only_selection() ->
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_z}))
 
         assert runtime.build_menu_open is True
-        assert runtime._ability_override() == ("Hut", "Chicken Farm", "Pig Farm", "Back")
+        assert runtime._ability_override() == BUILD_MENU_EXPECTED
     finally:
         runtime.shutdown()
 
@@ -715,7 +763,7 @@ def test_runtime_chicken_farm_build_choice_enters_placement_mode() -> None:
                     "pos": override_ability_center(
                         runtime,
                         "Chicken Farm",
-                        ("Hut", "Chicken Farm", "Pig Farm", "Back"),
+                        BUILD_MENU_EXPECTED,
                     ),
                 },
             )

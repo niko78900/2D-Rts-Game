@@ -7,6 +7,7 @@ from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.combat_unit import CombatUnit
 from house_of_wolves.entities.resource_node import ResourceNode, resource_hp_for_type
+from house_of_wolves.systems.production import create_combat_unit
 from house_of_wolves.world.camera import Camera
 from house_of_wolves.world.terrain import terrain_bands_for_height, terrain_layout_for_height
 from house_of_wolves.world.world import WorldState
@@ -71,22 +72,22 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
         "spearman",
         430,
         terrain.unit_walkable_top_y + unit_lane_height * 0.38,
-        speed=78,
-        hp=70,
-        damage=12,
+        speed=72,
+        hp=50,
+        damage=10,
         attack_range=42,
-        attack_cooldown_ms=950,
+        attack_cooldown_ms=1000,
     )
     _add_unit(
         world,
         "archer",
         500,
         terrain.unit_walkable_top_y + unit_lane_height * 0.33,
-        speed=82,
-        hp=55,
-        damage=10,
-        attack_range=220,
-        attack_cooldown_ms=1100,
+        speed=68,
+        hp=25,
+        damage=4,
+        attack_range=210,
+        attack_cooldown_ms=1000,
     )
     _add_enemy_unit(world, 1520, terrain.unit_walkable_top_y + unit_lane_height * 0.36)
 
@@ -238,19 +239,7 @@ def _add_unit(
 
 def _add_enemy_unit(world: WorldState, x: float, y: float) -> None:
     """Add enemy unit."""
-    entity = CombatUnit(
-        id=world.allocate_entity_id(),
-        owner="wolves",
-        position=WorldPosition(x, y),
-        footprint=Footprint(38, 58),
-        hp=85,
-        max_hp=85,
-        tags=("unit", "raider_swordsman", "enemy", "selectable", "movable"),
-        speed=76,
-        attack_range=38,
-        damage=13,
-        attack_cooldown_ms=950,
-    )
+    entity = create_combat_unit(world, "enemy_swordsman", "wolves", WorldPosition(x, y))
     world.add_entity(entity)
 
 

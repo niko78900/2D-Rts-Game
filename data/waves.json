@@ -1,19 +1,19 @@
 {
   "west_raid_01": {
     "display_name": "First Western Raid",
-    "trigger_time_ms": 180000,
+    "trigger_time_ms": 120000,
     "spawn_zone": "west_frontier",
     "faction": "wolves",
-    "units": {"spearman": 2},
+    "units": {"enemy_swordsman": 2},
     "objective": "survive_western_pressure",
     "repeat": false
   },
   "west_raid_02": {
     "display_name": "Second Western Raid",
-    "trigger_time_ms": 420000,
+    "trigger_time_ms": 240000,
     "spawn_zone": "west_frontier",
     "faction": "wolves",
-    "units": {"spearman": 3, "archer": 1},
+    "units": {"enemy_swordsman": 3},
     "objective": "survive_western_pressure",
     "repeat": false
   },
@@ -22,7 +22,7 @@
     "trigger_time_ms": 600000,
     "spawn_zone": "vilereck_hold",
     "faction": "vilereck",
-    "units": {"swordsman": 2, "archer": 2},
+    "units": {"enemy_swordsman": 3, "enemy_archer": 1},
     "objective": "push_east",
     "repeat": true
   },

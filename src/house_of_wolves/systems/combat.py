@@ -1,4 +1,4 @@
-"""Minimal combat resolution for attack-move orders."""
+"""Combat targeting and damage resolution for units and wave pressure."""
 
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ DEFAULT_GUARD_RADIUS = 230.0
 ATTACK_MOVE_HOLD_MS = 250
 ATTACK_MOVE_CHASE_TIMEOUT_MS = 7000
 NEUTRAL_OWNER = "neutral"
+# Limit combat targets to units/buildings so resource nodes and farm animals are
+# ignored by wave pressure and idle guard scans.
+TARGET_TAGS = {"unit", "building"}
 
 
 @dataclass(slots=True)
@@ -48,7 +51,7 @@ class CombatSystem:
                 continue
             if not _is_attack_move_command(command):
                 continue
-            target = _locked_or_nearest_enemy_unit(
+            target = _locked_or_nearest_enemy_target(
                 world,
                 entity.id,
                 command,
@@ -86,7 +89,7 @@ class CombatSystem:
         """Advance attack command for the current frame."""
         queue = world.command_queues.get(entity.id)
         target = world.entities.get(command.target_entity_id)
-        if target is None or not _is_enemy_unit(entity, target):
+        if target is None or not _is_enemy_target(entity, target):
             if queue is not None:
                 queue.pop_next()
             _clear_attack_target_state(entity)
@@ -104,8 +107,15 @@ class CombatSystem:
         if not _is_guard_unit(entity):
             _clear_attack_target_state(entity)
             return
-        target = _nearest_enemy_unit(world, entity.id, self.guard_radius)
+        target = _nearest_enemy_target(world, entity.id, self.guard_radius)
         if target is None:
+            # Enemy wave units keep drifting toward player structures even when
+            # no immediate target is inside their local guard radius.
+            if getattr(entity, "owner", NEUTRAL_OWNER) != "frontier":
+                objective = _primary_enemy_objective(world)
+                if objective is not None:
+                    _move_entity_toward(world, entity, objective.position, dt_ms)
+                    return
             _clear_attack_target_state(entity)
             return
 
@@ -151,7 +161,7 @@ def _is_gather_related_command(command: Command) -> bool:
     return command.type == "gather" or command.payload.get("gather_move") is True
 
 
-def _nearest_enemy_unit(
+def _nearest_enemy_target(
     world: WorldState,
     entity_id: EntityId,
     radius: float,
@@ -167,7 +177,7 @@ def _nearest_enemy_unit(
     for other in _entities_near_position(world, entity.position, radius):
         if ignored_id is not None and other.id == ignored_id:
             continue
-        if not _is_enemy_unit(entity, other):
+        if not _is_enemy_target(entity, other):
             continue
         distance = _distance(entity.position, other.position)
         if distance <= nearest_distance:
@@ -187,7 +197,9 @@ def _nearest_enemy_threatening_unit(
     nearest: object | None = None
     nearest_distance = float("inf")
     for other in _entities_near_position(world, entity.position, 512.0):
-        if not _is_enemy_unit(entity, other):
+        # Gather-defense only reacts to enemy units that can hit the worker now;
+        # enemy buildings are attackable targets elsewhere, not active threats here.
+        if not _is_enemy_target(entity, other) or "unit" not in getattr(other, "tags", ()):
             continue
         distance = _distance(entity.position, other.position)
         if distance > _attack_range_for(other) + 12:
@@ -212,9 +224,6 @@ def _entities_near_position(
     )
     entities: list[object] = []
     query_ids = world.spatial_hash.query(bounds)
-    unit_ids = getattr(world, "unit_ids", set())
-    if unit_ids:
-        query_ids = query_ids & unit_ids
     for entity_id in query_ids:
         entity = world.entities.get(entity_id)
         if entity is not None:
@@ -222,7 +231,7 @@ def _entities_near_position(
     return entities
 
 
-def _locked_or_nearest_enemy_unit(
+def _locked_or_nearest_enemy_target(
     world: WorldState,
     entity_id: EntityId,
     command: Command,
@@ -233,11 +242,11 @@ def _locked_or_nearest_enemy_unit(
     locked_id = _payload_entity_id(command, "attack_move_target_id")
     if locked_id is not None and locked_id != ignored_id:
         target = world.entities.get(locked_id)
-        if target is not None and _is_enemy_unit(world.entities.get(entity_id), target):
+        if target is not None and _is_enemy_target(world.entities.get(entity_id), target):
             return target
         _clear_attack_target(command)
 
-    target = _nearest_enemy_unit(world, entity_id, radius, ignored_id=ignored_id)
+    target = _nearest_enemy_target(world, entity_id, radius, ignored_id=ignored_id)
     if target is not None:
         command.payload["attack_move_last_contact_ms"] = world.elapsed_ms
     return target
@@ -260,11 +269,16 @@ def _is_guard_unit(entity: object) -> bool:
 
 def _is_enemy_unit(entity: object, other: object) -> bool:
     """Return whether enemy unit."""
+    return _is_enemy_target(entity, other) and "unit" in getattr(other, "tags", ())
+
+
+def _is_enemy_target(entity: object, other: object) -> bool:
+    """Return whether another entity is an attackable enemy target."""
     return (
         entity is not None
         and other is not entity
         and getattr(other, "alive", False)
-        and "unit" in getattr(other, "tags", ())
+        and bool(TARGET_TAGS & set(getattr(other, "tags", ())))
         and getattr(other, "owner", NEUTRAL_OWNER) != NEUTRAL_OWNER
         and getattr(other, "owner", None) != getattr(entity, "owner", None)
     )
@@ -368,3 +382,18 @@ def _move_entity_toward(
         ),
     )
     entity.state = "moving"
+
+
+def _primary_enemy_objective(world: WorldState) -> object | None:
+    """Return the nearest player building enemy idle units should pressure."""
+    buildings = [
+        entity
+        for entity in world.entities.values()
+        if getattr(entity, "owner", None) == "frontier"
+        and "building" in getattr(entity, "tags", ())
+        and getattr(entity, "alive", False)
+    ]
+    if not buildings:
+        return None
+    huts = [entity for entity in buildings if "hut" in getattr(entity, "tags", ())]
+    return min(huts or buildings, key=lambda entity: entity.position.x)

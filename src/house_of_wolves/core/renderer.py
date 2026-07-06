@@ -35,8 +35,8 @@ SETTINGS_BUTTON_HEIGHT = 28
 SETTINGS_MENU_WIDTH = 320
 SETTINGS_MENU_HEIGHT = 600
 KEYBIND_ROW_HEIGHT = 24
-KEYBIND_ROW_GAP = 6
-KEYBIND_START_Y_OFFSET = 286
+KEYBIND_ROW_GAP = 3
+KEYBIND_START_Y_OFFSET = 358
 KEYBIND_ROWS_PER_COLUMN = 9
 KEYBIND_COLUMN_GAP = 8
 STATUS_BAR_HEIGHT = 6
@@ -381,6 +381,14 @@ class GameRenderer:
             self._draw_pig_farm(surface, rect, complete=bool(getattr(entity, "complete", True)))
             self._draw_label(surface, _short_label(tags), rect.center)
             return
+        if "barracks" in tags:
+            self._draw_barracks(surface, rect, complete=bool(getattr(entity, "complete", True)))
+            self._draw_label(surface, _short_label(tags), rect.center)
+            return
+        if "archery" in tags or "archery_range" in tags:
+            self._draw_archery(surface, rect, complete=bool(getattr(entity, "complete", True)))
+            self._draw_label(surface, _short_label(tags), rect.center)
+            return
         stage = hut_construction_stage_for(entity)
         if stage == HUT_STAGE_SCAFFOLDING:
             self._draw_hut_scaffolding(surface, rect)
@@ -470,6 +478,59 @@ class GameRenderer:
             pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
             pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
 
+    def _draw_barracks(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        *,
+        complete: bool,
+    ) -> None:
+        """Draw the placeholder Barracks building."""
+        fill = (107, 82, 62) if complete else (80, 83, 68)
+        roof = pygame.Rect(rect.left + 10, rect.top + 8, rect.width - 20, rect.height // 3)
+        door = pygame.Rect(rect.centerx - 16, rect.bottom - 34, 32, 30)
+        pygame.draw.rect(surface, fill, rect, border_radius=4)
+        pygame.draw.rect(surface, (71, 52, 45), roof, border_radius=3)
+        pygame.draw.rect(surface, (45, 38, 34), door, border_radius=2)
+        for x in (rect.left + 22, rect.right - 22):
+            pygame.draw.line(surface, (184, 166, 109), (x, rect.top + 18), (x, rect.bottom - 10), 3)
+        pygame.draw.rect(surface, (39, 33, 30), rect, width=3, border_radius=4)
+        if not complete:
+            pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
+            pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
+
+    def _draw_archery(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        *,
+        complete: bool,
+    ) -> None:
+        """Draw the placeholder Archery building."""
+        fill = (105, 97, 65) if complete else (80, 83, 68)
+        pygame.draw.rect(surface, fill, rect, border_radius=4)
+        target = pygame.Rect(rect.centerx - 26, rect.top + 18, 52, 52)
+        pygame.draw.ellipse(surface, (206, 190, 126), target)
+        pygame.draw.ellipse(surface, (115, 68, 57), target.inflate(-14, -14), width=4)
+        pygame.draw.line(
+            surface,
+            (58, 44, 33),
+            (rect.left + 18, rect.bottom - 18),
+            (rect.right - 18, rect.top + 18),
+            4,
+        )
+        pygame.draw.line(
+            surface,
+            (58, 44, 33),
+            (rect.left + 18, rect.top + 18),
+            (rect.right - 18, rect.bottom - 18),
+            2,
+        )
+        pygame.draw.rect(surface, (39, 33, 30), rect, width=3, border_radius=4)
+        if not complete:
+            pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
+            pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
+
     def _draw_building_placement_preview(
         self,
         surface: pygame.Surface,
@@ -492,6 +553,8 @@ class GameRenderer:
                 (rect.right + 10, rect.top + 28),
             ]
             pygame.draw.polygon(surface, color, roof, width=2)
+        elif preview.building_id in {"barracks", "archery"}:
+            pygame.draw.rect(surface, color, rect.inflate(-18, -18), width=2, border_radius=4)
         elif preview.building_id == "pig_farm":
             pygame.draw.rect(surface, color, rect.inflate(-16, -16), width=2, border_radius=4)
         else:
@@ -716,6 +779,8 @@ class GameRenderer:
         self._draw_text(surface, resources, (16, 10), self.font)
         population = f"Population: {world.current_population} / {world.max_population}"
         self._draw_text(surface, population, (16, 34), self.small_font, color=(221, 204, 145))
+        wave_text = wave_timer_text(world)
+        self._draw_text(surface, wave_text, (260, 10), self.small_font, color=(236, 178, 140))
         status = f"Selected: {len(selection.selected_ids)}   FPS: {fps:0.0f}"
         self._draw_text(surface, status, (surface.get_width() - 380, 10), self.font)
         hint = (
@@ -844,10 +909,31 @@ class GameRenderer:
         perf_text = self.small_font.render(perf_label, True, (244, 238, 213))
         surface.blit(perf_text, perf_text.get_rect(center=perf.center))
 
+        # Wave debug controls share one row so the existing keybind list remains visible.
+        waves = self.settings_waves_toggle_rect(surface)
+        waves_label = "Enemy Waves: On" if self.settings.waves_enabled else "Enemy Waves: Off"
+        pygame.draw.rect(surface, (64, 75, 61), waves, border_radius=4)
+        pygame.draw.rect(surface, (136, 152, 116), waves, width=1, border_radius=4)
+        waves_text = self.small_font.render(waves_label, True, (244, 238, 213))
+        surface.blit(waves_text, waves_text.get_rect(center=waves.center))
+
+        timer = self.settings_wave_timer_toggle_rect(surface)
+        timer_label = "Timer: On" if self.settings.wave_timer_enabled else "Timer: Off"
+        pygame.draw.rect(surface, (64, 75, 61), timer, border_radius=4)
+        pygame.draw.rect(surface, (136, 152, 116), timer, width=1, border_radius=4)
+        timer_text = self.small_font.render(timer_label, True, (244, 238, 213))
+        surface.blit(timer_text, timer_text.get_rect(center=timer.center))
+
+        start_wave = self.settings_start_wave_rect(surface)
+        pygame.draw.rect(surface, (86, 61, 58), start_wave, border_radius=4)
+        pygame.draw.rect(surface, (184, 123, 95), start_wave, width=1, border_radius=4)
+        start_wave_text = self.small_font.render("Start Enemy Wave Now", True, (244, 238, 213))
+        surface.blit(start_wave_text, start_wave_text.get_rect(center=start_wave.center))
+
         self._draw_text(
             surface,
             "Keybinds",
-            (rect.left + 14, rect.top + 264),
+            (rect.left + 14, rect.top + 336),
             self.small_font,
             color=(221, 204, 145),
         )
@@ -911,6 +997,22 @@ class GameRenderer:
         """Return the profiler overlay toggle rectangle."""
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 228, menu.width - 28, 30)
+
+    def settings_waves_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the enemy-wave toggle rectangle."""
+        menu = self.settings_menu_rect(surface)
+        return pygame.Rect(menu.left + 14, menu.top + 264, (menu.width - 36) // 2, 30)
+
+    def settings_wave_timer_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the wave-timer toggle rectangle."""
+        menu = self.settings_menu_rect(surface)
+        left = menu.left + 22 + ((menu.width - 36) // 2)
+        return pygame.Rect(left, menu.top + 264, (menu.width - 36) // 2, 30)
+
+    def settings_start_wave_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the start-wave debug button rectangle."""
+        menu = self.settings_menu_rect(surface)
+        return pygame.Rect(menu.left + 14, menu.top + 300, menu.width - 28, 30)
 
     def settings_keybind_rect(self, surface: pygame.Surface, action: str) -> pygame.Rect:
         """Return the keybinding row rectangle for an action."""
@@ -1418,3 +1520,16 @@ def _resource_label(resource_type: str) -> str:
     if resource_type == "iron":
         return "Ore"
     return resource_type.title()
+
+
+def wave_timer_text(world: WorldState) -> str:
+    """Return the HUD text for enemy wave pressure."""
+    if not world.settings.waves_enabled:
+        return "Waves Off"
+    remaining_ms = max(0, world.next_wave_due_ms - world.elapsed_ms)
+    if world.next_wave_due_ms <= 0:
+        remaining_ms = max(0, world.settings.initial_wave_delay_seconds * 1000)
+    total_seconds = remaining_ms // 1000
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"Next wave: {minutes:02d}:{seconds:02d}"

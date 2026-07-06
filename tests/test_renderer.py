@@ -251,9 +251,9 @@ def test_selected_panel_for_enemy_unit_shows_stats_without_commands() -> None:
 
     panel = selected_panel_for(world, [enemy.id])
 
-    assert panel.title == "Raider Swordsman"
+    assert panel.title == "Enemy Swordsman"
     assert panel.subtitle == "Wolves Unit"
-    assert panel.health == "Health: 85"
+    assert panel.health == "Health: 90"
     assert panel.abilities == ()
 
 

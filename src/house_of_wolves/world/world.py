@@ -55,6 +55,8 @@ class WorldState:
     completed_deposit_huts_by_owner: dict[str, list[EntityId]] = field(default_factory=dict)
     current_population: int = 0
     max_population: int = 0
+    wave_number: int = 0
+    next_wave_due_ms: int = 0
     notifications: list[Notification] = field(default_factory=list)
     camera: Camera = field(default_factory=Camera)
     spatial_hash: SpatialHash = field(default_factory=SpatialHash)
@@ -96,7 +98,29 @@ class WorldState:
         self.unindex_resource_node(entity_id)
         self.unit_ids.discard(entity_id)
         self.hard_obstacle_ids.discard(entity_id)
+        self._remove_entity_references(entity_id)
         self.recalculate_population()
+
+    def _remove_entity_references(self, entity_id: EntityId) -> None:
+        """Remove queued commands and target payloads that reference a dead entity."""
+        for queue in self.command_queues.values():
+            # Only combat-style target commands are removed here. Gather jobs keep
+            # their own stale-node recovery path for resource depletion.
+            queue.commands = [
+                command
+                for command in queue.commands
+                if command.target_entity_id != entity_id
+                or command.type not in {"attack", "build", "repair", "rescue"}
+            ]
+            for command in queue.commands:
+                for key in (
+                    "attack_move_target_id",
+                    "attack_move_chase_target_id",
+                    "attack_move_ignored_target_id",
+                    "last_attack_target_id",
+                ):
+                    if command.payload.get(key) == entity_id.to_json():
+                        command.payload.pop(key, None)
 
     def unindex_resource_node(self, entity_id: EntityId) -> None:
         """Remove a resource node from resource indexes."""
