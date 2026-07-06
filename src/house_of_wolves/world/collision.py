@@ -6,6 +6,7 @@ from math import cos, hypot, pi, sin
 from typing import Any
 
 from house_of_wolves.core.contracts import EntityId, WorldPosition
+from house_of_wolves.core.performance import add_collision_checks
 from house_of_wolves.world.terrain import clamp_unit_position_to_walkable_lane_for_height
 from house_of_wolves.world.world import WorldState
 
@@ -18,6 +19,8 @@ SHOVE_INFLUENCE_RADIUS = UNIT_COLLISION_RADIUS * 1.35
 MAX_SHOVE_PUSH = 4.0
 HARD_OBSTACLE_CLEARANCE = UNIT_HITBOX_RADIUS
 RESOURCE_OBSTACLE_CLEARANCE = 4.0
+MAX_LOCAL_SEPARATION_NEIGHBORS = 12
+MAX_LOCAL_SHOVE_NEIGHBORS = 16
 _EPSILON = 0.0001
 
 
@@ -60,6 +63,7 @@ def occupied_by_unit(
         ignore_id=ignore_id,
         source_id=source_id,
         friendly_ghost_ids=friendly_ghost_ids,
+        query_radius=max(min_distance + UNIT_HITBOX_RADIUS, min_distance * 2.0),
     )
     return nearest is not None and nearest < min_distance
 
@@ -71,10 +75,18 @@ def nearest_unit_distance(
     ignore_id: EntityId | None = None,
     source_id: EntityId | None = None,
     friendly_ghost_ids: set[EntityId] | None = None,
+    query_radius: float | None = None,
 ) -> float | None:
     nearest: float | None = None
     source_id = source_id or ignore_id
-    for entity in world.entities.values():
+    candidates = (
+        _unit_entities_near_position(world, position, query_radius)
+        if query_radius is not None
+        else (entity for entity in world.entities.values() if is_unit(entity))
+    )
+    checked = 0
+    for entity in candidates:
+        checked += 1
         if _skip_unit_collision(
             world,
             source_id,
@@ -86,6 +98,7 @@ def nearest_unit_distance(
         distance = hypot(entity.position.x - position.x, entity.position.y - position.y)
         if nearest is None or distance < nearest:
             nearest = distance
+    add_collision_checks(world, checked)
     return nearest
 
 
@@ -114,25 +127,26 @@ def resolve_unit_position(
         desired,
         max_adjustment=max_adjustment,
     )
-    if not occupied_by_unit(
+    blocker, distance = _closest_overlapping_unit(
         world,
+        entity_id,
         desired,
-        ignore_id=entity_id,
-        source_id=entity_id,
         friendly_ghost_ids=friendly_ghost_ids,
         min_distance=min_distance,
-    ):
+    )
+    if blocker is None:
         return desired
 
     adjusted = desired
-    for _ in range(2):
-        blocker, distance = _closest_overlapping_unit(
-            world,
-            entity_id,
-            adjusted,
-            friendly_ghost_ids=friendly_ghost_ids,
-            min_distance=min_distance,
-        )
+    for attempt in range(2):
+        if attempt > 0:
+            blocker, distance = _closest_overlapping_unit(
+                world,
+                entity_id,
+                adjusted,
+                friendly_ghost_ids=friendly_ghost_ids,
+                min_distance=min_distance,
+            )
         if blocker is None:
             return adjusted
 
@@ -202,8 +216,23 @@ def separate_overlapping_units(
             key=lambda entity: int(entity.id),
         )
         offsets: dict[EntityId, list[float]] = {entity.id: [0.0, 0.0] for entity in units}
-        for index, first in enumerate(units):
-            for second in units[index + 1 :]:
+        processed_pairs: set[tuple[EntityId, EntityId]] = set()
+        for first in units:
+            nearby = _nearby_units(
+                world,
+                first.position,
+                min_distance + UNIT_HITBOX_RADIUS,
+                ignore_id=first.id,
+                max_count=MAX_LOCAL_SEPARATION_NEIGHBORS,
+            )
+            for second in nearby:
+                pair = (
+                    min(first.id, second.id, key=int),
+                    max(first.id, second.id, key=int),
+                )
+                if pair in processed_pairs:
+                    continue
+                processed_pairs.add(pair)
                 _add_pair_separation(
                     offsets,
                     first,
@@ -266,8 +295,11 @@ def shove_units_from_movement(
     mover = world.entities.get(mover_id)
     friendly_ghost_ids = friendly_ghost_ids or set()
     shove_candidates: list[tuple[float, Any, float, float]] = []
-    for entity in world.entities.values():
-        if not is_unit(entity) or entity.id == mover_id:
+    for entity in _units_for_bounds(
+        world,
+        _segment_query_bounds(origin, desired, influence_radius),
+    ):
+        if entity.id == mover_id:
             continue
         if (
             mover is not None
@@ -311,6 +343,8 @@ def shove_units_from_movement(
                 (push_y / push_length) * push_distance,
             )
         )
+        if len(shove_candidates) >= MAX_LOCAL_SHOVE_NEIGHBORS:
+            break
 
     for _projection, entity, push_x, push_y in sorted(
         shove_candidates,
@@ -411,7 +445,13 @@ def _closest_overlapping_unit(
 ) -> tuple[Any | None, float]:
     closest: Any | None = None
     closest_distance = min_distance
-    for entity in world.entities.values():
+    checked = 0
+    for entity in _unit_entities_near_position(
+        world,
+        position,
+        min_distance + UNIT_HITBOX_RADIUS,
+    ):
+        checked += 1
         if _skip_unit_collision(
             world,
             entity_id,
@@ -424,6 +464,7 @@ def _closest_overlapping_unit(
         if distance < closest_distance:
             closest = entity
             closest_distance = distance
+    add_collision_checks(world, checked)
     return closest, closest_distance
 
 
@@ -677,7 +718,13 @@ def _first_hard_obstacle_collision(
         tuple[Any, tuple[float, float, float, float], float, float, float] | None
     ) = None
     first_t = 2.0
-    for obstacle in _hard_obstacles(world, ignore_id=ignore_id):
+    checked = 0
+    for obstacle in _hard_obstacles_for_bounds(
+        world,
+        _segment_query_bounds(origin, desired, clearance + UNIT_HITBOX_RADIUS),
+        ignore_id=ignore_id,
+    ):
+        checked += 1
         inflated_rect = _inflated_obstacle_rect(obstacle, clearance=clearance)
         if _point_in_rect(desired, inflated_rect):
             collision = _segment_rect_entry(origin, desired, inflated_rect)
@@ -697,6 +744,7 @@ def _first_hard_obstacle_collision(
         if 0.0 <= entry_t <= 1.0 and entry_t < first_t:
             first_t = entry_t
             first_collision = (obstacle, inflated_rect, normal_x, normal_y, entry_t)
+    add_collision_checks(world, checked)
     return first_collision
 
 
@@ -707,10 +755,139 @@ def _hard_obstacle_at_position(
     ignore_id: EntityId | None,
     clearance: float,
 ) -> Any | None:
-    for obstacle in _hard_obstacles(world, ignore_id=ignore_id):
+    checked = 0
+    for obstacle in _hard_obstacles_for_bounds(
+        world,
+        _bounds_around_position(position, clearance + UNIT_HITBOX_RADIUS),
+        ignore_id=ignore_id,
+    ):
+        checked += 1
         if _point_in_rect(position, _inflated_obstacle_rect(obstacle, clearance=clearance)):
+            add_collision_checks(world, checked)
             return obstacle
+    add_collision_checks(world, checked)
     return None
+
+
+def _bounds_around_position(
+    position: WorldPosition,
+    radius: float,
+) -> tuple[float, float, float, float]:
+    radius = max(0.0, float(radius))
+    return (position.x - radius, position.y - radius, radius * 2.0, radius * 2.0)
+
+
+def _segment_query_bounds(
+    origin: WorldPosition,
+    desired: WorldPosition,
+    padding: float,
+) -> tuple[float, float, float, float]:
+    padding = max(0.0, float(padding))
+    left = min(origin.x, desired.x) - padding
+    top = min(origin.y, desired.y) - padding
+    right = max(origin.x, desired.x) + padding
+    bottom = max(origin.y, desired.y) + padding
+    return (left, top, max(1.0, right - left), max(1.0, bottom - top))
+
+
+def _entities_for_bounds(
+    world: WorldState,
+    bounds: tuple[float, float, float, float],
+) -> list[Any]:
+    return [
+        entity
+        for entity_id in world.spatial_hash.query(bounds)
+        if (entity := world.entities.get(entity_id)) is not None
+    ]
+
+
+def _entities_near_position(
+    world: WorldState,
+    position: WorldPosition,
+    radius: float,
+) -> list[Any]:
+    return _entities_for_bounds(world, _bounds_around_position(position, radius))
+
+
+def _units_for_bounds(
+    world: WorldState,
+    bounds: tuple[float, float, float, float],
+) -> list[Any]:
+    query_ids = world.spatial_hash.query(bounds)
+    indexed_unit_ids = getattr(world, "unit_ids", set())
+    if indexed_unit_ids:
+        query_ids = query_ids & indexed_unit_ids
+    return [
+        entity
+        for entity_id in query_ids
+        if (entity := world.entities.get(entity_id)) is not None and is_unit(entity)
+    ]
+
+
+def _unit_entities_near_position(
+    world: WorldState,
+    position: WorldPosition,
+    radius: float,
+) -> list[Any]:
+    radius_sq = max(0.0, radius) * max(0.0, radius)
+    query_ids = world.spatial_hash.query(_bounds_around_position(position, radius))
+    indexed_unit_ids = getattr(world, "unit_ids", set())
+    if indexed_unit_ids:
+        query_ids = query_ids & indexed_unit_ids
+    units: list[Any] = []
+    for entity_id in query_ids:
+        entity = world.entities.get(entity_id)
+        if entity is None or not is_unit(entity):
+            continue
+        dx = entity.position.x - position.x
+        dy = entity.position.y - position.y
+        if (dx * dx) + (dy * dy) <= radius_sq:
+            units.append(entity)
+    return units
+
+
+def _nearby_units(
+    world: WorldState,
+    position: WorldPosition,
+    radius: float,
+    *,
+    ignore_id: EntityId | None = None,
+    max_count: int | None = None,
+) -> list[Any]:
+    candidates: list[tuple[float, Any]] = []
+    for entity in _unit_entities_near_position(world, position, radius):
+        if entity.id == ignore_id:
+            continue
+        dx = entity.position.x - position.x
+        dy = entity.position.y - position.y
+        distance_sq = (dx * dx) + (dy * dy)
+        candidates.append((distance_sq, entity))
+        if max_count is not None and len(candidates) >= max_count * 3:
+            break
+    candidates.sort(key=lambda item: item[0])
+    if max_count is not None:
+        candidates = candidates[:max_count]
+    return [entity for _distance_sq, entity in candidates]
+
+
+def _hard_obstacles_for_bounds(
+    world: WorldState,
+    bounds: tuple[float, float, float, float],
+    *,
+    ignore_id: EntityId | None,
+) -> list[Any]:
+    query_ids = world.spatial_hash.query(bounds)
+    indexed_obstacle_ids = getattr(world, "hard_obstacle_ids", set())
+    if indexed_obstacle_ids:
+        query_ids = query_ids & indexed_obstacle_ids
+    obstacles: list[Any] = []
+    for entity_id in query_ids:
+        if entity_id == ignore_id:
+            continue
+        entity = world.entities.get(entity_id)
+        if entity is not None and is_hard_obstacle(entity):
+            obstacles.append(entity)
+    return obstacles
 
 
 def _hard_obstacles(world: WorldState, *, ignore_id: EntityId | None) -> list[Any]:

@@ -2,8 +2,8 @@
   "hut": {
     "display_name": "Hut",
     "stats": {"hp": 650, "footprint_px": [140, 110], "build_time_ms": 12000},
-    "cost": {"wood": 80, "food": 0, "stone": 0, "iron": 0, "gold": 0},
-    "functions": {"dropoff": true, "population_cap_bonus": 5, "trainable_units": ["settler", "spearman"]},
+    "cost": {"wood": 50, "food": 0, "stone": 0, "iron": 0, "gold": 0},
+    "functions": {"dropoff": true, "population_cap_bonus": 10, "trainable_units": ["settler", "spearman"]},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "watch_tower": {

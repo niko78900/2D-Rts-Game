@@ -145,6 +145,7 @@ class GatherAssignmentJob:
 @dataclass(slots=True)
 class GatherPerformanceCounters:
     path_jobs_processed: int = 0
+    resource_searches: int = 0
     resource_candidates_checked: int = 0
     full_path_calculations: int = 0
 
@@ -301,7 +302,12 @@ class EconomySystem:
         command.payload["current_resource_id"] = resource.id.to_json()
         command.payload["resource_type"] = resource.resource_type
         command.payload["phase"] = GATHER_STATE_RETURNING_TO_RESOURCE
-        interaction_point = resource_interaction_position(world, resource, worker.id)
+        interaction_point = _cached_resource_interaction_position(
+            world,
+            command,
+            resource,
+            worker.id,
+        )
         _insert_move_before_gather(
             queue,
             worker.id,
@@ -453,7 +459,12 @@ class EconomySystem:
         command.payload["current_resource_id"] = resource.id.to_json()
         command.payload["phase"] = GATHER_STATE_MOVING_TO_RESOURCE
 
-        interaction_point = resource_interaction_position(world, resource, worker.id)
+        interaction_point = _cached_resource_interaction_position(
+            world,
+            command,
+            resource,
+            worker.id,
+        )
         if not _within(worker.position, interaction_point, self.gather_interaction_range):
             if _pending_move_failed(command, _move_key("resource", resource.id)):
                 world.notify("Cannot reach resource.")
@@ -514,12 +525,11 @@ class EconomySystem:
         command: Command,
         resource_type: str,
     ) -> None:
-        hut = closest_deposit_hut(world, worker.position, worker.owner, worker.id)
+        hut, deposit_point = _cached_deposit_target(world, command, worker)
         if hut is None:
             world.notify("Needs hut to deposit.")
             _clear_gather_job(worker, queue)
             return
-        deposit_point = hut_deposit_position(world, hut, worker.id)
         if not _within(worker.position, deposit_point, self.deposit_interaction_range):
             if _pending_move_failed(command, _move_key("hut", hut.id)):
                 world.notify("Cannot reach hut.")
@@ -741,6 +751,20 @@ class EconomySystem:
 
 
 def completed_deposit_huts(world: WorldState, owner: str = "frontier") -> list[Building]:
+    cached_ids = getattr(world, "completed_deposit_huts_by_owner", {}).get(owner)
+    if cached_ids is not None:
+        huts: list[Building] = []
+        for entity_id in cached_ids:
+            entity = world.entities.get(entity_id)
+            if (
+                isinstance(entity, Building)
+                and entity.owner == owner
+                and entity.complete
+                and bool(entity.functions.get("dropoff"))
+                and entity.alive
+            ):
+                huts.append(entity)
+        return huts
     return [
         entity
         for entity in world.entities.values()
@@ -902,6 +926,8 @@ def closest_resource_candidates(
     safety_checker: Callable[[ResourceNode], bool] | None = None,
     stats: GatherPerformanceCounters | None = None,
 ) -> list[ResourceNode]:
+    if stats is not None:
+        stats.resource_searches += 1
     ordered = sorted(
         cached_active_resource_nodes(world, resource_type),
         key=lambda node: _cheap_distance_sq(origin, node.position),
@@ -945,6 +971,9 @@ def issue_gather_command(
             queued=True,
             resource_type=resource.resource_type,
             current_resource_id=resource.id.to_json(),
+            resource_interaction_resource_id=resource.id.to_json(),
+            resource_interaction_x=interaction_point.x,
+            resource_interaction_y=interaction_point.y,
             manual=manual,
         ),
     )
@@ -991,6 +1020,28 @@ def resource_interaction_position(
     return nearest_free_position(world, resource.position, ignore_id=gatherer_id)
 
 
+def _cached_resource_interaction_position(
+    world: WorldState,
+    command: Command,
+    resource: ResourceNode,
+    worker_id: EntityId,
+) -> WorldPosition:
+    cached_id = _payload_entity_id(command, "resource_interaction_resource_id")
+    cached_x = command.payload.get("resource_interaction_x")
+    cached_y = command.payload.get("resource_interaction_y")
+    if (
+        cached_id == resource.id
+        and isinstance(cached_x, (int, float))
+        and isinstance(cached_y, (int, float))
+    ):
+        return WorldPosition(float(cached_x), float(cached_y))
+    position = resource_interaction_position(world, resource, worker_id)
+    command.payload["resource_interaction_resource_id"] = resource.id.to_json()
+    command.payload["resource_interaction_x"] = position.x
+    command.payload["resource_interaction_y"] = position.y
+    return position
+
+
 def hut_deposit_position(
     world: WorldState,
     hut: Building,
@@ -998,6 +1049,40 @@ def hut_deposit_position(
 ) -> WorldPosition:
     target = WorldPosition(hut.position.x, _walkable_top(world) + 14)
     return nearest_free_position(world, target, ignore_id=worker_id)
+
+
+def _cached_deposit_target(
+    world: WorldState,
+    command: Command,
+    worker: object,
+) -> tuple[Building | None, WorldPosition]:
+    cached_id = _payload_entity_id(command, "deposit_hut_id")
+    cached_x = command.payload.get("deposit_hut_x")
+    cached_y = command.payload.get("deposit_hut_y")
+    if cached_id is not None:
+        cached_hut = world.entities.get(cached_id)
+        if (
+            isinstance(cached_hut, Building)
+            and cached_hut.owner == getattr(worker, "owner", None)
+            and cached_hut.complete
+            and cached_hut.alive
+            and bool(cached_hut.functions.get("dropoff"))
+            and isinstance(cached_x, (int, float))
+            and isinstance(cached_y, (int, float))
+        ):
+            return cached_hut, WorldPosition(float(cached_x), float(cached_y))
+
+    hut = closest_deposit_hut(world, worker.position, worker.owner, worker.id)
+    if hut is None:
+        command.payload.pop("deposit_hut_id", None)
+        command.payload.pop("deposit_hut_x", None)
+        command.payload.pop("deposit_hut_y", None)
+        return None, worker.position
+    position = hut_deposit_position(world, hut, worker.id)
+    command.payload["deposit_hut_id"] = hut.id.to_json()
+    command.payload["deposit_hut_x"] = position.x
+    command.payload["deposit_hut_y"] = position.y
+    return hut, position
 
 
 def estimated_travel_distance(
@@ -1183,6 +1268,7 @@ def _debug_log_gather_performance(stats: GatherPerformanceCounters) -> None:
     print(
         "gather_perf "
         f"jobs={stats.path_jobs_processed} "
+        f"searches={stats.resource_searches} "
         f"candidates={stats.resource_candidates_checked} "
         f"paths={stats.full_path_calculations}"
     )
@@ -1228,7 +1314,7 @@ def _enemy_can_hit_position(
     position: WorldPosition,
     friendly_owner: str,
 ) -> bool:
-    for entity in world.entities.values():
+    for entity in _entities_near_position(world, position, 512.0):
         if not getattr(entity, "alive", False):
             continue
         owner = getattr(entity, "owner", "neutral")
@@ -1270,12 +1356,35 @@ def _resource_spawn_position_valid(
         return False
     if occupied_by_unit(world, position, min_distance=70):
         return False
-    for entity in world.entities.values():
+    query_bounds = _inflate_bounds(bounds, 96.0)
+    for entity_id in world.spatial_hash.query(query_bounds):
+        entity = world.entities.get(entity_id)
+        if entity is None:
+            continue
         if not getattr(entity, "alive", False):
             continue
         if _bounds_intersect(bounds, blocking_bounds_for_entity(entity)):
             return False
     return True
+
+
+def _entities_near_position(
+    world: WorldState,
+    position: WorldPosition,
+    radius: float,
+) -> list[object]:
+    bounds = (
+        position.x - radius,
+        position.y - radius,
+        radius * 2,
+        radius * 2,
+    )
+    entities: list[object] = []
+    for entity_id in world.spatial_hash.query(bounds):
+        entity = world.entities.get(entity_id)
+        if entity is not None:
+            entities.append(entity)
+    return entities
 
 
 def _bounds_intersect(
@@ -1290,3 +1399,11 @@ def _bounds_intersect(
         or first_top + first_height < second_top
         or second_top + second_height < first_top
     )
+
+
+def _inflate_bounds(
+    bounds: tuple[float, float, float, float],
+    amount: float,
+) -> tuple[float, float, float, float]:
+    left, top, width, height = bounds
+    return (left - amount, top - amount, width + (amount * 2), height + (amount * 2))

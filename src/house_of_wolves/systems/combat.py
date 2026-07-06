@@ -156,7 +156,7 @@ def _nearest_enemy_unit(
         return None
     nearest: object | None = None
     nearest_distance = radius
-    for other in world.entities.values():
+    for other in _entities_near_position(world, entity.position, radius):
         if ignored_id is not None and other.id == ignored_id:
             continue
         if not _is_enemy_unit(entity, other):
@@ -177,7 +177,7 @@ def _nearest_enemy_threatening_unit(
         return None
     nearest: object | None = None
     nearest_distance = float("inf")
-    for other in world.entities.values():
+    for other in _entities_near_position(world, entity.position, 512.0):
         if not _is_enemy_unit(entity, other):
             continue
         distance = _distance(entity.position, other.position)
@@ -187,6 +187,29 @@ def _nearest_enemy_threatening_unit(
             nearest = other
             nearest_distance = distance
     return nearest
+
+
+def _entities_near_position(
+    world: WorldState,
+    position: WorldPosition,
+    radius: float,
+) -> list[object]:
+    bounds = (
+        position.x - radius,
+        position.y - radius,
+        radius * 2,
+        radius * 2,
+    )
+    entities: list[object] = []
+    query_ids = world.spatial_hash.query(bounds)
+    unit_ids = getattr(world, "unit_ids", set())
+    if unit_ids:
+        query_ids = query_ids & unit_ids
+    for entity_id in query_ids:
+        entity = world.entities.get(entity_id)
+        if entity is not None:
+            entities.append(entity)
+    return entities
 
 
 def _locked_or_nearest_enemy_unit(

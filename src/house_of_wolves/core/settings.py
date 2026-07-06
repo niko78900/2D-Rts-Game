@@ -26,6 +26,7 @@ class AppSettings:
     show_unit_hitboxes: bool = False
     show_building_hitboxes: bool = False
     show_debug_waypoints: bool = False
+    show_performance_overlay: bool = False
     virtual_width: int = 1280
     virtual_height: int = 720
     target_fps: int = 60
@@ -37,7 +38,7 @@ class AppSettings:
     world_width: int = 7200
     world_height: int = 720
     default_unit_pop_cost: int = 1
-    hut_pop_cap_bonus: int = 5
+    hut_pop_cap_bonus: int = 10
     data_root: Path = DATA_ROOT
     schema_root: Path = SCHEMA_ROOT
     asset_root: Path = ASSET_ROOT

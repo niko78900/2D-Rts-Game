@@ -326,6 +326,40 @@ def test_runtime_settings_menu_toggles_debug_waypoint_rendering() -> None:
         runtime.shutdown()
 
 
+def test_runtime_toggles_performance_overlay_from_hotkey_and_settings_menu() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        assert runtime.screen is not None
+        assert runtime.renderer is not None
+        assert runtime.settings.show_performance_overlay is False
+
+        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_F3}))
+
+        assert runtime.settings.show_performance_overlay is True
+        assert runtime.world.settings.show_performance_overlay is True
+        assert runtime.renderer.settings.show_performance_overlay is True
+
+        settings_center = runtime.renderer.settings_button_rect(runtime.screen).center
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": settings_center})
+        )
+        toggle_center = runtime.renderer.settings_performance_overlay_toggle_rect(
+            runtime.screen
+        ).center
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": toggle_center})
+        )
+
+        assert runtime.settings.show_performance_overlay is False
+        assert runtime.world.settings.show_performance_overlay is False
+        assert runtime.renderer.settings.show_performance_overlay is False
+        assert runtime.settings_menu_open is True
+    finally:
+        runtime.shutdown()
+
+
 def test_runtime_clicking_hut_produce_button_spawns_unit() -> None:
     runtime = GameRuntime(AppSettings())
 
@@ -378,9 +412,10 @@ def test_runtime_production_refuses_at_population_cap_with_message() -> None:
     try:
         hut = next(entity for entity in runtime.world.entities.values() if "hut" in entity.tags)
         runtime.selection_system.state.replace([hut.id])
+        runtime.world.resources["wood"] = 1000
 
-        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
-        runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
+        while runtime.world.current_population < runtime.world.max_population:
+            runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
         unit_count = sum("unit" in entity.tags for entity in runtime.world.entities.values())
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_q}))
 
@@ -1074,6 +1109,46 @@ def test_runtime_hut_placement_uses_click_x_and_snaps_to_building_line() -> None
         assert construction_site.position.x == runtime.world.camera.screen_to_world(*click_pos).x
         assert construction_site.position.y == layout.building_lane_bottom_y
         assert runtime.active_building_placement is None
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_hut_placement_costs_50_wood_and_requires_affordability() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        runtime.selection_system.state.replace([settler.id])
+        runtime.active_building_placement = "hut"
+        runtime.world.resources["wood"] = 50
+        hut_count = sum("hut" in entity.tags for entity in runtime.world.entities.values())
+        layout = terrain_layout_for_height(runtime.world.settings.world_height)
+        click_pos = (900, round(layout.unit_walkable_top_y + 40))
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": click_pos})
+        )
+
+        assert runtime.world.resources["wood"] == 0
+        assert (
+            sum("hut" in entity.tags for entity in runtime.world.entities.values())
+            == hut_count + 1
+        )
+
+        runtime.active_building_placement = "hut"
+        runtime.handle_event(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 1, "pos": (1100, click_pos[1])},
+            )
+        )
+
+        assert (
+            sum("hut" in entity.tags for entity in runtime.world.entities.values())
+            == hut_count + 1
+        )
+        assert runtime.world.notifications[-1].message == "Needs wood."
     finally:
         runtime.shutdown()
 

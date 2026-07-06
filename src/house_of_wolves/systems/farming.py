@@ -12,6 +12,7 @@ from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.economy import (
     GATHER_CARRY_AMOUNT,
     closest_deposit_hut,
+    completed_deposit_huts,
     hut_deposit_position,
 )
 from house_of_wolves.world.collision import nearest_free_position
@@ -675,14 +676,7 @@ def _mark_spawn_ready_if_due(world: WorldState, farm: Building) -> None:
 
 
 def _completed_hut_available(world: WorldState, owner: str) -> bool:
-    return any(
-        isinstance(entity, Building)
-        and entity.owner == owner
-        and entity.complete
-        and bool(entity.functions.get("dropoff"))
-        and entity.alive
-        for entity in world.entities.values()
-    )
+    return bool(completed_deposit_huts(world, owner))
 
 
 def _worker_alive(world: WorldState, worker_id: EntityId) -> bool:

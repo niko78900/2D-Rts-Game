@@ -25,6 +25,7 @@ from house_of_wolves.core.keybindings import (
     command_slot_index_for_key,
     normalized_key_name,
 )
+from house_of_wolves.core.performance import time_block
 from house_of_wolves.core.renderer import BuildingPlacementPreview, GameRenderer, ScreenRect
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
@@ -62,6 +63,7 @@ HUT_BUILDING_ID = "hut"
 HUT_FOOTPRINT = Footprint(150, 116)
 HUT_MAX_HP = 650
 HUT_BUILD_TIME_MS = 12_000
+HUT_BUILD_COST = {"wood": 50}
 BUILD_MENU_ABILITIES = ("Hut", "Chicken Farm", "Pig Farm", "Back")
 BUILDING_ID_BY_BUILD_ABILITY = {
     "Hut": HUT_BUILDING_ID,
@@ -170,10 +172,17 @@ class GameRuntime:
             while self.running:
                 assert self.clock is not None
                 dt_ms = self.clock.tick(self.settings.target_fps)
-                self.process_events()
-                self.update(dt_ms)
-                self.render()
-                pygame.display.flip()
+                stats = self.world.performance_stats
+                stats.reset_frame()
+                stats.fps = self.clock.get_fps()
+                with time_block(stats, "input"):
+                    self.process_events()
+                with time_block(stats, "update"):
+                    self.update(dt_ms)
+                with time_block(stats, "render"):
+                    self.render()
+                with time_block(stats, "display"):
+                    pygame.display.flip()
                 frame_count += 1
                 if max_frames is not None and frame_count >= max_frames:
                     self.running = False
@@ -202,6 +211,9 @@ class GameRuntime:
             return
         if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
             self._toggle_fullscreen()
+            return
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_F3:
+            self._toggle_performance_overlay()
             return
         if event.type == pygame.KEYDOWN and self._handle_control_group_hotkey(event):
             return
@@ -655,13 +667,27 @@ class GameRuntime:
         return None
 
     def update(self, dt_ms: int) -> None:
-        self._update_camera(dt_ms)
-        self.combat_system.update(self.world, dt_ms)
-        self.movement_system.update(self.world, dt_ms)
-        self.construction_system.update(self.world, dt_ms)
-        self.economy_system.update(self.world, dt_ms)
-        self.farm_system.update(self.world, dt_ms)
-        self.world.update_notifications(dt_ms)
+        stats = self.world.performance_stats
+        with time_block(stats, "camera"):
+            self._update_camera(dt_ms)
+        with time_block(stats, "combat"):
+            self.combat_system.update(self.world, dt_ms)
+        with time_block(stats, "movement"):
+            self.movement_system.update(self.world, dt_ms)
+        with time_block(stats, "construction"):
+            self.construction_system.update(self.world, dt_ms)
+        with time_block(stats, "economy"):
+            self.economy_system.update(self.world, dt_ms)
+        gather_stats = self.economy_system.last_frame_stats
+        stats.counters.path_jobs_processed += gather_stats.path_jobs_processed
+        stats.counters.resource_candidates_checked += gather_stats.resource_candidates_checked
+        stats.counters.full_path_calculations += gather_stats.full_path_calculations
+        stats.counters.resource_searches += gather_stats.resource_searches
+        with time_block(stats, "farming"):
+            self.farm_system.update(self.world, dt_ms)
+        with time_block(stats, "notifications"):
+            self.world.update_notifications(dt_ms)
+        stats.snapshot_world_counts(self.world)
 
     def render(self) -> None:
         if self.screen is None or self.renderer is None:
@@ -728,6 +754,11 @@ class GameRuntime:
         ):
             self._toggle_debug_waypoints()
             return True
+        if self.renderer.settings_performance_overlay_toggle_rect(self.screen).collidepoint(
+            screen_pos
+        ):
+            self._toggle_performance_overlay()
+            return True
         keybind_action = self.renderer.settings_keybind_action_at(self.screen, screen_pos)
         if keybind_action is not None:
             self.rebinding_action = keybind_action
@@ -771,6 +802,14 @@ class GameRuntime:
         self.settings = replace(
             self.settings,
             show_debug_waypoints=not self.settings.show_debug_waypoints,
+        )
+        self.world.settings = self.settings
+        self.renderer = GameRenderer(self.settings)
+
+    def _toggle_performance_overlay(self) -> None:
+        self.settings = replace(
+            self.settings,
+            show_performance_overlay=not self.settings.show_performance_overlay,
         )
         self.world.settings = self.settings
         self.renderer = GameRenderer(self.settings)
@@ -1072,7 +1111,7 @@ class GameRuntime:
 
     def _building_cost(self, building_id: str) -> dict[str, int]:
         if building_id == HUT_BUILDING_ID:
-            return {}
+            return HUT_BUILD_COST
         return FARM_BUILDING_SPECS[building_id].cost
 
     def _spend_building_cost(self, building_id: str) -> bool:

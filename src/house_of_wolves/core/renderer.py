@@ -16,6 +16,7 @@ from house_of_wolves.core.keybindings import (
     ability_display_label,
     formatted_key_name,
 )
+from house_of_wolves.core.performance import time_block
 from house_of_wolves.core.settings import UI_PANEL_HEIGHT, AppSettings
 from house_of_wolves.systems.selection import SelectionState
 from house_of_wolves.ui.selected_panel import SelectedPanel, selected_panel_for
@@ -32,10 +33,10 @@ ABILITY_CHIP_HEIGHT = 24
 SETTINGS_BUTTON_WIDTH = 96
 SETTINGS_BUTTON_HEIGHT = 28
 SETTINGS_MENU_WIDTH = 320
-SETTINGS_MENU_HEIGHT = 564
+SETTINGS_MENU_HEIGHT = 600
 KEYBIND_ROW_HEIGHT = 24
 KEYBIND_ROW_GAP = 6
-KEYBIND_START_Y_OFFSET = 250
+KEYBIND_START_Y_OFFSET = 286
 KEYBIND_ROWS_PER_COLUMN = 9
 KEYBIND_COLUMN_GAP = 8
 STATUS_BAR_HEIGHT = 6
@@ -128,20 +129,28 @@ class GameRenderer:
         placement_preview: BuildingPlacementPreview | None = None,
         rebinding_action: str | None = None,
     ) -> None:
-        self._draw_background(surface, world)
-        self._draw_entities(surface, world, selection.selected_ids)
-        self._draw_dropoff_markers(surface, world, selection.selected_ids)
-        self._draw_destinations(surface, world, selection.selected_ids)
-        if placement_preview is not None:
-            self._draw_building_placement_preview(surface, world, placement_preview)
-        if drag_rect is not None:
-            self._draw_drag_rect(surface, drag_rect)
-        self._draw_hud(surface, world, selection, fps)
-        self._draw_notifications(surface, world)
-        self._draw_selected_panel(surface, world, selection, active_ability, ability_override)
-        self._draw_settings_button(surface)
-        if settings_open:
-            self._draw_settings_menu(surface, fullscreen, rebinding_action)
+        stats = world.performance_stats
+        with time_block(stats, "render_background"):
+            self._draw_background(surface, world)
+        with time_block(stats, "render_entities"):
+            self._draw_entities(surface, world, selection.selected_ids)
+        with time_block(stats, "render_waypoints"):
+            self._draw_dropoff_markers(surface, world, selection.selected_ids)
+            self._draw_destinations(surface, world, selection.selected_ids)
+            if placement_preview is not None:
+                self._draw_building_placement_preview(surface, world, placement_preview)
+            if drag_rect is not None:
+                self._draw_drag_rect(surface, drag_rect)
+        with time_block(stats, "render_hud"):
+            self._draw_hud(surface, world, selection, fps)
+            self._draw_notifications(surface, world)
+        with time_block(stats, "render_ui"):
+            self._draw_selected_panel(surface, world, selection, active_ability, ability_override)
+            self._draw_settings_button(surface)
+            if self.settings.show_performance_overlay:
+                self._draw_performance_overlay(surface, world, fps)
+            if settings_open:
+                self._draw_settings_menu(surface, fullscreen, rebinding_action)
 
     def _draw_background(self, surface: pygame.Surface, world: WorldState) -> None:
         width, height = surface.get_size()
@@ -198,8 +207,19 @@ class GameRenderer:
         selected_ids: list[EntityId],
     ) -> None:
         selected = set(selected_ids)
+        view_bounds = (
+            world.camera.x - 160,
+            -160,
+            surface.get_width() + 320,
+            max(1, surface.get_height() - PANEL_HEIGHT + 320),
+        )
+        visible_ids = world.spatial_hash.query(view_bounds)
         entities = sorted(
-            (entity for entity in world.entities.values() if entity.alive),
+            (
+                world.entities[entity_id]
+                for entity_id in visible_ids
+                if entity_id in world.entities and world.entities[entity_id].alive
+            ),
             key=lambda entity: (entity.position.y, entity.position.x, int(entity.id)),
         )
         for entity in entities:
@@ -760,10 +780,21 @@ class GameRenderer:
         waypoint_text = self.small_font.render(waypoint_label, True, (244, 238, 213))
         surface.blit(waypoint_text, waypoint_text.get_rect(center=waypoints.center))
 
+        perf = self.settings_performance_overlay_toggle_rect(surface)
+        perf_label = (
+            "Performance Overlay: On"
+            if self.settings.show_performance_overlay
+            else "Performance Overlay: Off"
+        )
+        pygame.draw.rect(surface, (64, 75, 61), perf, border_radius=4)
+        pygame.draw.rect(surface, (136, 152, 116), perf, width=1, border_radius=4)
+        perf_text = self.small_font.render(perf_label, True, (244, 238, 213))
+        surface.blit(perf_text, perf_text.get_rect(center=perf.center))
+
         self._draw_text(
             surface,
             "Keybinds",
-            (rect.left + 14, rect.top + 228),
+            (rect.left + 14, rect.top + 264),
             self.small_font,
             color=(221, 204, 145),
         )
@@ -815,6 +846,10 @@ class GameRenderer:
     def settings_debug_waypoints_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 192, menu.width - 28, 30)
+
+    def settings_performance_overlay_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        menu = self.settings_menu_rect(surface)
+        return pygame.Rect(menu.left + 14, menu.top + 228, menu.width - 28, 30)
 
     def settings_keybind_rect(self, surface: pygame.Surface, action: str) -> pygame.Rect:
         menu = self.settings_menu_rect(surface)
@@ -963,6 +998,62 @@ class GameRenderer:
         text = self.small_font.render(label, True, (245, 238, 210))
         surface.blit(text, text.get_rect(center=center))
 
+    def _draw_performance_overlay(
+        self,
+        surface: pygame.Surface,
+        world: WorldState,
+        fps: float,
+    ) -> None:
+        stats = world.performance_stats
+        timings = stats.timings_ms
+        counters = stats.counters
+        lines = [
+            f"FPS {fps:0.0f}",
+            (
+                f"Entities {stats.entity_count}  Units {stats.unit_count}  "
+                f"Resources {stats.resource_count}  Buildings {stats.building_count}"
+            ),
+            f"Input {timings.get('input', 0.0):0.2f} ms",
+            (
+                f"Update {timings.get('update', 0.0):0.2f} ms  "
+                f"Render {timings.get('render', 0.0):0.2f} ms"
+            ),
+            (
+                f"Move {timings.get('movement', 0.0):0.2f}  "
+                f"Combat {timings.get('combat', 0.0):0.2f}  "
+                f"Economy {timings.get('economy', 0.0):0.2f}  "
+                f"Farm {timings.get('farming', 0.0):0.2f}"
+            ),
+            (
+                f"Render entities {timings.get('render_entities', 0.0):0.2f}  "
+                f"HUD/UI {timings.get('render_hud', 0.0) + timings.get('render_ui', 0.0):0.2f}"
+            ),
+            (
+                f"Path jobs {counters.path_jobs_processed}  "
+                f"Path calcs {counters.full_path_calculations}  "
+                f"Resource searches {counters.resource_searches}"
+            ),
+            (
+                f"Candidates {counters.resource_candidates_checked}  "
+                f"Collision checks {counters.collision_checks}"
+            ),
+        ]
+        width = 390
+        height = 18 + len(lines) * 19
+        rect = pygame.Rect(surface.get_width() - width - 16, 52, width, height)
+        overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+        overlay.fill((22, 26, 24, 220))
+        surface.blit(overlay, rect)
+        pygame.draw.rect(surface, (128, 114, 76), rect, width=1, border_radius=4)
+        for index, line in enumerate(lines):
+            self._draw_text(
+                surface,
+                line,
+                (rect.left + 10, rect.top + 8 + index * 19),
+                self.small_font,
+                color=(244, 238, 213),
+            )
+
 
 def _screen_rect(world: WorldState, bounds: tuple[float, float, float, float]) -> pygame.Rect:
     left, top, width, height = bounds
@@ -1000,7 +1091,12 @@ def _load_animal_sprites() -> dict[str, pygame.Surface]:
         if not path.exists():
             continue
         try:
-            sprites[sprite_id] = pygame.image.load(str(path))
+            sprite = pygame.image.load(str(path))
+            sprites[sprite_id] = (
+                sprite.convert_alpha()
+                if pygame.display.get_init() and pygame.display.get_surface() is not None
+                else sprite
+            )
         except pygame.error:
             continue
     return sprites

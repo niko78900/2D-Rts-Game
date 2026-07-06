@@ -50,8 +50,9 @@ def test_produce_unit_rejects_units_not_trained_by_building() -> None:
 def test_produce_unit_rejects_when_population_cap_is_full() -> None:
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
-    produce_unit(world, hut.id, "settler")
-    produce_unit(world, hut.id, "settler")
+    world.resources["wood"] = 1000
+    while world.current_population < world.max_population:
+        produce_unit(world, hut.id, "settler")
     unit_count = sum("unit" in entity.tags for entity in world.entities.values())
 
     with pytest.raises(ProductionError, match="Population cap reached"):

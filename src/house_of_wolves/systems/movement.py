@@ -32,6 +32,7 @@ class MovementProgress:
     friendly_collision_anchor: WorldPosition | None = None
     friendly_collision_count: int = 0
     friendly_ghost_until_ms: int = 0
+    friendly_collision_check_elapsed_ms: int = 10_000
 
 
 @dataclass(slots=True)
@@ -50,15 +51,33 @@ class MovementSystem:
     friendly_ghost_area_px: float = 12.0
     friendly_ghost_reset_distance_px: float = 24.0
     friendly_ghost_duration_ms: int = 750
+    friendly_ghost_check_interval_ms: int = 48
+    shove_interval_ms: int = 48
+    separation_interval_ms: int = 48
     _progress_by_entity: dict[EntityId, MovementProgress] = field(default_factory=dict)
+    _last_shove_ms_by_entity: dict[EntityId, int] = field(default_factory=dict)
+    _separation_elapsed_ms: int = 10_000
 
     def update(self, world: WorldState, dt_ms: int) -> None:
         world.elapsed_ms += dt_ms
-        for entity_id in list(world.command_queues):
-            self._update_entity(world, entity_id, dt_ms)
-        separate_overlapping_units(world, friendly_ghost_ids=self._active_friendly_ghost_ids(world))
+        active_ghost_ids = self._active_friendly_ghost_ids(world)
+        for entity_id in list(getattr(world, "unit_ids", world.command_queues.keys())):
+            self._update_entity(world, entity_id, dt_ms, active_ghost_ids)
+        self._separation_elapsed_ms += max(0, int(dt_ms))
+        if self._separation_elapsed_ms >= self.separation_interval_ms:
+            separate_overlapping_units(
+                world,
+                friendly_ghost_ids=self._active_friendly_ghost_ids(world),
+            )
+            self._separation_elapsed_ms = 0
 
-    def _update_entity(self, world: WorldState, entity_id: EntityId, dt_ms: int) -> None:
+    def _update_entity(
+        self,
+        world: WorldState,
+        entity_id: EntityId,
+        dt_ms: int,
+        active_ghost_ids: set[EntityId],
+    ) -> None:
         entity = world.entities.get(entity_id)
         if entity is None or not _is_movable(entity):
             return
@@ -108,9 +127,9 @@ class MovementSystem:
                     entity_id,
                     target,
                     current=entity.position,
-                    max_adjustment=self.collision_slide_px,
-                ),
-            )
+                max_adjustment=self.collision_slide_px,
+            ),
+        )
             self._finish_move(entity_id, queue)
             if hasattr(entity, "state"):
                 entity.state = "idle"
@@ -143,14 +162,15 @@ class MovementSystem:
             )
             if hasattr(entity, "state"):
                 entity.state = "moving"
-        shove_units_from_movement(
-            world,
-            entity_id,
-            entity.position,
-            new_position,
-            max_push=min(self.max_shove_px, max(step * 0.55, 0.0)),
-            friendly_ghost_ids=self._active_friendly_ghost_ids(world),
-        )
+        if self._should_shove(world, entity_id):
+            shove_units_from_movement(
+                world,
+                entity_id,
+                entity.position,
+                new_position,
+                max_push=min(self.max_shove_px, max(step * 0.55, 0.0)),
+                friendly_ghost_ids=active_ghost_ids,
+            )
         old_position = entity.position
         world.update_entity_position(
             entity_id,
@@ -160,7 +180,7 @@ class MovementSystem:
                 new_position,
                 current=entity.position,
                 max_adjustment=self.collision_slide_px,
-                friendly_ghost_ids=self._active_friendly_ghost_ids(world),
+                friendly_ghost_ids=active_ghost_ids,
             ),
         )
         if finish_after_move:
@@ -172,6 +192,7 @@ class MovementSystem:
                 progress,
                 old_position,
                 new_position,
+                dt_ms,
             )
             if not chasing_attack_target:
                 self._stop_if_unreachable(world, entity_id, queue, target, progress, dt_ms)
@@ -261,6 +282,7 @@ class MovementSystem:
         progress: MovementProgress,
         previous_position: WorldPosition,
         attempted_position: WorldPosition,
+        dt_ms: int,
     ) -> None:
         entity = world.entities.get(entity_id)
         if entity is None:
@@ -275,6 +297,15 @@ class MovementSystem:
         moved_distance = _distance(previous_position, entity.position)
         if moved_distance >= self.friendly_ghost_reset_distance_px:
             self._reset_friendly_collision_progress(progress)
+
+        progress.friendly_collision_check_elapsed_ms += max(0, int(dt_ms))
+        if (
+            self.friendly_ghost_check_interval_ms > 0
+            and progress.friendly_collision_check_elapsed_ms
+            < self.friendly_ghost_check_interval_ms
+        ):
+            return
+        progress.friendly_collision_check_elapsed_ms = 0
 
         collision_position = _nearest_friendly_collision_position(
             world,
@@ -304,6 +335,13 @@ class MovementSystem:
     def _reset_friendly_collision_progress(self, progress: MovementProgress) -> None:
         progress.friendly_collision_anchor = None
         progress.friendly_collision_count = 0
+
+    def _should_shove(self, world: WorldState, entity_id: EntityId) -> bool:
+        last_ms = self._last_shove_ms_by_entity.get(entity_id)
+        if last_ms is not None and world.elapsed_ms - last_ms < self.shove_interval_ms:
+            return False
+        self._last_shove_ms_by_entity[entity_id] = world.elapsed_ms
+        return True
 
     def _active_friendly_ghost_ids(self, world: WorldState) -> set[EntityId]:
         return {
@@ -346,6 +384,7 @@ class MovementSystem:
 
     def _clear_progress(self, entity_id: EntityId) -> None:
         self._progress_by_entity.pop(entity_id, None)
+        self._last_shove_ms_by_entity.pop(entity_id, None)
 
 
 def _is_movable(entity: object) -> bool:
@@ -433,7 +472,16 @@ def _nearest_friendly_collision_position(
 
     nearest_position: WorldPosition | None = None
     nearest_distance = UNIT_COLLISION_RADIUS
-    for other in world.entities.values():
+    query_bounds = (
+        position.x - UNIT_COLLISION_RADIUS,
+        position.y - UNIT_COLLISION_RADIUS,
+        UNIT_COLLISION_RADIUS * 2,
+        UNIT_COLLISION_RADIUS * 2,
+    )
+    for other_id in world.spatial_hash.query(query_bounds):
+        other = world.entities.get(other_id)
+        if other is None:
+            continue
         if (
             other.id == entity_id
             or not is_unit(other)

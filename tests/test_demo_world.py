@@ -27,7 +27,7 @@ def test_demo_world_bootstrap_creates_expected_placeholder_entities() -> None:
     assert hut.dropoff_point is not None
     assert hut.dropoff_point.y == UNIT_WALKABLE_TOP_Y
     assert hut.production_config.dropoff is True
-    assert hut.production_config.population_cap_bonus == 5
+    assert hut.production_config.population_cap_bonus == 10
     assert hut.production_config.trainable_units == ("settler", "spearman")
     assert world.resources["wood"] == 120
     assert len(active_resource_nodes(world, "wood")) == 40

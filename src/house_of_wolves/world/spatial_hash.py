@@ -16,7 +16,7 @@ Cell = tuple[int, int]
 class SpatialHash:
     """Maps entity bounds into coarse world cells."""
 
-    cell_size: int = 256
+    cell_size: int = 96
     _cells: dict[Cell, set[EntityId]] = field(default_factory=lambda: defaultdict(set))
     _bounds_by_id: dict[EntityId, Bounds] = field(default_factory=dict)
 

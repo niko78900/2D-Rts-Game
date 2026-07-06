@@ -7,6 +7,7 @@ from random import Random
 from typing import TYPE_CHECKING
 
 from house_of_wolves.core.contracts import Command, CommandQueue, EntityId, WorldPosition
+from house_of_wolves.core.performance import PerformanceStats
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.world.camera import Camera
 from house_of_wolves.world.encounter_zones import DEFAULT_ENCOUNTER_ZONES, EncounterZone
@@ -46,6 +47,9 @@ class WorldState:
             "gold": [],
         }
     )
+    unit_ids: set[EntityId] = field(default_factory=set)
+    hard_obstacle_ids: set[EntityId] = field(default_factory=set)
+    completed_deposit_huts_by_owner: dict[str, list[EntityId]] = field(default_factory=dict)
     current_population: int = 0
     max_population: int = 0
     notifications: list[Notification] = field(default_factory=list)
@@ -53,6 +57,7 @@ class WorldState:
     spatial_hash: SpatialHash = field(default_factory=SpatialHash)
     terrain_bands: tuple[TerrainBand, ...] = DEFAULT_TERRAIN_BANDS
     encounter_zones: tuple[EncounterZone, ...] = DEFAULT_ENCOUNTER_ZONES
+    performance_stats: PerformanceStats = field(default_factory=PerformanceStats)
     rng: Random = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -68,6 +73,7 @@ class WorldState:
         self.command_queues.setdefault(entity.id, CommandQueue(entity.id))
         self.spatial_hash.insert(entity.id, entity.bounds)
         self._index_resource_node(entity)
+        self._index_entity_tags(entity)
         self.recalculate_population()
 
     def update_entity_position(self, entity_id: EntityId, position: WorldPosition) -> None:
@@ -80,6 +86,8 @@ class WorldState:
         self.command_queues.pop(entity_id, None)
         self.spatial_hash.remove(entity_id)
         self.unindex_resource_node(entity_id)
+        self.unit_ids.discard(entity_id)
+        self.hard_obstacle_ids.discard(entity_id)
         self.recalculate_population()
 
     def unindex_resource_node(self, entity_id: EntityId) -> None:
@@ -99,7 +107,15 @@ class WorldState:
             if entity_id in bucket:
                 bucket.remove(entity_id)
 
+    def _index_entity_tags(self, entity: Entity) -> None:
+        tags = set(getattr(entity, "tags", ()))
+        if "unit" in tags:
+            self.unit_ids.add(entity.id)
+        if bool(tags & {"building", "resource"}):
+            self.hard_obstacle_ids.add(entity.id)
+
     def recalculate_population(self) -> None:
+        self.completed_deposit_huts_by_owner.clear()
         self.current_population = sum(
             _population_cost(entity, self.settings.default_unit_pop_cost)
             for entity in self.entities.values()
@@ -107,6 +123,10 @@ class WorldState:
         self.max_population = sum(
             _population_cap_bonus(entity) for entity in self.entities.values()
         )
+        for entity in self.entities.values():
+            owner = _completed_deposit_hut_owner(entity)
+            if owner is not None:
+                self.completed_deposit_huts_by_owner.setdefault(owner, []).append(entity.id)
 
     def notify(self, message: str, *, duration_ms: int = 2500) -> None:
         self.notifications.append(Notification(message, duration_ms))
@@ -182,6 +202,20 @@ def _population_cap_bonus(entity: object) -> int:
     if production_config is None:
         return 0
     return max(0, int(production_config.population_cap_bonus))
+
+
+def _completed_deposit_hut_owner(entity: object) -> str | None:
+    if (
+        not getattr(entity, "alive", False)
+        or "building" not in getattr(entity, "tags", ())
+        or not bool(getattr(entity, "complete", True))
+    ):
+        return None
+    functions = getattr(entity, "functions", {})
+    if not bool(functions.get("dropoff")):
+        return None
+    owner = getattr(entity, "owner", None)
+    return str(owner) if owner is not None else None
 
 
 def _resource_type_for_index(entity: object) -> str | None:
