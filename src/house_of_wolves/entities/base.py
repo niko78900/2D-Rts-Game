@@ -20,9 +20,11 @@ class Entity:
 
     @property
     def bounds(self) -> tuple[float, float, float, float]:
+        """Return the entity world-space bounds."""
         return self.footprint.bounds_at(self.position)
 
     def to_json(self) -> JsonObject:
+        """Serialize this object into JSON-compatible data."""
         return {
             "id": self.id.to_json(),
             "owner": self.owner,
@@ -36,6 +38,7 @@ class Entity:
 
     @classmethod
     def from_json(cls, value: JsonObject) -> Entity:
+        """Build this object from JSON-compatible data."""
         return cls(
             id=EntityId.from_json(value["id"]),
             owner=str(value["owner"]),

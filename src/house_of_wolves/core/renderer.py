@@ -91,6 +91,7 @@ class BuildingPlacementPreview:
 
     @property
     def bounds(self) -> tuple[float, float, float, float]:
+        """Return the entity world-space bounds."""
         return self.footprint.bounds_at(self.position)
 
 
@@ -112,6 +113,7 @@ class GameRenderer:
     )
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         if not pygame.font.get_init():
             pygame.font.init()
         self.font = pygame.font.Font(None, 24)
@@ -134,6 +136,7 @@ class GameRenderer:
         placement_preview: BuildingPlacementPreview | None = None,
         rebinding_action: str | None = None,
     ) -> None:
+        """Render the current game frame or UI panel."""
         stats = world.performance_stats
         with time_block(stats, "render_background"):
             self._draw_background(surface, world)
@@ -159,6 +162,7 @@ class GameRenderer:
                 self._draw_settings_menu(surface, fullscreen, rebinding_action)
 
     def _draw_background(self, surface: pygame.Surface, world: WorldState) -> None:
+        """Draw background."""
         width, height = surface.get_size()
         layout = terrain_layout_for_height(height)
         sky_bottom = round(layout.sky_bottom_y)
@@ -212,6 +216,7 @@ class GameRenderer:
         world: WorldState,
         selected_ids: list[EntityId],
     ) -> None:
+        """Draw entities."""
         selected = set(selected_ids)
         view_bounds = (
             world.camera.x - 160,
@@ -250,6 +255,7 @@ class GameRenderer:
                 self._draw_selection(surface, rect, enemy=_is_enemy_entity(entity))
 
     def _draw_unit(self, surface: pygame.Surface, rect: pygame.Rect, entity: object) -> None:
+        """Draw unit."""
         tags = (
             tuple(entity)
             if isinstance(entity, tuple)
@@ -273,6 +279,7 @@ class GameRenderer:
         rect: pygame.Rect,
         entity: object,
     ) -> None:
+        """Draw resource."""
         tags = tuple(entity) if isinstance(entity, tuple) else tuple(getattr(entity, "tags", ()))
         if "chicken" in tags:
             if self._draw_animal_sprite(surface, rect, "chicken"):
@@ -325,6 +332,7 @@ class GameRenderer:
         rect: pygame.Rect,
         sprite_id: str,
     ) -> bool:
+        """Draw animal sprite."""
         sprite = self.animal_sprites.get(sprite_id)
         if sprite is None:
             return False
@@ -343,6 +351,7 @@ class GameRenderer:
         world: WorldState,
         entity: object,
     ) -> None:
+        """Draw resource hitbox."""
         rect = _screen_rect(world, blocking_bounds_for_entity(entity))
         pygame.draw.rect(surface, (238, 218, 111), rect, width=2, border_radius=8)
 
@@ -352,6 +361,7 @@ class GameRenderer:
         rect: pygame.Rect,
         kind: str,
     ) -> None:
+        """Draw entity hitbox."""
         color = (87, 211, 239) if kind == "unit" else (238, 112, 222)
         pygame.draw.rect(surface, color, rect, width=2, border_radius=6)
 
@@ -361,6 +371,7 @@ class GameRenderer:
         rect: pygame.Rect,
         entity: object,
     ) -> None:
+        """Draw building."""
         tags = tuple(getattr(entity, "tags", ()))
         if "chicken_farm" in tags:
             self._draw_chicken_farm(surface, rect, complete=bool(getattr(entity, "complete", True)))
@@ -380,6 +391,7 @@ class GameRenderer:
         self._draw_label(surface, _short_label(tags), rect.center)
 
     def _draw_hut_scaffolding(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Draw hut scaffolding."""
         outline = (194, 183, 128)
         pygame.draw.rect(surface, (72, 76, 61), rect, width=3, border_radius=4)
         for x in (rect.left + 18, rect.centerx, rect.right - 18):
@@ -390,6 +402,7 @@ class GameRenderer:
         pygame.draw.line(surface, outline, rect.topleft, rect.bottomright, 2)
 
     def _draw_hut_partial(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Draw hut partial."""
         pygame.draw.rect(surface, (102, 78, 55), rect, border_radius=4)
         pygame.draw.rect(surface, (194, 183, 128), rect, width=3, border_radius=4)
         pygame.draw.line(
@@ -401,6 +414,7 @@ class GameRenderer:
         )
 
     def _draw_hut_complete(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Draw hut complete."""
         pygame.draw.rect(surface, (115, 80, 54), rect, border_radius=4)
         roof = [
             (rect.left - 10, rect.top + 28),
@@ -417,6 +431,7 @@ class GameRenderer:
         *,
         complete: bool,
     ) -> None:
+        """Draw chicken farm."""
         fill = (132, 93, 58) if complete else (88, 89, 72)
         pygame.draw.rect(surface, fill, rect, border_radius=4)
         roof = pygame.Rect(
@@ -440,6 +455,7 @@ class GameRenderer:
         *,
         complete: bool,
     ) -> None:
+        """Draw pig farm."""
         pen_color = (102, 76, 52) if complete else (88, 89, 72)
         pygame.draw.rect(surface, (83, 112, 67), rect, border_radius=4)
         for x in range(rect.left + 8, rect.right, 22):
@@ -460,6 +476,7 @@ class GameRenderer:
         world: WorldState,
         preview: BuildingPlacementPreview,
     ) -> None:
+        """Draw building placement preview."""
         rect = _screen_rect(world, preview.bounds)
         if not _rect_on_screen(surface, rect):
             return
@@ -494,6 +511,7 @@ class GameRenderer:
         *,
         enemy: bool = False,
     ) -> None:
+        """Draw selection."""
         marker = pygame.Rect(rect.left - 5, rect.bottom - 12, rect.width + 10, 18)
         color = (231, 84, 72) if enemy else (235, 220, 118)
         pygame.draw.ellipse(surface, color, marker, width=3)
@@ -504,6 +522,7 @@ class GameRenderer:
         rect: pygame.Rect,
         entity: object,
     ) -> None:
+        """Draw status bar."""
         spec = status_bar_for_entity(entity)
         if spec is None:
             return
@@ -532,6 +551,7 @@ class GameRenderer:
         world: WorldState,
         selected_ids: list[EntityId],
     ) -> None:
+        """Draw destinations."""
         if self.settings.show_debug_waypoints:
             self._draw_debug_destinations(surface, world, selected_ids)
             return
@@ -571,6 +591,7 @@ class GameRenderer:
         world: WorldState,
         selected_ids: list[EntityId],
     ) -> None:
+        """Draw debug destinations."""
         for entity_id, move_targets in queued_move_markers(world, selected_ids):
             entity = world.entities.get(entity_id)
             if entity is None:
@@ -598,6 +619,7 @@ class GameRenderer:
         world: WorldState,
         selected_ids: list[EntityId],
     ) -> None:
+        """Draw dropoff markers."""
         for entity_id in selected_ids:
             entity = world.entities.get(entity_id)
             dropoff_point = getattr(entity, "dropoff_point", None)
@@ -606,6 +628,7 @@ class GameRenderer:
             self._draw_dropoff_flag(surface, world.camera.world_to_screen(dropoff_point))
 
     def _draw_dropoff_flag(self, surface: pygame.Surface, screen_pos: tuple[int, int]) -> None:
+        """Draw dropoff flag."""
         x, y = screen_pos
         pygame.draw.line(surface, (18, 18, 18), (x, y), (x, y - 50), 4)
         pygame.draw.polygon(
@@ -628,6 +651,7 @@ class GameRenderer:
         *,
         attack_move: bool = False,
     ) -> None:
+        """Draw gameplay destination marker."""
         x, y = screen_pos
         color = _destination_marker_color(attack_move, 1)
         outline = (112, 54, 49) if attack_move else (123, 105, 47)
@@ -641,6 +665,7 @@ class GameRenderer:
         *,
         attack_move: bool = False,
     ) -> None:
+        """Draw gameplay link endpoint."""
         color = _destination_marker_color(attack_move, 1)
         outline = (123, 105, 47) if not attack_move else (112, 54, 49)
         pygame.draw.circle(surface, outline, screen_pos, 5)
@@ -654,6 +679,7 @@ class GameRenderer:
         *,
         attack_move: bool = False,
     ) -> None:
+        """Draw debug destination marker."""
         x, y = screen_pos
         radius = 10 if index == 1 else 8
         color = _destination_marker_color(attack_move, index)
@@ -667,6 +693,7 @@ class GameRenderer:
         surface.blit(label, label_rect)
 
     def _draw_drag_rect(self, surface: pygame.Surface, drag_rect: ScreenRect) -> None:
+        """Draw drag rect."""
         rect = pygame.Rect(drag_rect)
         overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
         overlay.fill((235, 220, 118, 45))
@@ -680,6 +707,7 @@ class GameRenderer:
         selection: SelectionState,
         fps: float,
     ) -> None:
+        """Draw hud."""
         pygame.draw.rect(surface, (25, 29, 31), (0, 0, surface.get_width(), 54))
         resources = "  ".join(
             f"{_resource_label(name)}: {world.resources.get(name, 0)}"
@@ -696,6 +724,7 @@ class GameRenderer:
         self._draw_text(surface, hint, (260, 34), self.small_font, color=(210, 214, 198))
 
     def _draw_notifications(self, surface: pygame.Surface, world: WorldState) -> None:
+        """Draw notifications."""
         for index, notification in enumerate(world.notifications[-4:]):
             text = self._notification_surface(notification.message, (247, 229, 169))
             rect = text.get_rect(midtop=(surface.get_width() // 2, 62 + index * 24))
@@ -709,6 +738,7 @@ class GameRenderer:
         message: str,
         color: tuple[int, int, int],
     ) -> pygame.Surface:
+        """Return a cached rendered surface for a notification."""
         key = (message, color)
         cached = self._notification_surface_cache.get(key)
         if cached is not None:
@@ -720,6 +750,7 @@ class GameRenderer:
         return rendered
 
     def _draw_settings_button(self, surface: pygame.Surface) -> None:
+        """Draw settings button."""
         rect = self.settings_button_rect(surface)
         pygame.draw.rect(surface, (52, 63, 58), rect, border_radius=4)
         pygame.draw.rect(surface, (136, 152, 116), rect, width=1, border_radius=4)
@@ -732,6 +763,7 @@ class GameRenderer:
         fullscreen: bool,
         rebinding_action: str | None,
     ) -> None:
+        """Draw settings menu."""
         rect = self.settings_menu_rect(surface)
         pygame.draw.rect(surface, (24, 29, 28), rect, border_radius=6)
         pygame.draw.rect(surface, (128, 114, 76), rect, width=2, border_radius=6)
@@ -833,6 +865,7 @@ class GameRenderer:
             surface.blit(rendered, rendered.get_rect(midleft=(row.left + 10, row.centery)))
 
     def settings_button_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the settings button rectangle."""
         return pygame.Rect(
             surface.get_width() - SETTINGS_BUTTON_WIDTH - 16,
             12,
@@ -841,6 +874,7 @@ class GameRenderer:
         )
 
     def settings_menu_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the settings menu rectangle."""
         return pygame.Rect(
             surface.get_width() - SETTINGS_MENU_WIDTH - 16,
             52,
@@ -849,30 +883,37 @@ class GameRenderer:
         )
 
     def settings_display_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the display-mode toggle rectangle."""
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 48, menu.width - 28, 30)
 
     def settings_resource_hitboxes_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the resource-hitbox toggle rectangle."""
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 84, menu.width - 28, 30)
 
     def settings_unit_hitboxes_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the unit-hitbox toggle rectangle."""
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 120, menu.width - 28, 30)
 
     def settings_building_hitboxes_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the building-hitbox toggle rectangle."""
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 156, menu.width - 28, 30)
 
     def settings_debug_waypoints_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the waypoint-debug toggle rectangle."""
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 192, menu.width - 28, 30)
 
     def settings_performance_overlay_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the profiler overlay toggle rectangle."""
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 228, menu.width - 28, 30)
 
     def settings_keybind_rect(self, surface: pygame.Surface, action: str) -> pygame.Rect:
+        """Return the keybinding row rectangle for an action."""
         menu = self.settings_menu_rect(surface)
         index = KEYBIND_ACTION_ORDER.index(action)
         column = index // KEYBIND_ROWS_PER_COLUMN
@@ -891,12 +932,14 @@ class GameRenderer:
         surface: pygame.Surface,
         screen_pos: tuple[int, int],
     ) -> str | None:
+        """Return the keybinding action under a point."""
         for action in KEYBIND_ACTION_ORDER:
             if self.settings_keybind_rect(surface, action).collidepoint(screen_pos):
                 return action
         return None
 
     def settings_menu_contains(self, surface: pygame.Surface, screen_pos: tuple[int, int]) -> bool:
+        """Return whether a point is inside the settings menu."""
         return self.settings_menu_rect(surface).collidepoint(screen_pos)
 
     def _draw_selected_panel(
@@ -907,6 +950,7 @@ class GameRenderer:
         active_ability: str | None,
         ability_override: tuple[str, ...] | None,
     ) -> None:
+        """Draw selected panel."""
         panel = selected_panel_for(world, selection.selected_ids)
         panel_rect = pygame.Rect(
             0,
@@ -953,6 +997,7 @@ class GameRenderer:
             surface.blit(text, text.get_rect(center=button.rect.center))
 
     def panel_contains(self, surface: pygame.Surface, screen_pos: tuple[int, int]) -> bool:
+        """Return whether a screen position is inside the command panel."""
         panel_rect = pygame.Rect(
             0,
             surface.get_height() - PANEL_HEIGHT,
@@ -969,6 +1014,7 @@ class GameRenderer:
         screen_pos: tuple[int, int],
         ability_override: tuple[str, ...] | None = None,
     ) -> str | None:
+        """Return the ability button under a screen position."""
         panel = selected_panel_for(world, selection.selected_ids)
         for button in self.ability_buttons_for_panel(surface, panel, ability_override):
             if button.rect.collidepoint(screen_pos):
@@ -981,6 +1027,7 @@ class GameRenderer:
         panel: SelectedPanel,
         ability_override: tuple[str, ...] | None = None,
     ) -> list[AbilityButton]:
+        """Create clickable ability buttons for the selected panel."""
         panel_top = surface.get_height() - PANEL_HEIGHT
         ability_x = ABILITY_START_X
         ability_y = panel_top + ABILITY_START_Y_OFFSET
@@ -1013,9 +1060,11 @@ class GameRenderer:
         *,
         color: tuple[int, int, int] = (240, 235, 214),
     ) -> None:
+        """Draw text."""
         surface.blit(font.render(text, True, color), position)
 
     def _draw_label(self, surface: pygame.Surface, label: str, center: tuple[int, int]) -> None:
+        """Draw label."""
         text = self.small_font.render(label, True, (245, 238, 210))
         surface.blit(text, text.get_rect(center=center))
 
@@ -1025,6 +1074,7 @@ class GameRenderer:
         world: WorldState,
         fps: float,
     ) -> None:
+        """Draw performance overlay."""
         stats = world.performance_stats
         timings = stats.timings_ms
         counters = stats.counters
@@ -1083,16 +1133,19 @@ class GameRenderer:
 
 
 def _screen_rect(world: WorldState, bounds: tuple[float, float, float, float]) -> pygame.Rect:
+    """Return the bounds used for screen rect."""
     left, top, width, height = bounds
     screen_pos = world.camera.world_to_screen(WorldPosition(left, top))
     return pygame.Rect(screen_pos[0], screen_pos[1], round(width), round(height))
 
 
 def _rect_on_screen(surface: pygame.Surface, rect: pygame.Rect) -> bool:
+    """Return the bounds used for rect on screen."""
     return rect.colliderect(surface.get_rect().inflate(120, 120))
 
 
 def _short_label(tags: tuple[str, ...]) -> str:
+    """Return display text for short label."""
     for tag in tags:
         if tag not in {
             "unit",
@@ -1109,10 +1162,12 @@ def _short_label(tags: tuple[str, ...]) -> str:
 
 
 def _is_enemy_entity(entity: object) -> bool:
+    """Return whether enemy entity."""
     return getattr(entity, "owner", "neutral") not in {"frontier", "neutral"}
 
 
 def _load_animal_sprites() -> dict[str, pygame.Surface]:
+    """Load animal sprites."""
     sprites: dict[str, pygame.Surface] = {}
     for sprite_id, path in ANIMAL_SPRITE_PATHS.items():
         if not path.exists():
@@ -1130,6 +1185,7 @@ def _load_animal_sprites() -> dict[str, pygame.Surface]:
 
 
 def _sprite_target_size(sprite: pygame.Surface, rect: pygame.Rect) -> tuple[int, int]:
+    """Return the position used for sprite target size."""
     box_width = max(1, rect.width * 2)
     box_height = max(1, rect.height * 2)
     width, height = sprite.get_size()
@@ -1166,6 +1222,7 @@ def hut_sprite_reference_for(entity: object) -> str:
 
 
 def status_bar_for_entity(entity: object) -> StatusBarSpec | None:
+    """Return the status bar values for an entity."""
     tags = set(getattr(entity, "tags", ()))
     if "food_animal" in tags:
         hp = max(0, int(getattr(entity, "hp", 0)))
@@ -1201,12 +1258,14 @@ def status_bar_for_entity(entity: object) -> StatusBarSpec | None:
 
 
 def _ratio(current: int, maximum: int) -> float:
+    """Clamp a current/max value into a status-bar ratio."""
     if maximum <= 0:
         return 0.0
     return max(0.0, min(1.0, current / maximum))
 
 
 def _building_progress_ratio(entity: object) -> float:
+    """Return construction progress used by building bars."""
     build_time = int(getattr(entity, "build_time_ms", 0) or 0)
     if build_time <= 0:
         return 1.0
@@ -1278,6 +1337,7 @@ def gameplay_waypoint_links(
 
 
 def _average_marker(markers: list[MoveTargetMarker]) -> MoveTargetMarker:
+    """Return the average queued marker position for a group."""
     x = sum(marker.position.x for marker in markers) / len(markers)
     y = sum(marker.position.y for marker in markers) / len(markers)
     return MoveTargetMarker(
@@ -1287,12 +1347,14 @@ def _average_marker(markers: list[MoveTargetMarker]) -> MoveTargetMarker:
 
 
 def _command_target(command: Command) -> WorldPosition | None:
+    """Return the position used for command target."""
     if command.type != "move":
         return None
     return command.target_pos
 
 
 def _command_marker(command: Command) -> MoveTargetMarker | None:
+    """Return the visible marker position for a command."""
     target = _command_target(command)
     if target is None:
         return None
@@ -1300,6 +1362,7 @@ def _command_marker(command: Command) -> MoveTargetMarker | None:
 
 
 def _destination_line_color(attack_move: bool) -> tuple[int, int, int]:
+    """Return the waypoint line color for a command."""
     return (176, 70, 58) if attack_move else (162, 144, 74)
 
 
@@ -1333,21 +1396,25 @@ def draw_dotted_line(
     spacing: int = 12,
     radius: int = 2,
 ) -> None:
+    """Draw a dotted waypoint link between two screen points."""
     for point in dotted_line_points(start, end, spacing=spacing):
         pygame.draw.circle(surface, color, point, radius)
 
 
 def _gameplay_waypoint_link_color(attack_move: bool) -> tuple[int, int, int]:
+    """Return the gameplay waypoint link color."""
     return (176, 83, 75) if attack_move else (178, 158, 86)
 
 
 def _destination_marker_color(attack_move: bool, index: int) -> tuple[int, int, int]:
+    """Return the waypoint marker color for a command."""
     if attack_move:
         return (231, 84, 72) if index == 1 else (194, 66, 58)
     return (238, 218, 111) if index == 1 else (226, 183, 86)
 
 
 def _resource_label(resource_type: str) -> str:
+    """Return display text for resource label."""
     if resource_type == "iron":
         return "Ore"
     return resource_type.title()

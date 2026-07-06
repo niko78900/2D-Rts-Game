@@ -5,6 +5,7 @@ from house_of_wolves.world.spatial_hash import SpatialHash
 
 
 def test_spatial_hash_insert_query_move_remove() -> None:
+    """Verify that spatial hash insert query move remove."""
     spatial = SpatialHash(cell_size=100)
     first = EntityId(1)
     second = EntityId(2)

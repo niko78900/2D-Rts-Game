@@ -16,4 +16,5 @@ class ObjectiveSystem:
     state: ObjectiveState = field(default_factory=ObjectiveState)
 
     def update(self, world: object, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         return None

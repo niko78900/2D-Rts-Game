@@ -14,6 +14,7 @@ from house_of_wolves.world.demo import create_demo_world
 
 
 def test_produce_unit_adds_unit_and_sends_it_to_building_dropoff_point() -> None:
+    """Verify that produce unit adds unit and sends it to building dropoff point."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     original_unit_count = sum("unit" in entity.tags for entity in world.entities.values())
@@ -40,6 +41,7 @@ def test_produce_unit_adds_unit_and_sends_it_to_building_dropoff_point() -> None
 
 
 def test_produce_unit_rejects_units_not_trained_by_building() -> None:
+    """Verify that produce unit rejects units not trained by building."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
 
@@ -48,6 +50,7 @@ def test_produce_unit_rejects_units_not_trained_by_building() -> None:
 
 
 def test_produce_unit_rejects_when_population_cap_is_full() -> None:
+    """Verify that produce unit rejects when population cap is full."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     world.resources["wood"] = 1000
@@ -63,6 +66,7 @@ def test_produce_unit_rejects_when_population_cap_is_full() -> None:
 
 
 def test_produce_unit_rejects_when_resources_are_missing() -> None:
+    """Verify that produce unit rejects when resources are missing."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     world.resources["wood"] = 0
@@ -72,6 +76,7 @@ def test_produce_unit_rejects_when_resources_are_missing() -> None:
 
 
 def test_available_spawn_position_moves_away_from_occupied_exit() -> None:
+    """Verify that available spawn position moves away from occupied exit."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     blocker = next(entity for entity in world.entities.values() if "unit" in entity.tags)

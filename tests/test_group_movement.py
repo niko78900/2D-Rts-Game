@@ -19,6 +19,7 @@ class FakeUnit:
 
 
 def test_generate_loose_formation_slots_preserves_spatial_layout() -> None:
+    """Verify that generate loose formation slots preserves spatial layout."""
     units = [
         FakeUnit(EntityId(1), WorldPosition(0, 0)),
         FakeUnit(EntityId(2), WorldPosition(90, 0)),
@@ -40,6 +41,7 @@ def test_generate_loose_formation_slots_preserves_spatial_layout() -> None:
 
 
 def test_assignment_uses_row_tolerant_order_for_nearly_aligned_units() -> None:
+    """Verify that assignment uses row tolerant order for nearly aligned units."""
     units = [
         FakeUnit(EntityId(1), WorldPosition(100, 504)),
         FakeUnit(EntityId(2), WorldPosition(500, 496)),
@@ -54,6 +56,7 @@ def test_assignment_uses_row_tolerant_order_for_nearly_aligned_units() -> None:
 
 
 def test_generate_loose_formation_slots_caps_oversized_selection_spread() -> None:
+    """Verify that generate loose formation slots caps oversized selection spread."""
     units = [
         FakeUnit(EntityId(1), WorldPosition(100, 520)),
         FakeUnit(EntityId(2), WorldPosition(1100, 516)),
@@ -68,6 +71,7 @@ def test_generate_loose_formation_slots_caps_oversized_selection_spread() -> Non
 
 
 def test_issue_group_move_command_assigns_unique_targets() -> None:
+    """Verify that issue group move command assigns unique targets."""
     world = create_demo_world()
     units = [
         entity for entity in world.entities.values()
@@ -93,6 +97,7 @@ def test_issue_group_move_command_assigns_unique_targets() -> None:
 
 
 def test_normal_group_move_replaces_existing_queue() -> None:
+    """Verify that normal group move replaces existing queue."""
     world = create_demo_world()
     units = [
         entity for entity in world.entities.values()
@@ -112,6 +117,7 @@ def test_normal_group_move_replaces_existing_queue() -> None:
 
 
 def test_shift_queued_group_move_preserves_formation_indices() -> None:
+    """Verify that shift queued group move preserves formation indices."""
     world = create_demo_world()
     units = [
         entity for entity in world.entities.values()

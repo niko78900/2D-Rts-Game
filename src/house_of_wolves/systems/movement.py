@@ -59,6 +59,7 @@ class MovementSystem:
     _separation_elapsed_ms: int = 10_000
 
     def update(self, world: WorldState, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         world.elapsed_ms += dt_ms
         active_ghost_ids = self._active_friendly_ghost_ids(world)
         for entity_id in list(getattr(world, "unit_ids", world.command_queues.keys())):
@@ -78,6 +79,7 @@ class MovementSystem:
         dt_ms: int,
         active_ghost_ids: set[EntityId],
     ) -> None:
+        """Advance entity for the current frame."""
         entity = world.entities.get(entity_id)
         if entity is None or not _is_movable(entity):
             return
@@ -204,6 +206,7 @@ class MovementSystem:
         target: WorldPosition,
         distance: float,
     ) -> bool:
+        """Return whether a unit has reached its loose group slot."""
         return distance <= self.shared_destination_radius and occupied_by_unit(
             world,
             target,
@@ -211,6 +214,7 @@ class MovementSystem:
         )
 
     def _arrival_radius_for(self, command: Command) -> float:
+        """Return the range value used for arrival radius for."""
         if command.payload.get("path_detour") is True:
             return self.detour_arrival_radius
         if command.payload.get("group_move") is True:
@@ -224,6 +228,7 @@ class MovementSystem:
         queue: CommandQueue,
         command: Command,
     ) -> Command | None:
+        """Create detour waypoints for a move command when needed."""
         if command.payload.get("path_planned") is True:
             return command
         if _payload_entity_id(command, "attack_move_chase_target_id") is not None:
@@ -265,6 +270,7 @@ class MovementSystem:
         target: WorldPosition,
         position: WorldPosition,
     ) -> MovementProgress:
+        """Return or create movement progress tracking for a unit."""
         command_token = id(command)
         progress = self._progress_by_entity.get(entity_id)
         if progress is None or progress.command_token != command_token:
@@ -284,6 +290,7 @@ class MovementSystem:
         attempted_position: WorldPosition,
         dt_ms: int,
     ) -> None:
+        """Advance friendly ghosting for the current frame."""
         entity = world.entities.get(entity_id)
         if entity is None:
             self._clear_progress(entity_id)
@@ -333,10 +340,12 @@ class MovementSystem:
         self._reset_friendly_collision_progress(progress)
 
     def _reset_friendly_collision_progress(self, progress: MovementProgress) -> None:
+        """Reset collision-stuck tracking for a unit."""
         progress.friendly_collision_anchor = None
         progress.friendly_collision_count = 0
 
     def _should_shove(self, world: WorldState, entity_id: EntityId) -> bool:
+        """Return whether shove should happen."""
         last_ms = self._last_shove_ms_by_entity.get(entity_id)
         if last_ms is not None and world.elapsed_ms - last_ms < self.shove_interval_ms:
             return False
@@ -344,6 +353,7 @@ class MovementSystem:
         return True
 
     def _active_friendly_ghost_ids(self, world: WorldState) -> set[EntityId]:
+        """Return the active friendly ghost ids."""
         return {
             entity_id
             for entity_id, progress in self._progress_by_entity.items()
@@ -359,6 +369,7 @@ class MovementSystem:
         progress: MovementProgress,
         dt_ms: int,
     ) -> bool:
+        """Stop a move command that cannot make useful progress."""
         entity = world.entities.get(entity_id)
         if entity is None:
             self._clear_progress(entity_id)
@@ -379,15 +390,18 @@ class MovementSystem:
         return True
 
     def _finish_move(self, entity_id: EntityId, queue: CommandQueue) -> None:
+        """Finish move."""
         queue.pop_next()
         self._clear_progress(entity_id)
 
     def _clear_progress(self, entity_id: EntityId) -> None:
+        """Clear progress."""
         self._progress_by_entity.pop(entity_id, None)
         self._last_shove_ms_by_entity.pop(entity_id, None)
 
 
 def _is_movable(entity: object) -> bool:
+    """Return whether movable."""
     return (
         getattr(entity, "alive", False)
         and "movable" in getattr(entity, "tags", ())
@@ -401,6 +415,7 @@ def _copy_move_command_with_target(
     queued: bool,
     path_detour: bool,
 ) -> Command:
+    """Return the position used for copy move command with target."""
     payload = dict(command.payload)
     payload["path_planned"] = True
     if path_detour:
@@ -417,10 +432,12 @@ def _copy_move_command_with_target(
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    """Return the distance used for distance."""
     return hypot(first.x - second.x, first.y - second.y)
 
 
 def _movement_paused_for_attack(command: Command, elapsed_ms: int) -> bool:
+    """Return whether combat temporarily pauses movement."""
     pause_until = command.payload.get("pause_movement_until_ms")
     return isinstance(pause_until, int) and pause_until > elapsed_ms
 
@@ -429,6 +446,7 @@ def _movement_target_for_command(
     world: WorldState,
     command: Command,
 ) -> tuple[WorldPosition, bool]:
+    """Return the position used for movement target for command."""
     assert command.target_pos is not None
     chase_target_id = _payload_entity_id(command, "attack_move_chase_target_id")
     if command.payload.get("attack_move") is True and chase_target_id is not None:
@@ -451,6 +469,7 @@ def _movement_target_for_command(
 
 
 def _payload_entity_id(command: Command, key: str) -> EntityId | None:
+    """Return entity identifiers for payload entity id."""
     value = command.payload.get(key)
     if value is None:
         return None
@@ -458,6 +477,7 @@ def _payload_entity_id(command: Command, key: str) -> EntityId | None:
 
 
 def _attack_range_for(entity: object) -> float:
+    """Return the range value used for attack range for."""
     return max(0.0, float(getattr(entity, "attack_range", 0.0)))
 
 
@@ -466,6 +486,7 @@ def _nearest_friendly_collision_position(
     entity_id: EntityId,
     position: WorldPosition,
 ) -> WorldPosition | None:
+    """Return the nearest friendly collision position."""
     entity = world.entities.get(entity_id)
     if entity is None:
         return None

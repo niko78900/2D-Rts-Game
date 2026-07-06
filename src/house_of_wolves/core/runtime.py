@@ -118,10 +118,12 @@ class GameRuntime:
     last_click_ms: int = -DOUBLE_CLICK_MS
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         if self.world.settings != self.settings:
             self.world = create_demo_world(self.settings)
 
     def initialize(self) -> None:
+        """Initialize runtime resources before the game loop starts."""
         _pin_window_to_primary_display()
         pygame.init()
         pygame.display.set_caption(self.settings.window_title)
@@ -130,10 +132,12 @@ class GameRuntime:
         self.running = True
 
     def shutdown(self) -> None:
+        """Release runtime resources and close Pygame."""
         self.running = False
         pygame.quit()
 
     def _set_display_mode(self, *, rebuild_world: bool) -> None:
+        """Create the Pygame display using the configured mode."""
         flags = pygame.FULLSCREEN if self.settings.fullscreen else pygame.NOFRAME
         size = _desktop_size_for_display(self.settings.display_index, self.settings.virtual_size)
         self.display_flags = flags
@@ -142,6 +146,7 @@ class GameRuntime:
         self.renderer = GameRenderer(self.settings)
 
     def _apply_display_size(self, size: tuple[int, int], *, rebuild_world: bool) -> None:
+        """Apply a display size change to settings, world, and camera."""
         width, height = size
         if (
             width == self.settings.virtual_width
@@ -166,6 +171,7 @@ class GameRuntime:
         self.world.terrain_bands = terrain_bands_for_height(height)
 
     def run(self, max_frames: int | None = None) -> int:
+        """Run the app or runtime loop until it exits."""
         self.initialize()
         frame_count = 0
         try:
@@ -191,10 +197,12 @@ class GameRuntime:
         return 0
 
     def process_events(self) -> None:
+        """Process pending Pygame input events."""
         for event in pygame.event.get():
             self.handle_event(event)
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        """Handle one Pygame event."""
         if event.type == pygame.QUIT:
             self.running = False
             return
@@ -259,6 +267,7 @@ class GameRuntime:
             self._issue_move(event.pos, queued=_shift_pressed())
 
     def _handle_ability_click(self, screen_pos: tuple[int, int]) -> bool:
+        """Handle ability click input or UI flow."""
         if self.screen is None or self.renderer is None:
             return False
         ability = self.renderer.ability_at(
@@ -273,6 +282,7 @@ class GameRuntime:
         return self._handle_ability(ability)
 
     def _handle_ability(self, ability: str) -> bool:
+        """Handle ability input or UI flow."""
         if self.build_menu_open:
             return self._handle_build_menu_ability(ability)
         if self.active_building_placement is not None:
@@ -317,6 +327,7 @@ class GameRuntime:
         return True
 
     def _handle_build_menu_ability(self, ability: str) -> bool:
+        """Handle build menu ability input or UI flow."""
         if ability == "Back":
             self.build_menu_open = False
             return True
@@ -328,12 +339,14 @@ class GameRuntime:
         return True
 
     def _handle_build_placement_ability(self, ability: str) -> bool:
+        """Handle build placement ability input or UI flow."""
         if ability == "Cancel":
             self.active_building_placement = None
             return True
         return True
 
     def _toggle_dropoff_mode(self) -> None:
+        """Toggle dropoff mode."""
         building = self._selected_dropoff_building()
         if building is None:
             self.active_dropoff_building_id = None
@@ -344,6 +357,7 @@ class GameRuntime:
             self.active_dropoff_building_id = building.id
 
     def _handle_dropoff_placement(self, screen_pos: tuple[int, int]) -> bool:
+        """Handle dropoff placement input or UI flow."""
         if self.active_dropoff_building_id is None:
             return False
         if (
@@ -364,6 +378,7 @@ class GameRuntime:
         return True
 
     def _handle_building_placement(self, screen_pos: tuple[int, int]) -> bool:
+        """Handle building placement input or UI flow."""
         if self.active_building_placement is None:
             return False
         if (
@@ -388,6 +403,7 @@ class GameRuntime:
         return True
 
     def _handle_command_placement(self, screen_pos: tuple[int, int]) -> bool:
+        """Handle command placement input or UI flow."""
         if self.active_command_ability is None:
             return False
         if (
@@ -406,9 +422,11 @@ class GameRuntime:
         return True
 
     def _selected_dropoff_building(self) -> Building | None:
+        """Return the selected building with a drop-off marker."""
         return self._selected_rally_building()
 
     def _selected_rally_building(self) -> Building | None:
+        """Return the selected building that can accept a rally point."""
         if len(self.selection_system.state.selected_ids) != 1:
             return None
         entity = self.world.entities.get(self.selection_system.state.selected_ids[0])
@@ -425,6 +443,7 @@ class GameRuntime:
         return None
 
     def _produce_from_selection(self, display_name: str) -> None:
+        """Produce from selection."""
         if len(self.selection_system.state.selected_ids) != 1:
             return
         producer_id = self.selection_system.state.selected_ids[0]
@@ -439,6 +458,7 @@ class GameRuntime:
         self,
         screen_pos: tuple[int, int],
     ) -> bool:
+        """Handle building rally right click input or UI flow."""
         building = self._selected_rally_building()
         if building is None:
             return False
@@ -455,6 +475,7 @@ class GameRuntime:
         return True
 
     def _set_building_rally_point(self, building: Building, world_pos: WorldPosition) -> bool:
+        """Set building rally point."""
         target_pos = clamp_unit_position_to_walkable_lane_for_height(
             world_pos,
             self.world.settings.world_height,
@@ -475,6 +496,7 @@ class GameRuntime:
         *,
         queued: bool,
     ) -> bool:
+        """Handle settler context right click input or UI flow."""
         if not self._selected_builder_ids():
             return False
         world_pos = self.world.camera.screen_to_world(*screen_pos)
@@ -506,6 +528,7 @@ class GameRuntime:
         *,
         queued: bool,
     ) -> bool:
+        """Handle unit context right click input or UI flow."""
         if not self._selected_player_attack_unit_ids():
             return False
         target_id = self.selection_system.pick_at(
@@ -525,6 +548,7 @@ class GameRuntime:
         return True
 
     def _handle_key_rebind(self, event: pygame.event.Event) -> bool:
+        """Handle key rebind input or UI flow."""
         if self.rebinding_action is None:
             return False
         if event.key == pygame.K_ESCAPE:
@@ -543,6 +567,7 @@ class GameRuntime:
         return True
 
     def _handle_hotkey(self, key: int) -> bool:
+        """Handle hotkey input or UI flow."""
         if self.settings_menu_open:
             return False
         action = self._keybound_action_for_key(key)
@@ -585,6 +610,7 @@ class GameRuntime:
         return False
 
     def _handle_command_slot_hotkey(self, key: int) -> bool:
+        """Handle command slot hotkey input or UI flow."""
         if self.settings_menu_open:
             return False
         slot_index = command_slot_index_for_key(
@@ -599,15 +625,18 @@ class GameRuntime:
         return self._handle_ability(ability)
 
     def _ability_for_command_slot(self, slot_index: int) -> str | None:
+        """Return the ability assigned to a command-panel hotkey slot."""
         abilities = self._available_abilities()
         if slot_index < 0 or slot_index >= len(abilities):
             return None
         return abilities[slot_index]
 
     def _ability_available(self, ability: str) -> bool:
+        """Return whether an ability is active in the current panel."""
         return ability in self._available_abilities()
 
     def _available_abilities(self) -> tuple[str, ...]:
+        """Return available abilities."""
         abilities = self._ability_override()
         if abilities is not None:
             return abilities
@@ -617,6 +646,7 @@ class GameRuntime:
         ).abilities
 
     def _handle_control_group_hotkey(self, event: pygame.event.Event) -> bool:
+        """Handle control group hotkey input or UI flow."""
         if self.settings_menu_open:
             return False
         group_number = _number_key(event.key)
@@ -630,6 +660,7 @@ class GameRuntime:
         return True
 
     def _assign_control_group(self, group_number: int) -> None:
+        """Assign control group."""
         self.control_groups[group_number] = [
             entity_id
             for entity_id in self.selection_system.state.selected_ids
@@ -637,6 +668,7 @@ class GameRuntime:
         ]
 
     def _recall_control_group(self, group_number: int) -> None:
+        """Recall and select a stored control group."""
         entity_ids = [
             entity_id
             for entity_id in self.control_groups.get(group_number, [])
@@ -647,6 +679,7 @@ class GameRuntime:
         self.selection_system.state.replace(entity_ids)
 
     def _activate_command_ability(self, ability: str) -> bool:
+        """Enter targeting mode for a selected command ability."""
         if ability == "Attack" and not self._selected_player_attack_unit_ids():
             return True
         if ability in {"Move", "Attack Move"} and not self._selected_player_movable_unit_ids():
@@ -658,6 +691,7 @@ class GameRuntime:
         return True
 
     def _keybound_action_for_key(self, key: int) -> str | None:
+        """Return the configured action bound to a pressed key."""
         key_name = normalized_key_name(pygame.key.name(key))
         for action in KEYBIND_ACTION_ORDER:
             if action in COMMAND_PANEL_SLOT_ACTIONS:
@@ -667,6 +701,7 @@ class GameRuntime:
         return None
 
     def update(self, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         stats = self.world.performance_stats
         with time_block(stats, "camera"):
             self._update_camera(dt_ms)
@@ -690,6 +725,7 @@ class GameRuntime:
         stats.snapshot_world_counts(self.world)
 
     def render(self) -> None:
+        """Render the current game frame or UI panel."""
         if self.screen is None or self.renderer is None:
             return
         fps = self.clock.get_fps() if self.clock is not None else 0
@@ -708,6 +744,7 @@ class GameRuntime:
         )
 
     def _active_ability_label(self) -> str | None:
+        """Return the active ability label."""
         if self.active_command_ability is not None:
             return self.active_command_ability
         if self.active_dropoff_building_id is not None:
@@ -715,6 +752,7 @@ class GameRuntime:
         return None
 
     def _ability_override(self) -> tuple[str, ...] | None:
+        """Return entity identifiers for ability override."""
         if self.active_building_placement is not None:
             return PLACEMENT_MENU_ABILITIES
         if self.build_menu_open:
@@ -722,6 +760,7 @@ class GameRuntime:
         return None
 
     def _handle_settings_click(self, screen_pos: tuple[int, int]) -> bool:
+        """Handle settings click input or UI flow."""
         if self.screen is None or self.renderer is None:
             return False
         if self.renderer.settings_button_rect(self.screen).collidepoint(screen_pos):
@@ -770,11 +809,13 @@ class GameRuntime:
         return True
 
     def _toggle_fullscreen(self) -> None:
+        """Toggle fullscreen."""
         self.settings_menu_open = False
         self.settings = replace(self.settings, fullscreen=not self.settings.fullscreen)
         self._set_display_mode(rebuild_world=False)
 
     def _toggle_resource_hitboxes(self) -> None:
+        """Toggle resource hitboxes."""
         self.settings = replace(
             self.settings,
             show_resource_hitboxes=not self.settings.show_resource_hitboxes,
@@ -783,6 +824,7 @@ class GameRuntime:
         self.renderer = GameRenderer(self.settings)
 
     def _toggle_unit_hitboxes(self) -> None:
+        """Toggle unit hitboxes."""
         self.settings = replace(
             self.settings,
             show_unit_hitboxes=not self.settings.show_unit_hitboxes,
@@ -791,6 +833,7 @@ class GameRuntime:
         self.renderer = GameRenderer(self.settings)
 
     def _toggle_building_hitboxes(self) -> None:
+        """Toggle building hitboxes."""
         self.settings = replace(
             self.settings,
             show_building_hitboxes=not self.settings.show_building_hitboxes,
@@ -799,6 +842,7 @@ class GameRuntime:
         self.renderer = GameRenderer(self.settings)
 
     def _toggle_debug_waypoints(self) -> None:
+        """Toggle debug waypoints."""
         self.settings = replace(
             self.settings,
             show_debug_waypoints=not self.settings.show_debug_waypoints,
@@ -807,6 +851,7 @@ class GameRuntime:
         self.renderer = GameRenderer(self.settings)
 
     def _toggle_performance_overlay(self) -> None:
+        """Toggle performance overlay."""
         self.settings = replace(
             self.settings,
             show_performance_overlay=not self.settings.show_performance_overlay,
@@ -815,6 +860,7 @@ class GameRuntime:
         self.renderer = GameRenderer(self.settings)
 
     def _update_camera(self, dt_ms: int) -> None:
+        """Advance camera for the current frame."""
         direction = 0
         keys = pygame.key.get_pressed()
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
@@ -836,6 +882,7 @@ class GameRuntime:
             self.world.camera.move_by(direction * self.settings.camera_pan_speed * seconds)
 
     def _finish_selection(self, end_screen: tuple[int, int], add: bool) -> None:
+        """Finish selection."""
         start = self.drag_start_screen
         self.drag_start_screen = None
         self.drag_current_screen = None
@@ -849,6 +896,7 @@ class GameRuntime:
         self.selection_system.box_select(self.world, world_bounds, add=add)
 
     def _finish_click_selection(self, screen_pos: tuple[int, int], *, add: bool) -> None:
+        """Finish click selection."""
         world_pos = self.world.camera.screen_to_world(*screen_pos)
         picked_id = self.selection_system.pick_at(self.world, world_pos)
         now_ms = pygame.time.get_ticks()
@@ -865,6 +913,7 @@ class GameRuntime:
         self.last_click_ms = now_ms
 
     def _select_visible_same_type_units(self, entity_id: EntityId, *, add: bool) -> bool:
+        """Select visible units matching the clicked unit type."""
         entity = self.world.entities.get(entity_id)
         if (
             entity is None
@@ -892,6 +941,7 @@ class GameRuntime:
         return True
 
     def _entity_is_visible_on_screen(self, entity: object) -> bool:
+        """Return whether an entity is inside the current viewport."""
         left, top, width, height = entity.bounds
         right = left + width
         bottom = top + height
@@ -913,6 +963,7 @@ class GameRuntime:
         queued: bool,
         attack_move: bool = False,
     ) -> None:
+        """Issue move commands."""
         movable_ids = self._selected_player_movable_unit_ids()
         if not movable_ids:
             return
@@ -929,6 +980,7 @@ class GameRuntime:
         )
 
     def _issue_attack(self, screen_pos: tuple[int, int], *, queued: bool) -> None:
+        """Issue attack commands."""
         target_id = self.selection_system.pick_at(
             self.world,
             self.world.camera.screen_to_world(*screen_pos),
@@ -945,6 +997,7 @@ class GameRuntime:
             )
 
     def _issue_auto_gather(self, resource_type: str) -> None:
+        """Issue auto gather commands."""
         gatherer_ids = self._selected_builder_ids()
         if not gatherer_ids:
             return
@@ -963,6 +1016,7 @@ class GameRuntime:
             return
 
     def _stop_selected_units(self) -> None:
+        """Clear commands for selected controllable units."""
         for entity_id in self._selected_player_movable_unit_ids():
             queue = self.world.command_queues.get(entity_id)
             if queue is not None:
@@ -972,6 +1026,7 @@ class GameRuntime:
                 entity.state = "idle"
 
     def _selected_player_movable_unit_ids(self) -> list[EntityId]:
+        """Return entity identifiers for selected player movable unit ids."""
         return [
             entity_id
             for entity_id in self.selection_system.state.selected_ids
@@ -982,6 +1037,7 @@ class GameRuntime:
         ]
 
     def _selected_player_attack_unit_ids(self) -> list[EntityId]:
+        """Return entity identifiers for selected player attack unit ids."""
         return [
             entity_id
             for entity_id in self.selection_system.state.selected_ids
@@ -992,6 +1048,7 @@ class GameRuntime:
         ]
 
     def _selected_builder_ids(self) -> list[EntityId]:
+        """Return entity identifiers for selected builder ids."""
         builder_ids: list[EntityId] = []
         for entity_id in self.selection_system.state.selected_ids:
             entity = self.world.entities.get(entity_id)
@@ -1005,6 +1062,7 @@ class GameRuntime:
         return builder_ids
 
     def _placement_preview(self) -> BuildingPlacementPreview | None:
+        """Build the current building placement preview."""
         building_id = self.active_building_placement
         if building_id is None:
             return None
@@ -1019,9 +1077,11 @@ class GameRuntime:
         )
 
     def _valid_hut_placement_at(self, position: WorldPosition) -> bool:
+        """Return entity identifiers for valid hut placement at."""
         return self._valid_building_placement_at(HUT_BUILDING_ID, position)
 
     def _valid_building_placement_at(self, building_id: str, position: WorldPosition) -> bool:
+        """Return entity identifiers for valid building placement at."""
         footprint = self._building_footprint(building_id)
         snapped = self._snapped_building_position(position)
         half_width = footprint.width / 2
@@ -1030,9 +1090,11 @@ class GameRuntime:
         return not self._building_overlaps_existing_building(snapped, footprint)
 
     def _snapped_hut_position(self, position: WorldPosition) -> WorldPosition:
+        """Return the position used for snapped hut position."""
         return self._snapped_building_position(position)
 
     def _snapped_building_position(self, position: WorldPosition) -> WorldPosition:
+        """Return the position used for snapped building position."""
         layout = terrain_layout_for_height(self.world.settings.world_height)
         return WorldPosition(position.x, layout.building_lane_bottom_y)
 
@@ -1041,6 +1103,7 @@ class GameRuntime:
         position: WorldPosition,
         footprint: Footprint,
     ) -> bool:
+        """Return whether placement overlaps a building footprint."""
         bounds = footprint.bounds_at(position)
         for entity in self.world.entities.values():
             if "building" not in entity.tags or not entity.alive:
@@ -1050,6 +1113,7 @@ class GameRuntime:
         return False
 
     def _create_hut_construction_site(self, position: WorldPosition) -> Building:
+        """Create hut construction site."""
         return self._create_building_construction_site(HUT_BUILDING_ID, position)
 
     def _create_building_construction_site(
@@ -1057,6 +1121,7 @@ class GameRuntime:
         building_id: str,
         position: WorldPosition,
     ) -> Building:
+        """Create building construction site."""
         build_position = self._snapped_building_position(position)
         if building_id == HUT_BUILDING_ID:
             building = Building(
@@ -1105,16 +1170,19 @@ class GameRuntime:
         return farm
 
     def _building_footprint(self, building_id: str) -> Footprint:
+        """Return the footprint for a buildable building type."""
         if building_id == HUT_BUILDING_ID:
             return HUT_FOOTPRINT
         return FARM_BUILDING_SPECS[building_id].footprint
 
     def _building_cost(self, building_id: str) -> dict[str, int]:
+        """Return the configured cost for building cost."""
         if building_id == HUT_BUILDING_ID:
             return HUT_BUILD_COST
         return FARM_BUILDING_SPECS[building_id].cost
 
     def _spend_building_cost(self, building_id: str) -> bool:
+        """Spend building cost."""
         cost = self._building_cost(building_id)
         for resource, amount in cost.items():
             if self.world.resources.get(resource, 0) < amount:
@@ -1125,6 +1193,7 @@ class GameRuntime:
         return True
 
     def _order_selected_builders_to_site(self, hut: Building, *, queued: bool = False) -> None:
+        """Issue orders for selected builders to site."""
         builder_ids = self._selected_builder_ids()
         if not builder_ids:
             return
@@ -1146,6 +1215,7 @@ class GameRuntime:
         total: int,
         queued: bool,
     ) -> None:
+        """Issue orders for builder to site."""
         interaction_point = self._builder_interaction_point(
             hut,
             builder_id,
@@ -1169,6 +1239,7 @@ class GameRuntime:
         )
 
     def _assign_selected_worker_to_farm(self, farm: Building) -> None:
+        """Assign selected worker to farm."""
         builder_ids = self._selected_builder_ids()
         if not builder_ids:
             return
@@ -1177,6 +1248,7 @@ class GameRuntime:
             self.world.notify(message)
 
     def _unassign_selected_farm_worker(self) -> None:
+        """Unassign workers from selected farm buildings."""
         if len(self.selection_system.state.selected_ids) != 1:
             return
         entity = self.world.entities.get(self.selection_system.state.selected_ids[0])
@@ -1190,6 +1262,7 @@ class GameRuntime:
         *,
         queued: bool = False,
     ) -> None:
+        """Issue orders for selected repairers to site."""
         repairer_ids = self._selected_builder_ids()
         if not repairer_ids:
             return
@@ -1221,6 +1294,7 @@ class GameRuntime:
         *,
         queued: bool = False,
     ) -> None:
+        """Issue orders for selected gatherers to resource."""
         gatherer_ids = self._selected_builder_ids()
         if not gatherer_ids:
             return
@@ -1243,6 +1317,7 @@ class GameRuntime:
         queued: bool,
         manual: bool,
     ) -> None:
+        """Issue orders for gatherer to resource."""
         issue_gather_command(
             self.world,
             resource,
@@ -1259,6 +1334,7 @@ class GameRuntime:
         index: int,
         total: int,
     ) -> WorldPosition:
+        """Return a worker approach point for a building site."""
         layout = terrain_layout_for_height(self.world.settings.world_height)
         columns = max(1, min(5, total))
         row = index // columns
@@ -1274,6 +1350,7 @@ class GameRuntime:
         )
 
     def _cancel_active_mode(self) -> bool:
+        """Cancel active mode."""
         if (
             self.active_command_ability is None
             and self.active_dropoff_building_id is None
@@ -1288,6 +1365,7 @@ class GameRuntime:
         return True
 
     def _current_drag_rect(self) -> ScreenRect | None:
+        """Return the bounds used for current drag rect."""
         if self.drag_start_screen is None or self.drag_current_screen is None:
             return None
         if (
@@ -1305,16 +1383,19 @@ class GameRuntime:
         start_screen: tuple[int, int],
         end_screen: tuple[int, int],
     ) -> tuple[float, float, float, float]:
+        """Return the bounds used for screen drag to world bounds."""
         left, top, width, height = _normalize_screen_rect(start_screen, end_screen)
         world_top_left = self.world.camera.screen_to_world(left, top)
         return (world_top_left.x, world_top_left.y, width, height)
 
 
 def _shift_pressed() -> bool:
+    """Return whether Shift is currently held."""
     return bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
 
 
 def _number_key(key: int) -> int | None:
+    """Return the numeric control-group key for an event."""
     if pygame.K_1 <= key <= pygame.K_9:
         return (key - pygame.K_1) + 1
     if pygame.K_KP1 <= key <= pygame.K_KP9:
@@ -1323,6 +1404,7 @@ def _number_key(key: int) -> int | None:
 
 
 def _unit_type_tag(entity: object) -> str | None:
+    """Return the type tag used for same-type unit selection."""
     for tag in getattr(entity, "tags", ()):
         if tag not in COMMON_UNIT_TYPE_TAGS:
             return tag
@@ -1333,6 +1415,7 @@ def _desktop_size_for_display(
     display_index: int,
     fallback: tuple[int, int],
 ) -> tuple[int, int]:
+    """Return the desktop resolution for the requested display."""
     sizes = pygame.display.get_desktop_sizes()
     if 0 <= display_index < len(sizes):
         width, height = sizes[display_index]
@@ -1342,6 +1425,7 @@ def _desktop_size_for_display(
 
 
 def _pin_window_to_primary_display() -> None:
+    """Ask SDL to create the window on the primary display."""
     os.environ.pop("SDL_VIDEO_CENTERED", None)
     os.environ["SDL_VIDEO_WINDOW_POS"] = "0,0"
 
@@ -1350,6 +1434,7 @@ def _normalize_screen_rect(
     start: tuple[int, int],
     end: tuple[int, int],
 ) -> ScreenRect:
+    """Return the bounds used for normalize screen rect."""
     left = min(start[0], end[0])
     top = min(start[1], end[1])
     width = abs(end[0] - start[0])
@@ -1361,6 +1446,7 @@ def _bounds_intersect(
     first: tuple[float, float, float, float],
     second: tuple[float, float, float, float],
 ) -> bool:
+    """Return the bounds used for bounds intersect."""
     first_left, first_top, first_width, first_height = first
     second_left, second_top, second_width, second_height = second
     return not (
@@ -1372,11 +1458,13 @@ def _bounds_intersect(
 
 
 def _needs_repair(building: Building) -> bool:
+    """Return whether a building can be repaired by settlers."""
     max_hp = int(getattr(building, "max_hp", 0) or getattr(building, "hp", 0))
     return max_hp > 0 and building.hp < max_hp
 
 
 def _building_id_for_site(building: Building) -> str:
+    """Return entity identifiers for building id for site."""
     for building_id in (HUT_BUILDING_ID, CHICKEN_FARM_ID, PIG_FARM_ID):
         if building_id in building.tags:
             return building_id

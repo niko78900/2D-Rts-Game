@@ -10,6 +10,7 @@ from house_of_wolves.world.terrain import (
 
 
 def test_demo_world_bootstrap_creates_expected_placeholder_entities() -> None:
+    """Verify that demo world bootstrap creates expected placeholder entities."""
     world = create_demo_world()
     tag_sets = [set(entity.tags) for entity in world.entities.values()]
 
@@ -37,6 +38,7 @@ def test_demo_world_bootstrap_creates_expected_placeholder_entities() -> None:
 
 
 def test_resource_nodes_use_smaller_blocking_bounds_than_visual_bounds() -> None:
+    """Verify that resource nodes use smaller blocking bounds than visual bounds."""
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -50,6 +52,7 @@ def test_resource_nodes_use_smaller_blocking_bounds_than_visual_bounds() -> None
 
 
 def test_demo_resource_nodes_are_spread_out_without_blocking_overlap() -> None:
+    """Verify that demo resource nodes are spread out without blocking overlap."""
     world = create_demo_world()
     resources = active_resource_nodes(world)
     xs = [resource.position.x for resource in resources]
@@ -64,6 +67,7 @@ def _bounds_intersect(
     first: tuple[float, float, float, float],
     second: tuple[float, float, float, float],
 ) -> bool:
+    """Return whether two test bounds overlap."""
     first_left, first_top, first_width, first_height = first
     second_left, second_top, second_width, second_height = second
     return not (

@@ -15,17 +15,21 @@ class EntityId:
     value: int
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         if self.value < 0:
             raise ValueError("EntityId must be non-negative")
 
     def __int__(self) -> int:
+        """Return this identifier as an integer."""
         return self.value
 
     def to_json(self) -> int:
+        """Serialize this object into JSON-compatible data."""
         return self.value
 
     @classmethod
     def from_json(cls, value: int) -> EntityId:
+        """Build this object from JSON-compatible data."""
         return cls(int(value))
 
 
@@ -37,13 +41,16 @@ class WorldPosition:
     y: float
 
     def to_tuple(self) -> tuple[float, float]:
+        """Return this position as an (x, y) tuple."""
         return (self.x, self.y)
 
     def to_json(self) -> list[float]:
+        """Serialize this object into JSON-compatible data."""
         return [self.x, self.y]
 
     @classmethod
     def from_json(cls, value: list[float] | tuple[float, float]) -> WorldPosition:
+        """Build this object from JSON-compatible data."""
         return cls(float(value[0]), float(value[1]))
 
 
@@ -57,15 +64,18 @@ class Footprint:
     anchor_y: float = 1.0
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         if self.width <= 0 or self.height <= 0:
             raise ValueError("Footprint dimensions must be positive")
 
     def bounds_at(self, position: WorldPosition) -> tuple[float, float, float, float]:
+        """Return this footprint placed at a world position."""
         left = position.x - (self.width * self.anchor_x)
         top = position.y - (self.height * self.anchor_y)
         return (left, top, self.width, self.height)
 
     def to_json(self) -> JsonObject:
+        """Serialize this object into JSON-compatible data."""
         return {
             "width": self.width,
             "height": self.height,
@@ -75,6 +85,7 @@ class Footprint:
 
     @classmethod
     def from_json(cls, value: JsonObject) -> Footprint:
+        """Build this object from JSON-compatible data."""
         return cls(
             width=float(value["width"]),
             height=float(value["height"]),
@@ -91,16 +102,19 @@ class ResourceAmount:
     amount: int
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         if not self.resource_type:
             raise ValueError("resource_type is required")
         if self.amount < 0:
             raise ValueError("resource amount must be non-negative")
 
     def to_json(self) -> JsonObject:
+        """Serialize this object into JSON-compatible data."""
         return {"resource_type": self.resource_type, "amount": self.amount}
 
     @classmethod
     def from_json(cls, value: JsonObject) -> ResourceAmount:
+        """Build this object from JSON-compatible data."""
         return cls(resource_type=str(value["resource_type"]), amount=int(value["amount"]))
 
 
@@ -113,6 +127,7 @@ class ProductionQueueItem:
     quantity: int = 1
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         if not self.item_id:
             raise ValueError("item_id is required")
         if self.remaining_ms < 0:
@@ -121,6 +136,7 @@ class ProductionQueueItem:
             raise ValueError("quantity must be positive")
 
     def to_json(self) -> JsonObject:
+        """Serialize this object into JSON-compatible data."""
         return {
             "item_id": self.item_id,
             "remaining_ms": self.remaining_ms,
@@ -129,6 +145,7 @@ class ProductionQueueItem:
 
     @classmethod
     def from_json(cls, value: JsonObject) -> ProductionQueueItem:
+        """Build this object from JSON-compatible data."""
         return cls(
             item_id=str(value["item_id"]),
             remaining_ms=int(value["remaining_ms"]),
@@ -148,12 +165,14 @@ class Command:
     payload: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         if not self.type:
             raise ValueError("command type is required")
         if not self.issuer_ids:
             raise ValueError("command requires at least one issuer")
 
     def to_json(self) -> JsonObject:
+        """Serialize this object into JSON-compatible data."""
         return {
             "type": self.type,
             "issuer_ids": [issuer.to_json() for issuer in self.issuer_ids],
@@ -167,6 +186,7 @@ class Command:
 
     @classmethod
     def from_json(cls, value: JsonObject) -> Command:
+        """Build this object from JSON-compatible data."""
         target_entity_id = value.get("target_entity_id")
         target_pos = value.get("target_pos")
         return cls(
@@ -189,25 +209,31 @@ class CommandQueue:
     commands: list[Command] = field(default_factory=list)
 
     def replace(self, command: Command) -> None:
+        """Replace the queued commands with a single command."""
         self.commands = [command]
 
     def append(self, command: Command) -> None:
+        """Append a command to the queue."""
         self.commands.append(command)
 
     def clear(self) -> None:
+        """Clear the current collection or command queue."""
         self.commands.clear()
 
     def pop_next(self) -> Command | None:
+        """Pop and return the next queued command."""
         if not self.commands:
             return None
         return self.commands.pop(0)
 
     def peek(self) -> Command | None:
+        """Return the next queued command without removing it."""
         if not self.commands:
             return None
         return self.commands[0]
 
     def to_json(self) -> JsonObject:
+        """Serialize this object into JSON-compatible data."""
         return {
             "owner_id": self.owner_id.to_json(),
             "commands": [command.to_json() for command in self.commands],
@@ -215,6 +241,7 @@ class CommandQueue:
 
     @classmethod
     def from_json(cls, value: JsonObject) -> CommandQueue:
+        """Build this object from JSON-compatible data."""
         return cls(
             owner_id=EntityId.from_json(value["owner_id"]),
             commands=[Command.from_json(command) for command in value.get("commands", [])],
@@ -225,4 +252,4 @@ class System(Protocol):
     """Update interface shared by scaffold systems."""
 
     def update(self, world: Any, dt_ms: int) -> None:
-        """Advance a system against the authoritative local world state."""
+        """Advance this system for one simulation tick."""

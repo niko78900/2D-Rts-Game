@@ -10,6 +10,7 @@ from house_of_wolves.core.assets import PlaceholderAssetFactory
 
 
 def test_placeholder_surface_factory_returns_surface() -> None:
+    """Verify that placeholder surface factory returns surface."""
     factory = PlaceholderAssetFactory()
     surface = factory.make_icon("settler")
 
@@ -18,6 +19,7 @@ def test_placeholder_surface_factory_returns_surface() -> None:
 
 
 def test_silent_sound_tracks_volume_and_play_count() -> None:
+    """Verify that silent sound tracks volume and play count."""
     sound = PlaceholderAssetFactory().make_sound("confirm")
     sound.set_volume(0.25)
     sound.play()

@@ -27,6 +27,7 @@ from house_of_wolves.world.terrain import (
 
 
 def ability_center(runtime: GameRuntime, label: str) -> tuple[int, int]:
+    """Provide test helper logic for ability center."""
     assert runtime.screen is not None
     assert runtime.renderer is not None
     panel = selected_panel_for(runtime.world, runtime.selection_system.state.selected_ids)
@@ -42,6 +43,7 @@ def override_ability_center(
     label: str,
     abilities: tuple[str, ...],
 ) -> tuple[int, int]:
+    """Provide test helper logic for override ability center."""
     assert runtime.screen is not None
     assert runtime.renderer is not None
     panel = selected_panel_for(runtime.world, runtime.selection_system.state.selected_ids)
@@ -57,10 +59,12 @@ def override_ability_center(
 
 
 def selected_settler(runtime: GameRuntime) -> object:
+    """Provide test helper logic for selected settler."""
     return next(entity for entity in runtime.world.entities.values() if "settler" in entity.tags)
 
 
 def add_settler(runtime: GameRuntime, x: float, y: float) -> CombatUnit:
+    """Provide test helper logic for add settler."""
     settler = CombatUnit(
         id=runtime.world.allocate_entity_id(),
         owner="frontier",
@@ -79,6 +83,7 @@ def add_settler(runtime: GameRuntime, x: float, y: float) -> CombatUnit:
 
 
 def test_validate_cli_mode_keeps_data_validation_behavior(capsys) -> None:
+    """Verify that validate cli mode keeps data validation behavior."""
     assert main(["--validate"]) == 0
 
     output = capsys.readouterr().out
@@ -87,6 +92,7 @@ def test_validate_cli_mode_keeps_data_validation_behavior(capsys) -> None:
 
 
 def test_runtime_initializes_updates_renders_and_shuts_down_windowless() -> None:
+    """Verify that runtime initializes updates renders and shuts down windowless."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -101,6 +107,7 @@ def test_runtime_initializes_updates_renders_and_shuts_down_windowless() -> None
 
 
 def test_runtime_default_mode_is_borderless_on_primary_display() -> None:
+    """Verify that runtime default mode is borderless on primary display."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -116,6 +123,7 @@ def test_runtime_default_mode_is_borderless_on_primary_display() -> None:
 
 
 def test_default_command_slots_do_not_use_camera_pan_keys() -> None:
+    """Verify that default command slots do not use camera pan keys."""
     keybindings = AppSettings().keybindings
 
     assert keybindings[KEYBIND_COMMAND_SLOT_5] == "z"
@@ -125,6 +133,7 @@ def test_default_command_slots_do_not_use_camera_pan_keys() -> None:
 
 
 def test_runtime_control_group_assign_and_recall() -> None:
+    """Verify that runtime control group assign and recall."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -148,6 +157,7 @@ def test_runtime_control_group_assign_and_recall() -> None:
 
 
 def test_runtime_double_click_selects_visible_same_type_units() -> None:
+    """Verify that runtime double click selects visible same type units."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -170,6 +180,7 @@ def test_runtime_double_click_selects_visible_same_type_units() -> None:
 
 
 def test_runtime_borderless_uses_monitor_desktop_size() -> None:
+    """Verify that runtime borderless uses monitor desktop size."""
     runtime = GameRuntime(AppSettings(fullscreen=False, virtual_width=960, virtual_height=540))
 
     runtime.initialize()
@@ -187,6 +198,7 @@ def test_runtime_borderless_uses_monitor_desktop_size() -> None:
 
 
 def test_runtime_fullscreen_mode_uses_display_size_for_world_height() -> None:
+    """Verify that runtime fullscreen mode uses display size for world height."""
     runtime = GameRuntime(AppSettings(fullscreen=True))
 
     runtime.initialize()
@@ -200,6 +212,7 @@ def test_runtime_fullscreen_mode_uses_display_size_for_world_height() -> None:
         runtime.shutdown()
 
 def test_runtime_settings_menu_toggles_fullscreen_from_borderless_mode() -> None:
+    """Verify that runtime settings menu toggles fullscreen from borderless mode."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -229,6 +242,7 @@ def test_runtime_settings_menu_toggles_fullscreen_from_borderless_mode() -> None
 
 
 def test_runtime_settings_menu_toggles_resource_hitbox_debug_rendering() -> None:
+    """Verify that runtime settings menu toggles resource hitbox debug rendering."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -257,6 +271,7 @@ def test_runtime_settings_menu_toggles_resource_hitbox_debug_rendering() -> None
 
 
 def test_runtime_settings_menu_toggles_unit_and_building_hitbox_debug_rendering() -> None:
+    """Verify that runtime settings menu toggles unit and building hitbox debug rendering."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -299,6 +314,7 @@ def test_runtime_settings_menu_toggles_unit_and_building_hitbox_debug_rendering(
 
 
 def test_runtime_settings_menu_toggles_debug_waypoint_rendering() -> None:
+    """Verify that runtime settings menu toggles debug waypoint rendering."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -327,6 +343,7 @@ def test_runtime_settings_menu_toggles_debug_waypoint_rendering() -> None:
 
 
 def test_runtime_toggles_performance_overlay_from_hotkey_and_settings_menu() -> None:
+    """Verify that runtime toggles performance overlay from hotkey and settings menu."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -361,6 +378,7 @@ def test_runtime_toggles_performance_overlay_from_hotkey_and_settings_menu() -> 
 
 
 def test_runtime_clicking_hut_produce_button_spawns_unit() -> None:
+    """Verify that runtime clicking hut produce button spawns unit."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -386,6 +404,7 @@ def test_runtime_clicking_hut_produce_button_spawns_unit() -> None:
 
 
 def test_runtime_hut_command_slot_hotkeys_train_units() -> None:
+    """Verify that runtime hut command slot hotkeys train units."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -406,6 +425,7 @@ def test_runtime_hut_command_slot_hotkeys_train_units() -> None:
 
 
 def test_runtime_production_refuses_at_population_cap_with_message() -> None:
+    """Verify that runtime production refuses at population cap with message."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -430,6 +450,7 @@ def test_runtime_production_refuses_at_population_cap_with_message() -> None:
 
 
 def test_runtime_group_right_click_assigns_unique_move_targets() -> None:
+    """Verify that runtime group right click assigns unique move targets."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -454,6 +475,7 @@ def test_runtime_group_right_click_assigns_unique_move_targets() -> None:
 
 
 def test_runtime_move_button_issues_regular_move_on_next_map_click() -> None:
+    """Verify that runtime move button issues regular move on next map click."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -486,6 +508,7 @@ def test_runtime_move_button_issues_regular_move_on_next_map_click() -> None:
 
 
 def test_runtime_attack_move_button_issues_red_attack_move_commands() -> None:
+    """Verify that runtime attack move button issues red attack move commands."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -517,6 +540,7 @@ def test_runtime_attack_move_button_issues_red_attack_move_commands() -> None:
 
 
 def test_runtime_stop_button_clears_selected_unit_orders() -> None:
+    """Verify that runtime stop button clears selected unit orders."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -542,6 +566,7 @@ def test_runtime_stop_button_clears_selected_unit_orders() -> None:
 
 
 def test_runtime_stop_hotkey_clears_selected_unit_orders() -> None:
+    """Verify that runtime stop hotkey clears selected unit orders."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -563,6 +588,7 @@ def test_runtime_stop_hotkey_clears_selected_unit_orders() -> None:
 
 
 def test_runtime_build_button_replaces_unit_actions_with_build_choices() -> None:
+    """Verify that runtime build button replaces unit actions with build choices."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -585,6 +611,7 @@ def test_runtime_build_button_replaces_unit_actions_with_build_choices() -> None
 
 
 def test_runtime_build_hotkey_opens_build_menu() -> None:
+    """Verify that runtime build hotkey opens build menu."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -601,6 +628,7 @@ def test_runtime_build_hotkey_opens_build_menu() -> None:
 
 
 def test_runtime_build_hotkeys_do_not_bypass_mixed_selection_abilities() -> None:
+    """Verify that runtime build hotkeys do not bypass mixed selection abilities."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -624,6 +652,7 @@ def test_runtime_build_hotkeys_do_not_bypass_mixed_selection_abilities() -> None
 
 
 def test_runtime_command_slot_build_hotkey_works_for_settler_only_selection() -> None:
+    """Verify that runtime command slot build hotkey works for settler only selection."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -640,6 +669,7 @@ def test_runtime_command_slot_build_hotkey_works_for_settler_only_selection() ->
 
 
 def test_runtime_hut_build_choice_enters_placement_mode() -> None:
+    """Verify that runtime hut build choice enters placement mode."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -668,6 +698,7 @@ def test_runtime_hut_build_choice_enters_placement_mode() -> None:
 
 
 def test_runtime_chicken_farm_build_choice_enters_placement_mode() -> None:
+    """Verify that runtime chicken farm build choice enters placement mode."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -698,6 +729,7 @@ def test_runtime_chicken_farm_build_choice_enters_placement_mode() -> None:
 
 
 def test_runtime_build_hut_hotkey_enters_placement_mode_from_build_menu() -> None:
+    """Verify that runtime build hut hotkey enters placement mode from build menu."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -716,6 +748,7 @@ def test_runtime_build_hut_hotkey_enters_placement_mode_from_build_menu() -> Non
 
 
 def test_runtime_cancel_build_hotkey_cancels_placement_mode() -> None:
+    """Verify that runtime cancel build hotkey cancels placement mode."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -731,6 +764,7 @@ def test_runtime_cancel_build_hotkey_cancels_placement_mode() -> None:
 
 
 def test_runtime_attack_move_hotkey_activates_attack_move_command() -> None:
+    """Verify that runtime attack move hotkey activates attack move command."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -749,6 +783,7 @@ def test_runtime_attack_move_hotkey_activates_attack_move_command() -> None:
 
 
 def test_runtime_attack_hotkey_then_enemy_click_issues_attack_command() -> None:
+    """Verify that runtime attack hotkey then enemy click issues attack command."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -780,6 +815,7 @@ def test_runtime_attack_hotkey_then_enemy_click_issues_attack_command() -> None:
 
 
 def test_runtime_right_click_enemy_issues_attack_command() -> None:
+    """Verify that runtime right click enemy issues attack command."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -814,6 +850,7 @@ def test_runtime_right_click_enemy_issues_attack_command() -> None:
 
 
 def test_runtime_shift_right_click_enemy_queues_attack_after_move() -> None:
+    """Verify that runtime shift right click enemy queues attack after move."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -852,6 +889,7 @@ def test_runtime_shift_right_click_enemy_queues_attack_after_move() -> None:
 
 
 def test_runtime_gather_button_auto_queues_move_and_gather() -> None:
+    """Verify that runtime gather button auto queues move and gather."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -881,6 +919,7 @@ def test_runtime_gather_button_auto_queues_move_and_gather() -> None:
 
 
 def test_runtime_gather_hotkey_auto_queues_gather_gold_command() -> None:
+    """Verify that runtime gather hotkey auto queues gather gold command."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -904,6 +943,7 @@ def test_runtime_gather_hotkey_auto_queues_gather_gold_command() -> None:
 
 
 def test_runtime_right_click_resource_orders_selected_settlers_to_gather() -> None:
+    """Verify that runtime right click resource orders selected settlers to gather."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -932,6 +972,7 @@ def test_runtime_right_click_resource_orders_selected_settlers_to_gather() -> No
 
 
 def test_runtime_shift_right_click_resource_appends_gather_after_existing_move() -> None:
+    """Verify that runtime shift right click resource appends gather after existing move."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -970,6 +1011,7 @@ def test_runtime_shift_right_click_resource_appends_gather_after_existing_move()
 
 
 def test_runtime_right_click_damaged_building_orders_settler_to_repair() -> None:
+    """Verify that runtime right click damaged building orders settler to repair."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -995,6 +1037,7 @@ def test_runtime_right_click_damaged_building_orders_settler_to_repair() -> None
 
 
 def test_runtime_settings_menu_rebinds_build_hotkey() -> None:
+    """Verify that runtime settings menu rebinds build hotkey."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1025,6 +1068,7 @@ def test_runtime_settings_menu_rebinds_build_hotkey() -> None:
 
 
 def test_runtime_settings_menu_rebinds_command_slot_hotkey() -> None:
+    """Verify that runtime settings menu rebinds command slot hotkey."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1055,6 +1099,7 @@ def test_runtime_settings_menu_rebinds_command_slot_hotkey() -> None:
 
 
 def test_runtime_settings_menu_rebinds_gather_hotkey() -> None:
+    """Verify that runtime settings menu rebinds gather hotkey."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1085,6 +1130,7 @@ def test_runtime_settings_menu_rebinds_gather_hotkey() -> None:
 
 
 def test_runtime_hut_placement_uses_click_x_and_snaps_to_building_line() -> None:
+    """Verify that runtime hut placement uses click x and snaps to building line."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1114,6 +1160,7 @@ def test_runtime_hut_placement_uses_click_x_and_snaps_to_building_line() -> None
 
 
 def test_runtime_hut_placement_costs_50_wood_and_requires_affordability() -> None:
+    """Verify that runtime hut placement costs 50 wood and requires affordability."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1154,6 +1201,7 @@ def test_runtime_hut_placement_costs_50_wood_and_requires_affordability() -> Non
 
 
 def test_runtime_hut_placement_preview_is_locked_to_building_line() -> None:
+    """Verify that runtime hut placement preview is locked to building line."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1173,6 +1221,7 @@ def test_runtime_hut_placement_preview_is_locked_to_building_line() -> None:
 
 
 def test_runtime_valid_hut_placement_creates_site_and_orders_settler() -> None:
+    """Verify that runtime valid hut placement creates site and orders settler."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1205,6 +1254,7 @@ def test_runtime_valid_hut_placement_creates_site_and_orders_settler() -> None:
 
 
 def test_runtime_valid_hut_placement_orders_all_selected_settlers() -> None:
+    """Verify that runtime valid hut placement orders all selected settlers."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1236,6 +1286,7 @@ def test_runtime_valid_hut_placement_orders_all_selected_settlers() -> None:
 
 
 def test_runtime_shift_placement_queues_multiple_hut_constructions() -> None:
+    """Verify that runtime shift placement queues multiple hut constructions."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1272,6 +1323,7 @@ def test_runtime_shift_placement_queues_multiple_hut_constructions() -> None:
 
 
 def test_runtime_right_click_incomplete_building_orders_selected_settlers_to_assist() -> None:
+    """Verify that runtime right click incomplete building orders selected settlers to assist."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1298,6 +1350,7 @@ def test_runtime_right_click_incomplete_building_orders_selected_settlers_to_ass
 
 
 def test_runtime_chicken_farm_placement_spends_cost_and_creates_site() -> None:
+    """Verify that runtime chicken farm placement spends cost and creates site."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1330,6 +1383,7 @@ def test_runtime_chicken_farm_placement_spends_cost_and_creates_site() -> None:
 
 
 def test_runtime_right_click_completed_farm_assigns_selected_settler() -> None:
+    """Verify that runtime right click completed farm assigns selected settler."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1357,6 +1411,7 @@ def test_runtime_right_click_completed_farm_assigns_selected_settler() -> None:
 
 
 def test_runtime_build_placement_cancel_restores_normal_unit_actions() -> None:
+    """Verify that runtime build placement cancel restores normal unit actions."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1382,6 +1437,7 @@ def test_runtime_build_placement_cancel_restores_normal_unit_actions() -> None:
 
 
 def test_runtime_dropoff_button_toggles_placement_mode() -> None:
+    """Verify that runtime dropoff button toggles placement mode."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1405,6 +1461,7 @@ def test_runtime_dropoff_button_toggles_placement_mode() -> None:
 
 
 def test_runtime_right_click_ground_with_hut_sets_rally_point() -> None:
+    """Verify that runtime right click ground with hut sets rally point."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1425,6 +1482,7 @@ def test_runtime_right_click_ground_with_hut_sets_rally_point() -> None:
 
 
 def test_runtime_right_click_blocked_ground_with_hut_refuses_rally_point() -> None:
+    """Verify that runtime right click blocked ground with hut refuses rally point."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1450,6 +1508,7 @@ def test_runtime_right_click_blocked_ground_with_hut_refuses_rally_point() -> No
 
 
 def test_runtime_dropoff_mode_places_flag_on_next_map_click() -> None:
+    """Verify that runtime dropoff mode places flag on next map click."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1478,6 +1537,7 @@ def test_runtime_dropoff_mode_places_flag_on_next_map_click() -> None:
 
 
 def test_runtime_dropoff_mode_clamps_flags_out_of_building_lane() -> None:
+    """Verify that runtime dropoff mode clamps flags out of building lane."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()
@@ -1508,6 +1568,7 @@ def test_runtime_dropoff_mode_clamps_flags_out_of_building_lane() -> None:
 
 
 def test_runtime_produced_unit_uses_updated_dropoff_point() -> None:
+    """Verify that runtime produced unit uses updated dropoff point."""
     runtime = GameRuntime(AppSettings())
 
     runtime.initialize()

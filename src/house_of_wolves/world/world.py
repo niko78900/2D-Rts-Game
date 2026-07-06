@@ -64,14 +64,17 @@ class WorldState:
     rng: Random = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        """Normalize derived state after dataclass initialization."""
         self.rng = Random(self.rng_seed)
 
     def allocate_entity_id(self) -> EntityId:
+        """Allocate the next stable world entity id."""
         entity_id = EntityId(self.next_entity_id)
         self.next_entity_id += 1
         return entity_id
 
     def add_entity(self, entity: Entity) -> None:
+        """Add an entity to world indexes and spatial hash."""
         self.entities[entity.id] = entity
         self.command_queues.setdefault(entity.id, CommandQueue(entity.id))
         self.spatial_hash.insert(entity.id, entity.bounds)
@@ -80,11 +83,13 @@ class WorldState:
         self.recalculate_population()
 
     def update_entity_position(self, entity_id: EntityId, position: WorldPosition) -> None:
+        """Move an entity and refresh spatial indexes."""
         entity = self.entities[entity_id]
         entity.position = position
         self.spatial_hash.move(entity_id, entity.bounds)
 
     def remove_entity(self, entity_id: EntityId) -> None:
+        """Remove an entity from world indexes and queues."""
         self.entities.pop(entity_id, None)
         self.command_queues.pop(entity_id, None)
         self.spatial_hash.remove(entity_id)
@@ -94,9 +99,11 @@ class WorldState:
         self.recalculate_population()
 
     def unindex_resource_node(self, entity_id: EntityId) -> None:
+        """Remove a resource node from resource indexes."""
         self._remove_resource_node_index(entity_id)
 
     def _index_resource_node(self, entity: Entity) -> None:
+        """Add a resource node to resource lookup indexes."""
         resource_type = _resource_type_for_index(entity)
         if resource_type is None:
             return
@@ -106,11 +113,13 @@ class WorldState:
                 bucket.append(entity.id)
 
     def _remove_resource_node_index(self, entity_id: EntityId) -> None:
+        """Remove resource node index."""
         for bucket in self.resource_nodes_by_type.values():
             if entity_id in bucket:
                 bucket.remove(entity_id)
 
     def _index_entity_tags(self, entity: Entity) -> None:
+        """Add an entity to tag lookup indexes."""
         tags = set(getattr(entity, "tags", ()))
         if "unit" in tags:
             self.unit_ids.add(entity.id)
@@ -118,6 +127,7 @@ class WorldState:
             self.hard_obstacle_ids.add(entity.id)
 
     def recalculate_population(self) -> None:
+        """Recompute current and maximum population from world state."""
         self.completed_deposit_huts_by_owner.clear()
         self.current_population = sum(
             _population_cost(entity, self.settings.default_unit_pop_cost)
@@ -132,6 +142,7 @@ class WorldState:
                 self.completed_deposit_huts_by_owner.setdefault(owner, []).append(entity.id)
 
     def notify(self, message: str, *, duration_ms: int = 2500) -> None:
+        """Queue a temporary player-facing notification."""
         for notification in self.notifications:
             if notification.message != message:
                 continue
@@ -146,6 +157,7 @@ class WorldState:
         self.performance_stats.counters.notifications_active = len(self.notifications)
 
     def update_notifications(self, dt_ms: int) -> None:
+        """Expire old notifications and update message timers."""
         for notification in self.notifications:
             notification.remaining_ms -= max(0, int(dt_ms))
         self.notifications = [
@@ -156,6 +168,7 @@ class WorldState:
         self.performance_stats.counters.notifications_active = len(self.notifications)
 
     def enqueue_command(self, entity_id: EntityId, command: Command) -> None:
+        """Store a command for an entity in the world command queues."""
         queue = self.command_queues.setdefault(entity_id, CommandQueue(entity_id))
         if command.queued:
             queue.append(command)
@@ -163,6 +176,7 @@ class WorldState:
             queue.replace(command)
 
     def to_json(self) -> dict[str, object]:
+        """Serialize this object into JSON-compatible data."""
         return {
             "rng_seed": self.rng_seed,
             "elapsed_ms": self.elapsed_ms,
@@ -181,6 +195,7 @@ class WorldState:
 
     @classmethod
     def from_json(cls, value: dict[str, object]) -> WorldState:
+        """Build this object from JSON-compatible data."""
         world = cls(
             rng_seed=int(value.get("rng_seed", 1337)),
             elapsed_ms=int(value.get("elapsed_ms", 0)),
@@ -196,6 +211,7 @@ class WorldState:
 
 
 def _population_cost(entity: object, default_cost: int) -> int:
+    """Return the population cost contributed by an entity."""
     if (
         not getattr(entity, "alive", False)
         or getattr(entity, "owner", None) != "frontier"
@@ -206,6 +222,7 @@ def _population_cost(entity: object, default_cost: int) -> int:
 
 
 def _population_cap_bonus(entity: object) -> int:
+    """Return the population cap bonus granted by an entity."""
     if (
         not getattr(entity, "alive", False)
         or getattr(entity, "owner", None) != "frontier"
@@ -220,6 +237,7 @@ def _population_cap_bonus(entity: object) -> int:
 
 
 def _completed_deposit_hut_owner(entity: object) -> str | None:
+    """Return completed deposit hut owner."""
     if (
         not getattr(entity, "alive", False)
         or "building" not in getattr(entity, "tags", ())
@@ -234,6 +252,7 @@ def _completed_deposit_hut_owner(entity: object) -> str | None:
 
 
 def _resource_type_for_index(entity: object) -> str | None:
+    """Return the resource index key for an entity."""
     tags = getattr(entity, "tags", ())
     if "resource" not in tags:
         return None
@@ -244,6 +263,7 @@ def _resource_type_for_index(entity: object) -> str | None:
 
 
 def _resource_index_keys(resource_type: str) -> tuple[str, ...]:
+    """Return all resource index keys for an entity."""
     if resource_type == "iron":
         return ("iron", "ore")
     if resource_type == "ore":

@@ -47,4 +47,5 @@ class AppSettings:
 
     @property
     def virtual_size(self) -> tuple[int, int]:
+        """Return the configured virtual screen size."""
         return (self.virtual_width, self.virtual_height)

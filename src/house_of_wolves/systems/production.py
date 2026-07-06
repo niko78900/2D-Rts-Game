@@ -44,6 +44,7 @@ class ProductionError(ValueError):
 @dataclass(slots=True)
 class ProductionSystem:
     def update(self, world: object, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         return None
 
 
@@ -80,18 +81,21 @@ def produce_unit(world: WorldState, producer_id: EntityId, unit_id: str) -> Unit
 
 
 def unit_population_cost(unit_id: str, world: WorldState | None = None) -> int:
+    """Return the population cost for a unit type."""
     template = UNIT_TEMPLATES.get(unit_id, {})
     default_cost = world.settings.default_unit_pop_cost if world is not None else 1
     return max(0, int(template.get("population_cost", default_cost)))
 
 
 def unit_cost(unit_id: str) -> dict[str, int]:
+    """Return the resource cost for a unit type."""
     template = UNIT_TEMPLATES.get(unit_id, {})
     raw_cost = template.get("cost", {})
     return {str(resource): max(0, int(amount)) for resource, amount in raw_cost.items()}
 
 
 def _create_unit(world: WorldState, producer: Building, unit_id: str) -> Unit:
+    """Create unit."""
     template = UNIT_TEMPLATES[unit_id]
     width, height = template["footprint"]
     spawn_pos = available_spawn_position_for(world, producer)
@@ -115,6 +119,7 @@ def spawn_position_for(
     producer: Building,
     world_height: int | float = DEFAULT_TERRAIN_HEIGHT,
 ) -> WorldPosition:
+    """Return a default spawn position for a production building."""
     left, _top, width, _height = producer.bounds
     return WorldPosition(
         left + width + 42,
@@ -123,6 +128,7 @@ def spawn_position_for(
 
 
 def available_spawn_position_for(world: WorldState, producer: Building) -> WorldPosition:
+    """Find a nearby unblocked spawn position."""
     return nearest_free_position(
         world,
         spawn_position_for(producer, world.settings.world_height),
@@ -130,6 +136,7 @@ def available_spawn_position_for(world: WorldState, producer: Building) -> World
 
 
 def _first_missing_resource(world: WorldState, cost: dict[str, int]) -> str | None:
+    """Return the first resource missing from a cost."""
     for resource, amount in cost.items():
         if amount > world.resources.get(resource, 0):
             return resource
@@ -137,6 +144,7 @@ def _first_missing_resource(world: WorldState, cost: dict[str, int]) -> str | No
 
 
 def _spend_resources(world: WorldState, cost: dict[str, int]) -> None:
+    """Spend resources."""
     for resource, amount in cost.items():
         if amount <= 0:
             continue

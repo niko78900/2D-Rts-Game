@@ -36,6 +36,7 @@ class CommandValidationError(ValueError):
 
 
 def _normalize_entity_id(value: EntityId | int | None) -> EntityId | None:
+    """Return entity identifiers for normalize entity id."""
     if value is None:
         return None
     if isinstance(value, EntityId):
@@ -44,6 +45,7 @@ def _normalize_entity_id(value: EntityId | int | None) -> EntityId | None:
 
 
 def _normalize_position(value: WorldPosition | tuple[float, float] | None) -> WorldPosition | None:
+    """Return the position used for normalize position."""
     if value is None:
         return None
     if isinstance(value, WorldPosition):
@@ -60,6 +62,7 @@ def make_command(
     queued: bool = False,
     **payload: object,
 ) -> Command:
+    """Create and validate a command object."""
     normalized_issuer_ids = tuple(
         EntityId(int(item)) if not isinstance(item, EntityId) else item for item in issuer_ids
     )
@@ -75,6 +78,7 @@ def make_command(
 
 
 def validate_command(command: Command) -> Command:
+    """Validate a command payload and type."""
     if command.type not in VALID_COMMAND_TYPES:
         raise CommandValidationError(f"Invalid command type: {command.type}")
 

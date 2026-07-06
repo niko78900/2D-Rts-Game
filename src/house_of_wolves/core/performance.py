@@ -22,6 +22,7 @@ class PerformanceCounters:
     notifications_active: int = 0
 
     def reset(self) -> None:
+        """Reset accumulated counters to their initial values."""
         self.path_jobs_processed = 0
         self.full_path_calculations = 0
         self.resource_searches = 0
@@ -44,13 +45,16 @@ class PerformanceStats:
     building_count: int = 0
 
     def reset_frame(self) -> None:
+        """Reset counters that are scoped to a single frame."""
         self.timings_ms.clear()
         self.counters.reset()
 
     def record_timing(self, name: str, elapsed_ms: float) -> None:
+        """Record elapsed time for a named performance bucket."""
         self.timings_ms[name] = self.timings_ms.get(name, 0.0) + elapsed_ms
 
     def snapshot_world_counts(self, world: object) -> None:
+        """Snapshot current world entity counts for profiling."""
         entities = [
             entity
             for entity in getattr(world, "entities", {}).values()

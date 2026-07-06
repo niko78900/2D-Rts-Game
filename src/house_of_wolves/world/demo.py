@@ -128,11 +128,13 @@ def _add_initial_resource_nodes(world: WorldState, unit_lane_height: float) -> N
 
 
 def _resource_y(world: WorldState, unit_lane_height: float, row_factor: float) -> float:
+    """Return a terrain-aligned y position for resources."""
     terrain = terrain_layout_for_height(world.settings.world_height)
     return terrain.unit_walkable_top_y + unit_lane_height * row_factor
 
 
 def _scaled_resource_x(world: WorldState, base_x: float) -> float:
+    """Scale a resource x position to the configured world width."""
     scale = world.settings.world_width / BASE_RESOURCE_LAYOUT_WIDTH
     return min(max(base_x * scale, 80), world.settings.world_width - 80)
 
@@ -143,6 +145,7 @@ def _add_tree_at_clear_position(
     unit_lane_height: float,
     preferred_row_factor: float,
 ) -> None:
+    """Add tree at clear position."""
     x_offsets = (0, 52, -52, 104, -104, 156, -156, 208, -208, 260, -260, 312, -312)
     row_factors = (preferred_row_factor, *TREE_ROW_FACTORS)
     for x_offset in x_offsets:
@@ -168,6 +171,7 @@ def _resource_bounds_clear(
     world: WorldState,
     bounds: tuple[float, float, float, float],
 ) -> bool:
+    """Return the bounds used for resource bounds clear."""
     padded = _inflate_bounds(bounds, TREE_CLEARANCE_PX)
     return all(
         not _bounds_intersect(
@@ -183,6 +187,7 @@ def _inflate_bounds(
     bounds: tuple[float, float, float, float],
     amount: float,
 ) -> tuple[float, float, float, float]:
+    """Return the bounds used for inflate bounds."""
     left, top, width, height = bounds
     return (left - amount, top - amount, width + amount * 2, height + amount * 2)
 
@@ -191,6 +196,7 @@ def _bounds_intersect(
     first: tuple[float, float, float, float],
     second: tuple[float, float, float, float],
 ) -> bool:
+    """Return the bounds used for bounds intersect."""
     first_left, first_top, first_width, first_height = first
     second_left, second_top, second_width, second_height = second
     return not (
@@ -213,6 +219,7 @@ def _add_unit(
     attack_range: float,
     attack_cooldown_ms: int,
 ) -> None:
+    """Add unit."""
     entity = CombatUnit(
         id=world.allocate_entity_id(),
         owner="frontier",
@@ -230,6 +237,7 @@ def _add_unit(
 
 
 def _add_enemy_unit(world: WorldState, x: float, y: float) -> None:
+    """Add enemy unit."""
     entity = CombatUnit(
         id=world.allocate_entity_id(),
         owner="wolves",
@@ -247,6 +255,7 @@ def _add_enemy_unit(world: WorldState, x: float, y: float) -> None:
 
 
 def _add_tree(world: WorldState, x: float, y: float) -> None:
+    """Add tree."""
     hp = resource_hp_for_type("wood")
     entity = ResourceNode(
         id=world.allocate_entity_id(),
@@ -268,6 +277,7 @@ def _add_tree(world: WorldState, x: float, y: float) -> None:
 
 
 def _add_gold_mine(world: WorldState, x: float, y: float) -> None:
+    """Add gold mine."""
     hp = resource_hp_for_type("gold")
     entity = ResourceNode(
         id=world.allocate_entity_id(),
@@ -289,6 +299,7 @@ def _add_gold_mine(world: WorldState, x: float, y: float) -> None:
 
 
 def _add_stone_outcrop(world: WorldState, x: float, y: float) -> None:
+    """Add stone outcrop."""
     hp = resource_hp_for_type("stone")
     entity = ResourceNode(
         id=world.allocate_entity_id(),
@@ -310,6 +321,7 @@ def _add_stone_outcrop(world: WorldState, x: float, y: float) -> None:
 
 
 def _add_iron_deposit(world: WorldState, x: float, y: float) -> None:
+    """Add iron deposit."""
     hp = resource_hp_for_type("iron")
     entity = ResourceNode(
         id=world.allocate_entity_id(),
@@ -331,6 +343,7 @@ def _add_iron_deposit(world: WorldState, x: float, y: float) -> None:
 
 
 def _add_hut(world: WorldState, x: float, y: float) -> None:
+    """Add hut."""
     entity = Building(
         id=world.allocate_entity_id(),
         owner="frontier",

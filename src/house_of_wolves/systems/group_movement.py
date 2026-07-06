@@ -129,6 +129,7 @@ def issue_group_move_command(
 
 
 def sort_units_spatially(units: list[PositionedUnit]) -> list[PositionedUnit]:
+    """Sort units into stable spatial order for formations."""
     return _sort_positioned_rows(
         units,
         lambda unit: unit.position,
@@ -137,10 +138,12 @@ def sort_units_spatially(units: list[PositionedUnit]) -> list[PositionedUnit]:
 
 
 def sort_slots_spatially(slots: list[WorldPosition]) -> list[WorldPosition]:
+    """Sort destination slots into stable spatial order."""
     return _sort_positioned_rows(slots, lambda slot: slot)
 
 
 def _movable_units_for_ids(world: WorldState, unit_ids: list[EntityId]) -> list[PositionedUnit]:
+    """Return entity identifiers for movable units for ids."""
     units: list[PositionedUnit] = []
     for entity_id in unit_ids:
         entity = world.entities.get(entity_id)
@@ -160,6 +163,7 @@ def _formation_order_for_command(
     *,
     queued: bool,
 ) -> list[PositionedUnit]:
+    """Return stable unit ordering for queued formation moves."""
     if not queued:
         return sort_units_spatially(units)
 
@@ -173,6 +177,7 @@ def _formation_order_for_command(
 
 
 def _queued_formation_index(world: WorldState, entity_id: EntityId) -> int | None:
+    """Return the preserved formation slot index for a unit."""
     queue = world.command_queues.get(entity_id)
     if queue is None:
         return None
@@ -184,6 +189,7 @@ def _queued_formation_index(world: WorldState, entity_id: EntityId) -> int | Non
 
 
 def _center_of_units(units: list[PositionedUnit]) -> WorldPosition:
+    """Return the center point of a unit group."""
     return WorldPosition(
         sum(unit.position.x for unit in units) / len(units),
         sum(unit.position.y for unit in units) / len(units),
@@ -191,6 +197,7 @@ def _center_of_units(units: list[PositionedUnit]) -> WorldPosition:
 
 
 def _cluster_rows(units: list[PositionedUnit]) -> list[list[PositionedUnit]]:
+    """Group units into loose rows by y position."""
     sorted_units = sorted(units, key=lambda unit: (unit.position.y, unit.position.x, int(unit.id)))
     rows: list[list[PositionedUnit]] = []
     for unit in sorted_units:
@@ -208,12 +215,14 @@ def _cluster_rows(units: list[PositionedUnit]) -> list[list[PositionedUnit]]:
 
 
 def _spread_offset(offset: float, *, axis_spacing: float = FORMATION_SLOT_SPACING_X) -> float:
+    """Return spacing offsets for loose formation slots."""
     if abs(offset) < axis_spacing:
         return 0.0
     return offset
 
 
 def _slots_too_tight(slots: list[WorldPosition]) -> bool:
+    """Return whether generated slots overlap too much."""
     for index, first in enumerate(slots):
         for second in slots[index + 1 :]:
             if _distance(first, second) < FORMATION_SLOT_SPACING_Y:
@@ -227,6 +236,7 @@ def _grid_slots(
     aspect: float,
     world_height: int | float,
 ) -> list[WorldPosition]:
+    """Return entity identifiers for grid slots."""
     columns, rows = _grid_dimensions(count, aspect)
     slots: list[WorldPosition] = []
     for index in range(count):
@@ -240,6 +250,7 @@ def _grid_slots(
 
 
 def _group_aspect(units: list[PositionedUnit]) -> float:
+    """Return the rough width/height aspect of a unit group."""
     if len(units) <= 1:
         return 1.0
     xs = [unit.position.x for unit in units]
@@ -261,6 +272,7 @@ def _limit_formation_footprint(
     aspect: float,
     world_height: int | float,
 ) -> list[WorldPosition]:
+    """Clamp formation footprint size to reasonable bounds."""
     if count <= 1 or len(slots) <= 1:
         return slots
 
@@ -296,6 +308,7 @@ def _limit_formation_footprint(
 
 
 def _grid_dimensions(count: int, aspect: float) -> tuple[int, int]:
+    """Return entity identifiers for grid dimensions."""
     columns = max(1, min(count, ceil(sqrt(count * aspect))))
     rows = ceil(count / columns)
     return columns, rows
@@ -307,7 +320,9 @@ def _sort_positioned_rows[T](
     *,
     tie_breaker: Callable[[T], int] | None = None,
 ) -> list[T]:
+    """Return the position used for sort positioned rows."""
     def keyed(item: T) -> tuple[float, float, int]:
+        """Return a stable key for spatial sorting."""
         position = position_for(item)
         tie_value = tie_breaker(item) if tie_breaker is not None else 0
         return (position.y, position.x, tie_value)
@@ -336,6 +351,7 @@ def _relax_slots(
     slots: list[WorldPosition],
     world_height: int | float,
 ) -> list[WorldPosition]:
+    """Spread formation slots apart to reduce clumping."""
     relaxed = list(slots)
     for _ in range(3):
         offsets = [[0.0, 0.0] for _slot in relaxed]
@@ -362,8 +378,10 @@ def _relax_slots(
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    """Return the distance used for distance."""
     return ((first.x - second.x) ** 2 + (first.y - second.y) ** 2) ** 0.5
 
 
 def _clamp(position: WorldPosition, world_height: int | float) -> WorldPosition:
+    """Clamp a value between lower and upper limits."""
     return clamp_unit_position_to_walkable_lane_for_height(position, world_height)

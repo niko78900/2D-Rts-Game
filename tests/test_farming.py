@@ -30,6 +30,7 @@ from house_of_wolves.world.terrain import terrain_layout_for_height
 
 
 def test_completed_farm_assigns_one_worker_and_refuses_second() -> None:
+    """Verify that completed farm assigns one worker and refuses second."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -45,6 +46,7 @@ def test_completed_farm_assigns_one_worker_and_refuses_second() -> None:
 
 
 def test_under_construction_farm_cannot_be_worked() -> None:
+    """Verify that under construction farm cannot be worked."""
     world = create_demo_world()
     system = FarmSystem()
     site = _add_farm_site(world)
@@ -58,6 +60,7 @@ def test_under_construction_farm_cannot_be_worked() -> None:
 
 
 def test_completed_farm_spawns_animal_without_worker() -> None:
+    """Verify that completed farm spawns animal without worker."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -72,6 +75,7 @@ def test_completed_farm_spawns_animal_without_worker() -> None:
 
 
 def test_chicken_farm_loop_kills_harvests_and_deposits_food() -> None:
+    """Verify that chicken farm loop kills harvests and deposits food."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -118,6 +122,7 @@ def test_chicken_farm_loop_kills_harvests_and_deposits_food() -> None:
 
 
 def test_farm_worker_must_reach_hut_before_meat_deposits() -> None:
+    """Verify that farm worker must reach hut before meat deposits."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -147,6 +152,7 @@ def test_farm_worker_must_reach_hut_before_meat_deposits() -> None:
 
 
 def test_chicken_carcass_lasts_four_trips_then_respawns_after_delay() -> None:
+    """Verify that chicken carcass lasts four trips then respawns after delay."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -166,6 +172,7 @@ def test_chicken_carcass_lasts_four_trips_then_respawns_after_delay() -> None:
 
 
 def test_pig_farm_uses_pig_balance_and_sixty_second_respawn() -> None:
+    """Verify that pig farm uses pig balance and sixty second respawn."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world, PIG_FARM_ID)
@@ -202,6 +209,7 @@ def test_pig_farm_uses_pig_balance_and_sixty_second_respawn() -> None:
 
 
 def test_spawn_timer_ready_does_not_stack_animal_while_carcass_exists() -> None:
+    """Verify that spawn timer ready does not stack animal while carcass exists."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -220,6 +228,7 @@ def test_spawn_timer_ready_does_not_stack_animal_while_carcass_exists() -> None:
 
 
 def test_live_farm_animal_wanders_inside_its_farm_area() -> None:
+    """Verify that live farm animal wanders inside its farm area."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -239,6 +248,7 @@ def test_live_farm_animal_wanders_inside_its_farm_area() -> None:
 
 
 def test_farm_without_completed_hut_pauses_and_notifies() -> None:
+    """Verify that farm without completed hut pauses and notifies."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     world.remove_entity(hut.id)
@@ -254,6 +264,7 @@ def test_farm_without_completed_hut_pauses_and_notifies() -> None:
 
 
 def test_manual_order_unassigns_farm_worker() -> None:
+    """Verify that manual order unassigns farm worker."""
     world = create_demo_world()
     system = FarmSystem()
     farm = _add_completed_farm(world)
@@ -271,6 +282,7 @@ def test_manual_order_unassigns_farm_worker() -> None:
 
 
 def _add_completed_farm(world, building_id: str = CHICKEN_FARM_ID) -> Building:
+    """Add completed farm test fixture data."""
     spec = FARM_BUILDING_SPECS[building_id]
     layout = terrain_layout_for_height(world.settings.world_height)
     farm = Building(
@@ -295,6 +307,7 @@ def _add_completed_farm(world, building_id: str = CHICKEN_FARM_ID) -> Building:
 
 
 def _add_farm_site(world, building_id: str = CHICKEN_FARM_ID) -> Building:
+    """Add farm site test fixture data."""
     spec = FARM_BUILDING_SPECS[building_id]
     layout = terrain_layout_for_height(world.settings.world_height)
     farm = Building(
@@ -319,6 +332,7 @@ def _spawn_and_kill_farm_animal(
     farm: Building,
     settler,
 ):
+    """Spawn a farm animal and advance it to carcass state."""
     system.assign_worker(world, farm, settler.id)
     system.update(world, 16)
     animal = farm_resource(world, farm)
@@ -334,6 +348,7 @@ def _kill_farm_animal(
     settler,
     animal,
 ) -> None:
+    """Advance combat until the farm animal becomes a carcass."""
     spec = _spec_for_farm(farm)
     world.update_entity_position(settler.id, animal.position)
     world.command_queues[settler.id].clear()
@@ -347,6 +362,7 @@ def _harvest_and_deposit_one_trip(
     settler,
     hut,
 ) -> None:
+    """Advance a farm worker through one deposit trip."""
     _harvest_one_meat_pickup(world, system, farm, settler)
     assert settler.carry_type == "food"
     assert settler.carry_amount > 0
@@ -362,6 +378,7 @@ def _harvest_one_meat_pickup(
     farm: Building,
     settler,
 ) -> None:
+    """Advance a worker until one meat pickup completes."""
     carcass = farm_resource(world, farm)
     assert carcass is not None
     world.update_entity_position(settler.id, carcass.position)
@@ -370,17 +387,20 @@ def _harvest_one_meat_pickup(
 
 
 def _advance_farm(world, system: FarmSystem, dt_ms: int) -> None:
+    """Advance the farm system by a test step."""
     world.elapsed_ms += dt_ms
     system.update(world, dt_ms)
 
 
 def _pickup_interval_ms(farm: Building) -> int:
+    """Return the farm carcass pickup interval for tests."""
     spec = _spec_for_farm(farm)
     trips = max(1, (spec.animal_food_yield + 4) // 5)
     return max(1, spec.carcass_harvest_duration_ms // trips)
 
 
 def _spec_for_farm(farm: Building):
+    """Return the farm spec used by a test farm."""
     farm_type = farm.functions["farm_type"]
     return next(spec for spec in FARM_BUILDING_SPECS.values() if spec.farm_type == farm_type)
 
@@ -389,11 +409,13 @@ def _position_in_bounds(
     position: WorldPosition,
     bounds: tuple[float, float, float, float],
 ) -> bool:
+    """Return whether a test position lies inside bounds."""
     left, top, width, height = bounds
     return left <= position.x <= left + width and top <= position.y <= top + height
 
 
 def _add_settler_like(world, position: WorldPosition):
+    """Add settler like test fixture data."""
     template = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     entity = type(template)(
         id=world.allocate_entity_id(),

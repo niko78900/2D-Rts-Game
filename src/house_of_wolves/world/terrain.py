@@ -23,6 +23,7 @@ class TerrainLayout:
 
 
 def terrain_layout_for_height(world_height: int | float = DEFAULT_TERRAIN_HEIGHT) -> TerrainLayout:
+    """Build the terrain lane layout for a screen height."""
     screen_height = float(world_height)
     map_bottom = max(0.0, screen_height - UI_PANEL_HEIGHT)
     building_height = min(map_bottom, screen_height * BUILDING_LANE_SCREEN_FRACTION)
@@ -54,6 +55,7 @@ class TerrainBand:
     walkable: bool = True
 
     def contains_y(self, y: float) -> bool:
+        """Return whether the y coordinate is inside this band."""
         return self.top_y <= y <= self.bottom_y
 
 
@@ -77,10 +79,12 @@ def clamp_unit_position_to_walkable_lane_for_height(
 
 
 def is_building_lane_y(y: float) -> bool:
+    """Return whether a y position is on the building lane."""
     return BUILDING_LANE_TOP_Y <= y <= BUILDING_LANE_BOTTOM_Y
 
 
 def terrain_bands_for_height(world_height: int | float) -> tuple[TerrainBand, ...]:
+    """Build drawable terrain bands for a screen height."""
     layout = terrain_layout_for_height(world_height)
     return (
         TerrainBand("sky", layout.sky_top_y, layout.sky_bottom_y, walkable=False),

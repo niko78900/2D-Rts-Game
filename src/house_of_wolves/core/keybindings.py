@@ -103,14 +103,17 @@ DEFAULT_KEYBINDINGS = {
 
 
 def default_keybindings() -> dict[str, str]:
+    """Return the default keybinding map."""
     return dict(DEFAULT_KEYBINDINGS)
 
 
 def normalized_key_name(key_name: str) -> str:
+    """Normalize a key name for comparisons and storage."""
     return key_name.strip().lower()
 
 
 def formatted_key_name(key_name: str | None) -> str:
+    """Format a key name for UI display."""
     if not key_name:
         return "-"
     normalized = normalized_key_name(key_name)
@@ -125,6 +128,7 @@ def keybinding_for_ability(
     *,
     slot_index: int | None = None,
 ) -> str | None:
+    """Return the configured keybinding for an ability."""
     if slot_index is not None and 0 <= slot_index < len(COMMAND_PANEL_SLOT_ACTIONS):
         return keybindings.get(COMMAND_PANEL_SLOT_ACTIONS[slot_index])
     action = ABILITY_KEYBIND_ACTIONS.get(ability)
@@ -139,6 +143,7 @@ def ability_display_label(
     *,
     slot_index: int | None = None,
 ) -> str:
+    """Return the UI label for an ability with its hotkey."""
     key_name = keybinding_for_ability(ability, keybindings, slot_index=slot_index)
     if not key_name:
         return ability
@@ -146,6 +151,7 @@ def ability_display_label(
 
 
 def command_slot_index_for_key(key_name: str, keybindings: dict[str, str]) -> int | None:
+    """Return the command-panel slot assigned to a key."""
     normalized = normalized_key_name(key_name)
     for index, action in enumerate(COMMAND_PANEL_SLOT_ACTIONS):
         if keybindings.get(action) == normalized:

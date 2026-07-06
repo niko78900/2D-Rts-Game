@@ -20,11 +20,13 @@ from house_of_wolves.world.terrain import UNIT_WALKABLE_TOP_Y, terrain_layout_fo
 
 
 def test_unit_collision_allows_one_third_hitbox_clipping() -> None:
+    """Verify that unit collision allows one third hitbox clipping."""
     assert UNIT_CLIP_FRACTION == 1 / 3
     assert UNIT_COLLISION_RADIUS == UNIT_HITBOX_RADIUS * (1 - UNIT_CLIP_FRACTION)
 
 
 def test_movement_consumes_move_command_and_updates_spatial_hash() -> None:
+    """Verify that movement consumes move command and updates spatial hash."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     original_bounds = unit.bounds
@@ -47,6 +49,7 @@ def test_movement_consumes_move_command_and_updates_spatial_hash() -> None:
 
 
 def test_units_resolve_around_same_destination_instead_of_overlapping() -> None:
+    """Verify that units resolve around same destination instead of overlapping."""
     world = create_demo_world()
     units = [entity for entity in world.entities.values() if "unit" in entity.tags][:2]
     target = WorldPosition(900, 500)
@@ -66,6 +69,7 @@ def test_units_resolve_around_same_destination_instead_of_overlapping() -> None:
 
 
 def test_move_targets_inside_building_lane_stop_at_unit_lane_edge() -> None:
+    """Verify that move targets inside building lane stop at unit lane edge."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     movement = MovementSystem()
@@ -80,6 +84,7 @@ def test_move_targets_inside_building_lane_stop_at_unit_lane_edge() -> None:
 
 
 def test_move_targets_below_ui_stop_at_map_bottom() -> None:
+    """Verify that move targets below ui stop at map bottom."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     movement = MovementSystem()
@@ -95,6 +100,7 @@ def test_move_targets_below_ui_stop_at_map_bottom() -> None:
 
 
 def test_resource_nodes_block_direct_unit_movement() -> None:
+    """Verify that resource nodes block direct unit movement."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -116,6 +122,7 @@ def test_resource_nodes_block_direct_unit_movement() -> None:
 
 
 def test_units_steer_around_resource_nodes_when_target_is_behind_them() -> None:
+    """Verify that units steer around resource nodes when target is behind them."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -136,6 +143,7 @@ def test_units_steer_around_resource_nodes_when_target_is_behind_them() -> None:
 
 
 def test_move_command_inserts_detour_waypoints_around_resource_blocker() -> None:
+    """Verify that move command inserts detour waypoints around resource blocker."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -174,6 +182,7 @@ def test_move_command_inserts_detour_waypoints_around_resource_blocker() -> None
 
 
 def test_move_target_inside_resource_blocker_is_projected_outside() -> None:
+    """Verify that move target inside resource blocker is projected outside."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -193,6 +202,7 @@ def test_move_target_inside_resource_blocker_is_projected_outside() -> None:
 
 
 def test_unit_reaches_target_behind_resource_using_detour_waypoints() -> None:
+    """Verify that unit reaches target behind resource using detour waypoints."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -216,6 +226,7 @@ def test_unit_reaches_target_behind_resource_using_detour_waypoints() -> None:
 
 
 def test_group_move_finishes_near_slot_without_exact_pixel_snap() -> None:
+    """Verify that group move finishes near slot without exact pixel snap."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     original_position = unit.position
@@ -234,6 +245,7 @@ def test_group_move_finishes_near_slot_without_exact_pixel_snap() -> None:
 
 
 def test_unreachable_move_command_times_out_at_closest_reached_position() -> None:
+    """Verify that unreachable move command times out at closest reached position."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     target = WorldPosition(unit.position.x + 220, unit.position.y)
@@ -256,6 +268,7 @@ def test_unreachable_move_command_times_out_at_closest_reached_position() -> Non
 
 
 def test_moving_unit_shoves_blocking_unit_forward() -> None:
+    """Verify that moving unit shoves blocking unit forward."""
     world = create_demo_world()
     mover, blocker, bystander = [
         entity for entity in world.entities.values() if "unit" in entity.tags
@@ -280,6 +293,7 @@ def test_moving_unit_shoves_blocking_unit_forward() -> None:
 
 
 def test_repeated_friendly_collisions_enable_temporary_ghosting_without_canceling_move() -> None:
+    """Verify that repeated friendly collisions enable temporary ghosting without canceling move."""
     world = create_demo_world()
     mover, blocker, second_blocker = [
         entity for entity in world.entities.values() if "unit" in entity.tags
@@ -312,6 +326,7 @@ def test_repeated_friendly_collisions_enable_temporary_ghosting_without_cancelin
 
 
 def test_friendly_ghosting_passes_same_team_units_but_not_enemy_units() -> None:
+    """Verify that friendly ghosting passes same team units but not enemy units."""
     world = create_demo_world()
     mover, friendly_blocker = [
         entity for entity in world.entities.values() if "unit" in entity.tags
@@ -350,6 +365,7 @@ def test_friendly_ghosting_passes_same_team_units_but_not_enemy_units() -> None:
 
 
 def test_overlapping_idle_units_are_pushed_apart_on_update() -> None:
+    """Verify that overlapping idle units are pushed apart on update."""
     world = create_demo_world()
     units = [entity for entity in world.entities.values() if "unit" in entity.tags][:2]
 
@@ -368,10 +384,12 @@ def test_overlapping_idle_units_are_pushed_apart_on_update() -> None:
 
 
 def unit_distance_from_position(unit: object, position: WorldPosition) -> float:
+    """Provide test helper logic for unit distance from position."""
     return ((unit.position.x - position.x) ** 2 + (unit.position.y - position.y) ** 2) ** 0.5
 
 
 def _remove_other_resource_nodes(world: object, keep_id: object) -> None:
+    """Remove other resource nodes test fixture data."""
     for entity in list(world.entities.values()):
         if "resource" in entity.tags and entity.id != keep_id:
             world.remove_entity(entity.id)

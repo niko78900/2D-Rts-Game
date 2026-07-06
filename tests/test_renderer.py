@@ -34,6 +34,7 @@ from house_of_wolves.world.demo import create_demo_world
 
 
 def test_queued_move_targets_returns_all_move_commands_for_selected_units_only() -> None:
+    """Verify that queued move targets returns all move commands for selected units only."""
     world = create_demo_world()
     units = [entity for entity in world.entities.values() if "unit" in entity.tags]
     first_target = WorldPosition(800, 520)
@@ -52,6 +53,7 @@ def test_queued_move_targets_returns_all_move_commands_for_selected_units_only()
 
 
 def test_queued_move_targets_hides_unselected_unit_destinations() -> None:
+    """Verify that queued move targets hides unselected unit destinations."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     world.enqueue_command(unit.id, make_command("move", [unit.id], target_pos=(800, 520)))
@@ -60,6 +62,7 @@ def test_queued_move_targets_hides_unselected_unit_destinations() -> None:
 
 
 def test_queued_move_markers_marks_attack_move_targets() -> None:
+    """Verify that queued move markers marks attack move targets."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "unit" in entity.tags)
     target = WorldPosition(800, 520)
@@ -75,6 +78,7 @@ def test_queued_move_markers_marks_attack_move_targets() -> None:
 
 
 def test_gameplay_waypoint_markers_collapse_group_formation_slots() -> None:
+    """Verify that gameplay waypoint markers collapse group formation slots."""
     world = create_demo_world()
     units = [
         entity
@@ -96,6 +100,7 @@ def test_gameplay_waypoint_markers_collapse_group_formation_slots() -> None:
 
 
 def test_gameplay_waypoint_links_keep_one_route_per_selected_unit() -> None:
+    """Verify that gameplay waypoint links keep one route per selected unit."""
     world = create_demo_world()
     units = [
         entity
@@ -115,12 +120,14 @@ def test_gameplay_waypoint_links_keep_one_route_per_selected_unit() -> None:
 
 
 def test_dotted_line_points_create_separated_waypoint_dots() -> None:
+    """Verify that dotted line points create separated waypoint dots."""
     points = dotted_line_points((0, 0), (30, 0), spacing=10)
 
     assert points == [(0, 0), (10, 0), (20, 0), (30, 0)]
 
 
 def test_gameplay_waypoint_links_draw_endpoint_dots_for_each_unit_slot() -> None:
+    """Verify that gameplay waypoint links draw endpoint dots for each unit slot."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -148,6 +155,7 @@ def test_gameplay_waypoint_links_draw_endpoint_dots_for_each_unit_slot() -> None
 
 
 def test_selected_panel_for_unit_shows_health_and_core_abilities() -> None:
+    """Verify that selected panel for unit shows health and core abilities."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
 
@@ -166,6 +174,7 @@ def test_selected_panel_for_unit_shows_health_and_core_abilities() -> None:
 
 
 def test_selected_panel_for_building_shows_production_options() -> None:
+    """Verify that selected panel for building shows production options."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
 
@@ -178,6 +187,7 @@ def test_selected_panel_for_building_shows_production_options() -> None:
 
 
 def test_selected_panel_for_incomplete_hut_hides_production_options() -> None:
+    """Verify that selected panel for incomplete hut hides production options."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     hut.complete = False
@@ -189,6 +199,7 @@ def test_selected_panel_for_incomplete_hut_hides_production_options() -> None:
 
 
 def test_selected_panel_for_resource_shows_remaining_amount_and_gather_ability() -> None:
+    """Verify that selected panel for resource shows remaining amount and gather ability."""
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
 
@@ -200,6 +211,7 @@ def test_selected_panel_for_resource_shows_remaining_amount_and_gather_ability()
 
 
 def test_resource_placeholder_inner_colors_distinguish_ore_and_stone() -> None:
+    """Verify that resource placeholder inner colors distinguish ore and stone."""
     renderer = GameRenderer(AppSettings())
     rect = pygame.Rect(20, 20, 90, 54)
     surface = pygame.Surface((140, 100))
@@ -212,6 +224,7 @@ def test_resource_placeholder_inner_colors_distinguish_ore_and_stone() -> None:
 
 
 def test_named_animal_sprite_assets_exist_with_transparent_backgrounds() -> None:
+    """Verify that named animal sprite assets exist with transparent backgrounds."""
     old_uuid_files = (
         ANIMAL_SPRITE_PATHS["pig"].parents[1] / "55e8e3d1-73ed-4119-b38a-0ccb3f6b2fdd.png",
         ANIMAL_SPRITE_PATHS["chicken"].parents[1] / "970e59ef-10f2-4178-96bd-99a1b1c3d875.png",
@@ -225,12 +238,14 @@ def test_named_animal_sprite_assets_exist_with_transparent_backgrounds() -> None
 
 
 def test_renderer_loads_chicken_and_pig_sprites() -> None:
+    """Verify that renderer loads chicken and pig sprites."""
     renderer = GameRenderer(AppSettings())
 
     assert set(renderer.animal_sprites) >= {"chicken", "pig"}
 
 
 def test_selected_panel_for_enemy_unit_shows_stats_without_commands() -> None:
+    """Verify that selected panel for enemy unit shows stats without commands."""
     world = create_demo_world()
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
 
@@ -243,6 +258,7 @@ def test_selected_panel_for_enemy_unit_shows_stats_without_commands() -> None:
 
 
 def test_status_bar_for_damaged_unit_uses_green_red_health_ratio() -> None:
+    """Verify that status bar for damaged unit uses green red health ratio."""
     world = create_demo_world()
     unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     unit.hp = 20
@@ -256,6 +272,7 @@ def test_status_bar_for_damaged_unit_uses_green_red_health_ratio() -> None:
 
 
 def test_status_bar_for_resource_uses_yellow_depletion_ratio() -> None:
+    """Verify that status bar for resource uses yellow depletion ratio."""
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
     tree.amount_remaining = 75
@@ -269,6 +286,7 @@ def test_status_bar_for_resource_uses_yellow_depletion_ratio() -> None:
 
 
 def test_status_bar_for_live_farm_animal_uses_health_ratio() -> None:
+    """Verify that status bar for live farm animal uses health ratio."""
     animal = ResourceNode(
         id=EntityId(999),
         owner="neutral",
@@ -291,6 +309,7 @@ def test_status_bar_for_live_farm_animal_uses_health_ratio() -> None:
 
 
 def test_hut_construction_stage_thresholds() -> None:
+    """Verify that hut construction stage thresholds."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     hut.complete = False
@@ -310,6 +329,7 @@ def test_hut_construction_stage_thresholds() -> None:
 
 
 def test_hut_construction_sprite_references_are_named_for_future_assets() -> None:
+    """Verify that hut construction sprite references are named for future assets."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     hut.complete = False
@@ -325,6 +345,7 @@ def test_hut_construction_sprite_references_are_named_for_future_assets() -> Non
 
 
 def test_resource_hitbox_outline_is_hidden_by_default() -> None:
+    """Verify that resource hitbox outline is hidden by default."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -342,6 +363,7 @@ def test_resource_hitbox_outline_is_hidden_by_default() -> None:
 
 
 def test_resource_hitbox_outline_draws_when_debug_setting_is_enabled() -> None:
+    """Verify that resource hitbox outline draws when debug setting is enabled."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -359,6 +381,7 @@ def test_resource_hitbox_outline_draws_when_debug_setting_is_enabled() -> None:
 
 
 def test_unit_hitbox_outline_draws_when_debug_setting_is_enabled() -> None:
+    """Verify that unit hitbox outline draws when debug setting is enabled."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -376,6 +399,7 @@ def test_unit_hitbox_outline_draws_when_debug_setting_is_enabled() -> None:
 
 
 def test_building_hitbox_outline_draws_when_debug_setting_is_enabled() -> None:
+    """Verify that building hitbox outline draws when debug setting is enabled."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -393,6 +417,7 @@ def test_building_hitbox_outline_draws_when_debug_setting_is_enabled() -> None:
 
 
 def test_multi_unit_panel_shows_only_mutual_actions_for_mixed_unit_types() -> None:
+    """Verify that multi unit panel shows only mutual actions for mixed unit types."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     spearman = next(entity for entity in world.entities.values() if "spearman" in entity.tags)
@@ -404,6 +429,7 @@ def test_multi_unit_panel_shows_only_mutual_actions_for_mixed_unit_types() -> No
 
 
 def test_mutual_abilities_keeps_shared_settler_actions_for_same_unit_type() -> None:
+    """Verify that mutual abilities keeps shared settler actions for same unit type."""
     world = create_demo_world()
     settlers = [entity for entity in world.entities.values() if "settler" in entity.tags]
     settler = settlers[0]
@@ -422,6 +448,7 @@ def test_mutual_abilities_keeps_shared_settler_actions_for_same_unit_type() -> N
 
 
 def test_renderer_hit_tests_selected_panel_ability_buttons() -> None:
+    """Verify that renderer hit tests selected panel ability buttons."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -444,6 +471,7 @@ def test_renderer_hit_tests_selected_panel_ability_buttons() -> None:
 
 
 def test_renderer_shows_keybind_near_ability_button_but_hit_tests_base_label() -> None:
+    """Verify that renderer shows keybind near ability button but hit tests base label."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -462,6 +490,7 @@ def test_renderer_shows_keybind_near_ability_button_but_hit_tests_base_label() -
 
 
 def test_renderer_settings_keybind_rows_are_hit_testable() -> None:
+    """Verify that renderer settings keybind rows are hit testable."""
     pygame.init()
     try:
         renderer = GameRenderer(AppSettings())
@@ -476,6 +505,7 @@ def test_renderer_settings_keybind_rows_are_hit_testable() -> None:
 
 
 def test_renderer_caches_notification_text_surfaces() -> None:
+    """Verify that renderer caches notification text surfaces."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -498,12 +528,14 @@ def test_renderer_caches_notification_text_surfaces() -> None:
 
 
 def _entity_screen_rect(world: object, entity: object) -> pygame.Rect:
+    """Provide test helper logic for entity screen rect."""
     left, top, width, height = entity.bounds
     screen_pos = world.camera.world_to_screen(WorldPosition(left, top))
     return pygame.Rect(screen_pos[0], screen_pos[1], round(width), round(height))
 
 
 def _blocking_screen_rect(world: object, entity: object) -> pygame.Rect:
+    """Provide test helper logic for blocking screen rect."""
     left, top, width, height = blocking_bounds_for_entity(entity)
     screen_pos = world.camera.world_to_screen(WorldPosition(left, top))
     return pygame.Rect(screen_pos[0], screen_pos[1], round(width), round(height))
@@ -516,6 +548,7 @@ def _near_pixel_color(
     *,
     radius: int = 2,
 ) -> bool:
+    """Provide test helper logic for near pixel color."""
     for x in range(center[0] - radius, center[0] + radius + 1):
         for y in range(center[1] - radius, center[1] + radius + 1):
             if surface.get_rect().collidepoint(x, y) and surface.get_at((x, y))[:3] == color:
@@ -524,6 +557,7 @@ def _near_pixel_color(
 
 
 def test_renderer_highlights_active_dropoff_button() -> None:
+    """Verify that renderer highlights active dropoff button."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -545,6 +579,7 @@ def test_renderer_highlights_active_dropoff_button() -> None:
 
 
 def test_renderer_draws_enemy_selection_marker_red() -> None:
+    """Verify that renderer draws enemy selection marker red."""
     pygame.init()
     try:
         world = create_demo_world()
@@ -571,6 +606,7 @@ def test_renderer_draws_enemy_selection_marker_red() -> None:
 
 
 def test_renderer_draws_valid_hut_placement_preview() -> None:
+    """Verify that renderer draws valid hut placement preview."""
     pygame.init()
     try:
         world = create_demo_world()

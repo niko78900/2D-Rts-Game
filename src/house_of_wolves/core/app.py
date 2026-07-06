@@ -18,17 +18,21 @@ class GameApp:
     settings: AppSettings
 
     def load_definitions(self) -> DataBundle:
+        """Load game data definitions from disk."""
         return load_data_bundle(self.settings.data_root, self.settings.schema_root)
 
     def validation_summary(self) -> dict[str, int]:
+        """Return a text summary of data validation results."""
         return self.load_definitions().summary()
 
     def run(self, max_frames: int | None = None) -> int:
+        """Run the app or runtime loop until it exits."""
         self.load_definitions()
         return GameRuntime(self.settings).run(max_frames=max_frames)
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Create the command-line parser for the game entry point."""
     parser = argparse.ArgumentParser(description="House of Wolves Remastered")
     parser.add_argument(
         "--validate",
@@ -49,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the command-line entry point."""
     args = build_parser().parse_args(argv)
     app = GameApp(AppSettings(fullscreen=args.fullscreen and not args.windowed))
     if args.validate:

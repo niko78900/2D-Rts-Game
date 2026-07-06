@@ -15,6 +15,7 @@ from house_of_wolves.world.terrain import terrain_layout_for_height
 
 
 def test_construction_progress_raises_hp_and_completes_site() -> None:
+    """Verify that construction progress raises hp and completes site."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     site = _add_hut_site(world, build_time_ms=1000)
@@ -49,6 +50,7 @@ def test_construction_progress_raises_hp_and_completes_site() -> None:
 
 
 def test_multiple_builders_speed_up_construction() -> None:
+    """Verify that multiple builders speed up construction."""
     world = create_demo_world()
     site = _add_hut_site(world, build_time_ms=1000)
     builders = [
@@ -75,6 +77,7 @@ def test_multiple_builders_speed_up_construction() -> None:
 
 
 def test_construction_speed_boost_caps_at_ten_builders() -> None:
+    """Verify that construction speed boost caps at ten builders."""
     world = create_demo_world()
     site = _add_hut_site(world, build_time_ms=2000)
     builders = [
@@ -101,6 +104,7 @@ def test_construction_speed_boost_caps_at_ten_builders() -> None:
 
 
 def test_hut_population_bonus_counts_only_after_completion_and_removal() -> None:
+    """Verify that hut population bonus counts only after completion and removal."""
     world = create_demo_world()
     starting_cap = world.max_population
     site = _add_hut_site(world, build_time_ms=100)
@@ -133,6 +137,7 @@ def test_hut_population_bonus_counts_only_after_completion_and_removal() -> None
 
 
 def test_construction_site_starts_at_ten_percent_hp() -> None:
+    """Verify that construction site starts at ten percent hp."""
     world = create_demo_world()
     site = _add_hut_site(world, build_time_ms=1000)
 
@@ -143,6 +148,7 @@ def test_construction_site_starts_at_ten_percent_hp() -> None:
 
 
 def test_builder_must_be_near_construction_site_to_progress() -> None:
+    """Verify that builder must be near construction site to progress."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     site = _add_hut_site(world, x=2600, build_time_ms=1000)
@@ -166,6 +172,7 @@ def test_builder_must_be_near_construction_site_to_progress() -> None:
 
 
 def test_build_command_with_missing_site_is_removed() -> None:
+    """Verify that build command with missing site is removed."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     world.enqueue_command(
@@ -179,6 +186,7 @@ def test_build_command_with_missing_site_is_removed() -> None:
 
 
 def test_settler_repair_command_restores_damaged_building_hp() -> None:
+    """Verify that settler repair command restores damaged building hp."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
@@ -197,6 +205,7 @@ def test_settler_repair_command_restores_damaged_building_hp() -> None:
 
 
 def test_repair_command_completes_and_only_settlers_can_repair() -> None:
+    """Verify that repair command completes and only settlers can repair."""
     world = create_demo_world()
     spearman = next(entity for entity in world.entities.values() if "spearman" in entity.tags)
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
@@ -232,6 +241,7 @@ def _add_hut_site(
     x: float = 620,
     build_time_ms: int,
 ) -> Building:
+    """Add hut site test fixture data."""
     layout = terrain_layout_for_height(world.settings.world_height)
     site = Building(
         id=world.allocate_entity_id(),
@@ -254,6 +264,7 @@ def _add_hut_site(
 
 
 def _add_settler(world: object, x: float, y: float) -> CombatUnit:
+    """Add settler test fixture data."""
     settler = CombatUnit(
         id=world.allocate_entity_id(),
         owner="frontier",

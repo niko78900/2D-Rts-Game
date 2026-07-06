@@ -9,6 +9,7 @@ from house_of_wolves.world.demo import create_demo_world
 
 
 def test_attack_move_holds_position_and_fires_while_enemy_is_in_range() -> None:
+    """Verify that attack move holds position and fires while enemy is in range."""
     world = create_demo_world()
     attacker = next(entity for entity in world.entities.values() if "archer" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -40,6 +41,7 @@ def test_attack_move_holds_position_and_fires_while_enemy_is_in_range() -> None:
 
 
 def test_direct_attack_command_fires_at_target_and_finishes_when_killed() -> None:
+    """Verify that direct attack command fires at target and finishes when killed."""
     world = create_demo_world()
     attacker = next(entity for entity in world.entities.values() if "archer" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -61,6 +63,7 @@ def test_direct_attack_command_fires_at_target_and_finishes_when_killed() -> Non
 
 
 def test_attack_move_chases_locked_target_when_enemy_is_out_of_range() -> None:
+    """Verify that attack move chases locked target when enemy is out of range."""
     world = create_demo_world()
     attacker = next(entity for entity in world.entities.values() if "spearman" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -86,6 +89,7 @@ def test_attack_move_chases_locked_target_when_enemy_is_out_of_range() -> None:
 
 
 def test_attack_move_gives_up_chase_after_no_contact_timeout() -> None:
+    """Verify that attack move gives up chase after no contact timeout."""
     world = create_demo_world()
     attacker = next(entity for entity in world.entities.values() if "spearman" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -111,6 +115,7 @@ def test_attack_move_gives_up_chase_after_no_contact_timeout() -> None:
 
 
 def test_attack_move_resumes_after_killing_enemy() -> None:
+    """Verify that attack move resumes after killing enemy."""
     world = create_demo_world()
     attacker = next(entity for entity in world.entities.values() if "spearman" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -136,6 +141,7 @@ def test_attack_move_resumes_after_killing_enemy() -> None:
 
 
 def test_enemy_raider_chases_player_unit_inside_guard_sphere() -> None:
+    """Verify that enemy raider chases player unit inside guard sphere."""
     world = create_demo_world()
     raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
@@ -152,6 +158,7 @@ def test_enemy_raider_chases_player_unit_inside_guard_sphere() -> None:
 
 
 def test_idle_friendly_ranged_unit_attacks_enemy_inside_guard_sphere() -> None:
+    """Verify that idle friendly ranged unit attacks enemy inside guard sphere."""
     world = create_demo_world()
     archer = next(entity for entity in world.entities.values() if "archer" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -168,6 +175,7 @@ def test_idle_friendly_ranged_unit_attacks_enemy_inside_guard_sphere() -> None:
 
 
 def test_idle_friendly_melee_unit_chases_enemy_inside_guard_sphere() -> None:
+    """Verify that idle friendly melee unit chases enemy inside guard sphere."""
     world = create_demo_world()
     spearman = next(entity for entity in world.entities.values() if "spearman" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -184,6 +192,7 @@ def test_idle_friendly_melee_unit_chases_enemy_inside_guard_sphere() -> None:
 
 
 def test_regular_move_command_does_not_trigger_idle_guard_attack() -> None:
+    """Verify that regular move command does not trigger idle guard attack."""
     world = create_demo_world()
     archer = next(entity for entity in world.entities.values() if "archer" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -210,6 +219,7 @@ def test_regular_move_command_does_not_trigger_idle_guard_attack() -> None:
 
 
 def test_gather_move_is_abandoned_when_enemy_can_attack_worker() -> None:
+    """Verify that gather move is abandoned when enemy can attack worker."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -242,6 +252,7 @@ def test_gather_move_is_abandoned_when_enemy_can_attack_worker() -> None:
 
 
 def test_enemy_raider_deals_melee_damage_when_player_unit_is_in_range() -> None:
+    """Verify that enemy raider deals melee damage when player unit is in range."""
     world = create_demo_world()
     raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)

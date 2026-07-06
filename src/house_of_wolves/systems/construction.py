@@ -27,6 +27,7 @@ class ConstructionSystem:
     repair_hp_per_second: float = 45.0
 
     def update(self, world: WorldState, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         active_by_site: dict[EntityId, tuple[Building, list[ActiveBuilder]]] = {}
         repairs_by_site: dict[EntityId, tuple[Building, list[ActiveBuilder]]] = {}
         for builder_id, queue in list(world.command_queues.items()):
@@ -54,6 +55,7 @@ class ConstructionSystem:
         builder_id: EntityId,
         queue: CommandQueue,
     ) -> tuple[Building, ActiveBuilder] | None:
+        """Prepare builder."""
         builder = world.entities.get(builder_id)
         if builder is None or not getattr(builder, "alive", False):
             return None
@@ -85,6 +87,7 @@ class ConstructionSystem:
         builder_id: EntityId,
         queue: CommandQueue,
     ) -> tuple[Building, ActiveBuilder] | None:
+        """Prepare repairer."""
         builder = world.entities.get(builder_id)
         if builder is None or not getattr(builder, "alive", False):
             return None
@@ -123,6 +126,7 @@ class ConstructionSystem:
         builders: list[ActiveBuilder],
         dt_ms: int,
     ) -> None:
+        """Advance construction progress and HP on a building site."""
         for active_builder in builders:
             builder = world.entities.get(active_builder.builder_id)
             if builder is not None:
@@ -153,6 +157,7 @@ class ConstructionSystem:
         repairers: list[ActiveBuilder],
         dt_ms: int,
     ) -> None:
+        """Repair site."""
         for active_builder in repairers:
             builder = world.entities.get(active_builder.builder_id)
             if builder is not None:
@@ -199,6 +204,7 @@ def starting_construction_hp(max_hp: int) -> int:
 
 
 def _build_target(world: WorldState, target_id: EntityId | None) -> Building | None:
+    """Return the building target for construction or repair."""
     if target_id is None:
         return None
     target = world.entities.get(target_id)
@@ -206,21 +212,26 @@ def _build_target(world: WorldState, target_id: EntityId | None) -> Building | N
 
 
 def _interaction_position(target_pos: WorldPosition | None, site: Building) -> WorldPosition:
+    """Return a worker interaction position near a target."""
     return target_pos if target_pos is not None else site.position
 
 
 def _build_time(site: Building) -> int:
+    """Return the configured construction time for a building."""
     return max(0, int(getattr(site, "build_time_ms", 0)))
 
 
 def _max_hp(site: Building) -> int:
+    """Return the configured max HP for a building."""
     return max(0, int(getattr(site, "max_hp", 0) or getattr(site, "hp", 0)))
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    """Return the distance used for distance."""
     return hypot(first.x - second.x, first.y - second.y)
 
 
 def _set_state(entity: object, state: str) -> None:
+    """Set state."""
     if hasattr(entity, "state"):
         entity.state = state

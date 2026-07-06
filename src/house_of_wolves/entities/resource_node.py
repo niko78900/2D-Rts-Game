@@ -35,9 +35,11 @@ class ResourceNode(Entity):
 
     @property
     def blocking_bounds(self) -> tuple[float, float, float, float]:
+        """Return the resource footprint used for movement blocking."""
         footprint = self.blocking_footprint or self.footprint
         return footprint.bounds_at(self.position)
 
 
 def resource_hp_for_type(resource_type: str) -> int:
+    """Return the starting HP for a resource type."""
     return RESOURCE_NODE_HP_BY_TYPE.get(resource_type, STONE_RESOURCE_HP)

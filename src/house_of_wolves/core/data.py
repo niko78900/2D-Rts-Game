@@ -45,6 +45,7 @@ class DataBundle:
     factions: DefinitionSet
 
     def summary(self) -> dict[str, int]:
+        """Return a concise summary of loaded game data."""
         return {
             "units": len(self.units.items),
             "buildings": len(self.buildings.items),
@@ -56,6 +57,7 @@ class DataBundle:
 
 
 def load_json(path: Path) -> Any:
+    """Load a JSON file from disk."""
     try:
         with path.open("r", encoding="utf-8") as file:
             return json.load(file)
@@ -66,6 +68,7 @@ def load_json(path: Path) -> Any:
 
 
 def validate_json(data: Any, schema: Any, source_name: str) -> None:
+    """Validate JSON data against a schema."""
     try:
         Draft202012Validator.check_schema(schema)
         Draft202012Validator(schema).validate(data)
@@ -81,6 +84,7 @@ def load_definition_set(
     data_root: Path = DATA_ROOT,
     schema_root: Path = SCHEMA_ROOT,
 ) -> DefinitionSet:
+    """Load and validate one category of data definitions."""
     filename = DEFINITION_FILES[name]
     data_path = data_root / filename
     schema_path = schema_root / f"{data_path.stem}.schema.json"
@@ -91,5 +95,6 @@ def load_definition_set(
 
 
 def load_data_bundle(data_root: Path = DATA_ROOT, schema_root: Path = SCHEMA_ROOT) -> DataBundle:
+    """Load every data definition used by the game."""
     sets = {name: load_definition_set(name, data_root, schema_root) for name in DEFINITION_FILES}
     return DataBundle(**sets)

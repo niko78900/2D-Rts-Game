@@ -19,6 +19,7 @@ class ProductionBuildingConfig:
 
     @classmethod
     def from_mapping(cls, value: dict[str, Any]) -> ProductionBuildingConfig:
+        """Build this object from a plain mapping."""
         return cls(
             dropoff=bool(value.get("dropoff", False)),
             population_cap_bonus=int(value.get("population_cap_bonus", 0)),
@@ -26,6 +27,7 @@ class ProductionBuildingConfig:
         )
 
     def to_mapping(self) -> dict[str, object]:
+        """Serialize this object into a plain mapping."""
         return {
             "dropoff": self.dropoff,
             "population_cap_bonus": self.population_cap_bonus,
@@ -44,6 +46,7 @@ class Building(Entity):
 
     @property
     def production_config(self) -> ProductionBuildingConfig:
+        """Return production timing and spawn settings."""
         return ProductionBuildingConfig.from_mapping(self.functions)
 
     @classmethod
@@ -54,6 +57,7 @@ class Building(Entity):
         population_cap_bonus: int = 0,
         trainable_units: tuple[str, ...] = (),
     ) -> dict[str, object]:
+        """Return production payload handlers for this building."""
         return ProductionBuildingConfig(
             dropoff=dropoff,
             population_cap_bonus=population_cap_bonus,

@@ -65,6 +65,7 @@ def selected_panel_for(world: WorldState, selected_ids: Iterable[EntityId]) -> S
 
 
 def multi_selection_panel(entities: list[Any]) -> SelectedPanel:
+    """Build the selection panel for multiple entities."""
     total_hp = sum(max(0, int(getattr(entity, "hp", 0))) for entity in entities)
     title = (
         "Multiple Units"
@@ -81,6 +82,7 @@ def multi_selection_panel(entities: list[Any]) -> SelectedPanel:
 
 
 def entity_display_name(entity: Any) -> str:
+    """Return the display name for an entity."""
     names = {
         "settler": "Settler",
         "spearman": "Spearman",
@@ -105,6 +107,7 @@ def entity_display_name(entity: Any) -> str:
 
 
 def entity_subtitle(entity: Any) -> str:
+    """Return the subtitle text for an entity."""
     tags = set(getattr(entity, "tags", ()))
     owner = str(getattr(entity, "owner", "neutral")).title()
     if "unit" in tags:
@@ -118,6 +121,7 @@ def entity_subtitle(entity: Any) -> str:
 
 
 def entity_health_text(entity: Any) -> str:
+    """Return health or remaining-resource text for an entity."""
     tags = set(getattr(entity, "tags", ()))
     hp = max(0, int(getattr(entity, "hp", 0)))
     if "resource" in tags:
@@ -130,6 +134,7 @@ def entity_health_text(entity: Any) -> str:
 
 
 def entity_details(entity: Any) -> tuple[str, ...]:
+    """Return detail rows for the selected entity."""
     tags = set(getattr(entity, "tags", ()))
     if "unit" in tags:
         speed = round(float(getattr(entity, "speed", 0)))
@@ -161,6 +166,7 @@ def entity_details(entity: Any) -> tuple[str, ...]:
 
 
 def entity_abilities(entity: Any) -> tuple[str, ...]:
+    """Return abilities available to one selected entity."""
     tags = set(getattr(entity, "tags", ()))
     owner = str(getattr(entity, "owner", "neutral"))
     if "unit" in tags and owner != "frontier":
@@ -189,6 +195,7 @@ def entity_abilities(entity: Any) -> tuple[str, ...]:
 
 
 def mutual_abilities(entities: list[Any]) -> tuple[str, ...]:
+    """Return abilities shared by all selected units."""
     if not entities:
         return ()
     shared = set(entity_abilities(entities[0]))
@@ -198,16 +205,19 @@ def mutual_abilities(entities: list[Any]) -> tuple[str, ...]:
 
 
 def ordered_abilities(abilities: Iterable[str]) -> tuple[str, ...]:
+    """Return abilities in command-panel display order."""
     unique = tuple(dict.fromkeys(abilities))
     order = {ability: index for index, ability in enumerate(ABILITY_ORDER)}
     return tuple(sorted(unique, key=lambda ability: (order.get(ability, len(order)), ability)))
 
 
 def entity_is_unit(entity: Any) -> bool:
+    """Return whether the selected entity is a unit."""
     return "unit" in getattr(entity, "tags", ())
 
 
 def _build_progress(entity: Any) -> int:
+    """Return selected-building construction progress text."""
     build_time = int(getattr(entity, "build_time_ms", 0) or 0)
     if build_time <= 0:
         return 100
@@ -216,16 +226,19 @@ def _build_progress(entity: Any) -> int:
 
 
 def entity_display_from_id(entity_id: str) -> str:
+    """Return display text for an entity id."""
     return entity_id.replace("_", " ").title()
 
 
 def display_resource_type(resource_type: str) -> str:
+    """Return the display resource type for an entity."""
     if resource_type == "iron":
         return "Ore"
     return resource_type.title()
 
 
 def _resource_remaining(entity: Any) -> int:
+    """Return selected-resource remaining amount text."""
     amount = getattr(entity, "amount_remaining", None)
     if amount is not None:
         return max(0, int(amount))
@@ -233,6 +246,7 @@ def _resource_remaining(entity: Any) -> int:
 
 
 def selection_breakdown(entities: list[Any]) -> str:
+    """Return counts and common facts about a selection."""
     counts: dict[str, int] = {}
     for entity in entities:
         tags = set(getattr(entity, "tags", ()))

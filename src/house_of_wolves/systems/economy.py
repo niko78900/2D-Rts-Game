@@ -112,9 +112,11 @@ class ResourceWallet:
     amounts: dict[str, int] = field(default_factory=lambda: {key: 0 for key in RESOURCE_TYPES})
 
     def can_afford(self, cost: dict[str, int]) -> bool:
+        """Return whether the wallet can pay the resource cost."""
         return all(self.amounts.get(resource, 0) >= amount for resource, amount in cost.items())
 
     def spend(self, cost: dict[str, int]) -> bool:
+        """Subtract a resource cost if the wallet can afford it."""
         if not self.can_afford(cost):
             return False
         for resource, amount in cost.items():
@@ -187,6 +189,7 @@ class EconomySystem:
     )
 
     def update(self, world: WorldState, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         self.last_frame_stats = GatherPerformanceCounters()
         self._update_resource_lifecycle(world, dt_ms)
         self._update_respawns(world)
@@ -204,6 +207,7 @@ class EconomySystem:
         *,
         owner: str = "frontier",
     ) -> str | None:
+        """Queue auto gather work for later processing."""
         resource_type = normalize_resource_type(resource_type)
         if not completed_deposit_huts(world, owner):
             return "Needs hut to deposit."
@@ -228,6 +232,7 @@ class EconomySystem:
         command: Command,
         resource_type: str,
     ) -> None:
+        """Queue gather reassignment work for later processing."""
         resource_type = normalize_resource_type(resource_type)
         if command.payload.get("reassignment_pending") is True:
             return
@@ -244,6 +249,7 @@ class EconomySystem:
         )
 
     def _process_gather_assignment_jobs(self, world: WorldState) -> None:
+        """Process queued gather assignment jobs work."""
         pending: list[GatherAssignmentJob] = []
         budget = max(0, int(self.max_path_jobs_per_frame))
         for job in self.gather_assignment_jobs:
@@ -260,6 +266,7 @@ class EconomySystem:
         world: WorldState,
         job: GatherAssignmentJob,
     ) -> bool:
+        """Process queued gather assignment job work."""
         gatherer = world.entities.get(job.gatherer_id)
         if not _is_settler(gatherer):
             return False
@@ -300,6 +307,7 @@ class EconomySystem:
         worker: object,
         resource: ResourceNode,
     ) -> None:
+        """Assign existing gather command."""
         queue = world.command_queues.get(worker.id)
         command = queue.peek() if queue is not None else None
         if command is None or command.type != "gather":
@@ -328,6 +336,7 @@ class EconomySystem:
         gatherer: object,
         job: GatherAssignmentJob,
     ) -> None:
+        """Handle gather assignment failure input or UI flow."""
         queue = world.command_queues.get(job.gatherer_id)
         command = queue.peek() if queue is not None else None
         if job.existing_command and command is not None and command.type == "gather":
@@ -355,6 +364,7 @@ class EconomySystem:
         safe: bool,
         owner: str = "frontier",
     ) -> ResourceNode | None:
+        """Find nearest resource node."""
         resource_type = normalize_resource_type(resource_type)
         candidates = closest_resource_candidates(
             world,
@@ -392,6 +402,7 @@ class EconomySystem:
         origin: WorldPosition,
         target: WorldPosition,
     ) -> float:
+        """Return the distance used for estimated travel distance."""
         self.last_frame_stats.full_path_calculations += 1
         return estimated_travel_distance(world, entity_id, origin, target)
 
@@ -401,6 +412,7 @@ class EconomySystem:
         resource: ResourceNode,
         owner: str,
     ) -> bool:
+        """Return whether auto-gather may choose a resource."""
         key = (resource.id, owner)
         cached = self.safety_cache.get(key)
         if (
@@ -419,6 +431,7 @@ class EconomySystem:
         queue: CommandQueue,
         dt_ms: int,
     ) -> None:
+        """Advance worker for the current frame."""
         worker = world.entities.get(worker_id)
         if not _is_settler(worker):
             return
@@ -503,6 +516,7 @@ class EconomySystem:
         command: Command,
         resource: ResourceNode,
     ) -> bool:
+        """Retry resource interaction move."""
         retry_count = int(command.payload.get("resource_interaction_retry_count", 0) or 0)
         if retry_count >= RESOURCE_INTERACTION_MAX_RETRIES:
             return False
@@ -535,6 +549,7 @@ class EconomySystem:
         resource_type: str,
         dt_ms: int,
     ) -> None:
+        """Advance one worker swing cycle against a resource."""
         _set_state(worker, GATHER_STATE_GATHERING)
         elapsed = int(command.payload.get("swing_elapsed_ms", 0)) + max(0, int(dt_ms))
         swings = int(command.payload.get("successful_swings", 0))
@@ -568,6 +583,7 @@ class EconomySystem:
         command: Command,
         resource_type: str,
     ) -> None:
+        """Move a loaded worker to a hut and deposit resources."""
         hut, deposit_point = _cached_deposit_target(world, command, worker)
         if hut is None:
             world.notify("Needs hut to deposit.")
@@ -625,6 +641,7 @@ class EconomySystem:
         command: Command,
         resource_type: str,
     ) -> None:
+        """Request reassignment or idle."""
         if (
             not cached_active_resource_nodes(world, resource_type)
             and self._should_wait_for_resource_respawn(world, command, resource_type)
@@ -637,6 +654,7 @@ class EconomySystem:
         _set_state(worker, GATHER_STATE_IDLE)
 
     def _assignment_job_pending(self, gatherer_id: EntityId, resource_type: str) -> bool:
+        """Return whether a gather reassignment is already queued."""
         return any(
             job.gatherer_id == gatherer_id
             and job.resource_type == resource_type
@@ -645,6 +663,7 @@ class EconomySystem:
         )
 
     def _update_resource_lifecycle(self, world: WorldState, dt_ms: int) -> None:
+        """Advance resource lifecycle for the current frame."""
         for resource in list(world.entities.values()):
             if not isinstance(resource, ResourceNode) or resource.state != "destroying":
                 continue
@@ -664,6 +683,7 @@ class EconomySystem:
         resource_type: str,
         destroyed_position: WorldPosition,
     ) -> None:
+        """Schedule respawn."""
         if resource_type not in RESPAWNABLE_RESOURCE_TYPES:
             return
         self.respawns.append(
@@ -675,6 +695,7 @@ class EconomySystem:
         )
 
     def _update_respawns(self, world: WorldState) -> None:
+        """Advance respawns for the current frame."""
         pending: list[ResourceRespawn] = []
         for respawn in self.respawns:
             if respawn.due_ms > world.elapsed_ms:
@@ -700,15 +721,18 @@ class EconomySystem:
         self.respawns = pending
 
     def _active_resource_count(self, world: WorldState, resource_type: str) -> int:
+        """Return the active resource count."""
         return len(active_resource_nodes(world, resource_type))
 
     def _cap_for(self, resource_type: str) -> int:
+        """Return the active-node cap for a resource type."""
         resource_type = normalize_resource_type(resource_type)
         if resource_type == "wood":
             return self.max_active_trees
         return self.max_nodes_by_type.get(resource_type, 0)
 
     def _respawn_delay_for(self, resource_type: str) -> int:
+        """Return the respawn delay for a resource type."""
         resource_type = normalize_resource_type(resource_type)
         if resource_type == "wood":
             return self.tree_respawn_delay_ms
@@ -726,6 +750,7 @@ class EconomySystem:
         command: Command,
         resource_type: str,
     ) -> bool:
+        """Return whether wait for resource respawn should happen."""
         if resource_type != "wood":
             return False
         current = _resource_target(world, _payload_entity_id(command, "current_resource_id"))
@@ -746,6 +771,7 @@ class EconomySystem:
         *,
         avoid_position: WorldPosition | None = None,
     ) -> bool:
+        """Spawn resource."""
         spec = RESOURCE_NODE_SPECS.get(resource_type)
         if spec is None:
             return False
@@ -779,6 +805,7 @@ class EconomySystem:
         position: WorldPosition,
         spec: ResourceNodeSpec,
     ) -> None:
+        """Add resource node."""
         hp = resource_hp_for_type(resource_type)
         node = ResourceNode(
             id=world.allocate_entity_id(),
@@ -799,6 +826,7 @@ class EconomySystem:
 
 
 def completed_deposit_huts(world: WorldState, owner: str = "frontier") -> list[Building]:
+    """Return completed player-owned huts that accept deposits."""
     cached_ids = getattr(world, "completed_deposit_huts_by_owner", {}).get(owner)
     if cached_ids is not None:
         huts: list[Building] = []
@@ -830,6 +858,7 @@ def closest_deposit_hut(
     owner: str,
     entity_id: EntityId | None = None,
 ) -> Building | None:
+    """Return the nearest completed deposit hut for a worker."""
     huts = completed_deposit_huts(world, owner)
     if not huts:
         return None
@@ -851,6 +880,7 @@ def assign_auto_gather_targets(
     *,
     owner: str = "frontier",
 ) -> tuple[dict[EntityId, ResourceNode], str | None]:
+    """Assign auto-gather jobs across available resource nodes."""
     resource_type = normalize_resource_type(resource_type)
     if not completed_deposit_huts(world, owner):
         return {}, "Needs hut to deposit."
@@ -905,6 +935,7 @@ def find_nearest_resource_node(
     safe: bool,
     owner: str = "frontier",
 ) -> ResourceNode | None:
+    """Find the best resource node for a gatherer."""
     resource_type = normalize_resource_type(resource_type)
     candidates = closest_resource_candidates(
         world,
@@ -934,6 +965,7 @@ def active_resource_nodes(
     world: WorldState,
     resource_type: str | None = None,
 ) -> list[ResourceNode]:
+    """Return active resource nodes of a type."""
     return cached_active_resource_nodes(world, resource_type)
 
 
@@ -941,6 +973,7 @@ def cached_active_resource_nodes(
     world: WorldState,
     resource_type: str | None = None,
 ) -> list[ResourceNode]:
+    """Return cached active resource node ids of a type."""
     indexed_ids = _cached_resource_ids(world, resource_type)
     if indexed_ids is None:
         normalized = normalize_resource_type(resource_type) if resource_type is not None else None
@@ -974,6 +1007,7 @@ def closest_resource_candidates(
     safety_checker: Callable[[ResourceNode], bool] | None = None,
     stats: GatherPerformanceCounters | None = None,
 ) -> list[ResourceNode]:
+    """Return nearby resource candidates using cheap distance."""
     if stats is not None:
         stats.resource_searches += 1
     ordered = sorted(
@@ -1000,6 +1034,7 @@ def issue_gather_command(
     queued: bool,
     manual: bool,
 ) -> None:
+    """Issue a gather command against a specific resource node."""
     interaction_point = resource_interaction_position(
         world,
         resource,
@@ -1028,6 +1063,7 @@ def issue_gather_command(
 
 
 def active_resource(resource: ResourceNode) -> bool:
+    """Return an active resource node by id if it can be gathered."""
     return (
         resource.alive
         and resource.state == "active"
@@ -1041,6 +1077,7 @@ def resource_node_safe_for_auto_gather(
     resource: ResourceNode,
     owner: str = "frontier",
 ) -> bool:
+    """Return whether auto-gather may safely use a node."""
     interaction = resource_interaction_position(world, resource)
     return not _enemy_can_hit_position(world, interaction, owner)
 
@@ -1050,6 +1087,7 @@ def resource_interaction_candidates(
     resource: ResourceNode,
     gatherer_id: EntityId | None = None,
 ) -> list[WorldPosition]:
+    """Return valid approach points near the resource blocker edge."""
 
     left, top, width, height = blocking_bounds_for_entity(resource)
     right = left + width
@@ -1104,6 +1142,7 @@ def resource_interaction_position(
     *,
     candidate_index: int = 0,
 ) -> WorldPosition:
+    """Return a reachable edge position for gathering a resource."""
     candidates = resource_interaction_candidates(world, resource, gatherer_id)
     if candidates:
         return candidates[min(max(0, int(candidate_index)), len(candidates) - 1)]
@@ -1123,6 +1162,7 @@ def _cached_resource_interaction_position(
     *,
     force_refresh: bool = False,
 ) -> WorldPosition:
+    """Return cached resource interaction position."""
     cached_id = _payload_entity_id(command, "resource_interaction_resource_id")
     cached_x = command.payload.get("resource_interaction_x")
     cached_y = command.payload.get("resource_interaction_y")
@@ -1156,10 +1196,12 @@ def is_unit_in_gather_range(
     resource: ResourceNode,
     gather_range: float = GATHER_INTERACTION_RANGE,
 ) -> bool:
+    """Return whether a worker can interact with a resource now."""
     return resource_edge_distance(unit.position, resource) <= gather_range
 
 
 def resource_edge_distance(position: WorldPosition, resource: ResourceNode) -> float:
+    """Return distance from a unit to a resource blocking edge."""
     left, top, width, height = blocking_bounds_for_entity(resource)
     right = left + width
     bottom = top + height
@@ -1173,6 +1215,7 @@ def hut_deposit_position(
     hut: Building,
     worker_id: EntityId | None = None,
 ) -> WorldPosition:
+    """Return the interaction position used to deposit at a hut."""
     target = WorldPosition(hut.position.x, _walkable_top(world) + 14)
     return nearest_free_position(world, target, ignore_id=worker_id)
 
@@ -1182,6 +1225,7 @@ def _cached_deposit_target(
     command: Command,
     worker: object,
 ) -> tuple[Building | None, WorldPosition]:
+    """Return cached deposit target."""
     cached_id = _payload_entity_id(command, "deposit_hut_id")
     cached_x = command.payload.get("deposit_hut_x")
     cached_y = command.payload.get("deposit_hut_y")
@@ -1217,6 +1261,7 @@ def estimated_travel_distance(
     origin: WorldPosition,
     target: WorldPosition,
 ) -> float:
+    """Estimate travel distance using current blocker detours."""
     if entity_id is None:
         return _distance(origin, target)
     waypoints = move_waypoints_around_blockers(world, entity_id, origin, target)
@@ -1231,14 +1276,17 @@ def estimated_travel_distance(
 
 
 def display_resource_name(resource_type: str) -> str:
+    """Return the display name for a resource type."""
     return "ore" if normalize_resource_type(resource_type) == "iron" else resource_type
 
 
 def normalize_resource_type(resource_type: str) -> str:
+    """Normalize resource aliases to internal resource keys."""
     return "iron" if resource_type == "ore" else resource_type
 
 
 def _command_resource_type(world: WorldState, command: Command) -> str | None:
+    """Return the resource type stored on a gather command."""
     value = command.payload.get("resource_type")
     if isinstance(value, str):
         return normalize_resource_type(value)
@@ -1252,6 +1300,7 @@ def _current_or_replacement_resource(
     resource_type: str,
     worker: object,
 ) -> ResourceNode | None:
+    """Return the current target or a replacement resource."""
     resource = _resource_target(world, _payload_entity_id(command, "current_resource_id"))
     if resource is not None and active_resource(resource):
         if resource.resource_type != resource_type:
@@ -1270,6 +1319,7 @@ def _current_or_replacement_resource(
 
 
 def _damage_resource(world: WorldState, resource: ResourceNode, amount: int) -> None:
+    """Apply damage to resource."""
     resource.hp = max(0, resource.hp - max(0, int(amount)))
     resource.amount_remaining = min(resource.amount_remaining, resource.hp)
     if resource.hp > 0:
@@ -1294,6 +1344,7 @@ def _insert_move_before_gather(
     command: Command,
     move_key: str,
 ) -> None:
+    """Insert move before gather."""
     command.payload["pending_move_key"] = move_key
     move = make_command(
         "move",
@@ -1305,14 +1356,17 @@ def _insert_move_before_gather(
 
 
 def _pending_move_failed(command: Command, move_key: str) -> bool:
+    """Return whether a queued move failed for the expected target."""
     return command.payload.get("pending_move_key") == move_key
 
 
 def _move_key(kind: str, entity_id: EntityId) -> str:
+    """Move key."""
     return f"{kind}:{int(entity_id)}"
 
 
 def _resource_target(world: WorldState, target_id: EntityId | None) -> ResourceNode | None:
+    """Return the position used for resource target."""
     if target_id is None:
         return None
     target = world.entities.get(target_id)
@@ -1324,6 +1378,7 @@ def _gather_target_type_invalid(
     command: Command,
     resource_type: str,
 ) -> bool:
+    """Return the position used for gather target type invalid."""
     for target_id in (
         _payload_entity_id(command, "current_resource_id"),
         command.target_entity_id,
@@ -1335,6 +1390,7 @@ def _gather_target_type_invalid(
 
 
 def _payload_entity_id(command: Command, key: str) -> EntityId | None:
+    """Return entity identifiers for payload entity id."""
     value = command.payload.get(key)
     if value is None:
         return None
@@ -1345,6 +1401,7 @@ def _cached_resource_ids(
     world: WorldState,
     resource_type: str | None,
 ) -> list[EntityId] | None:
+    """Return cached resource ids."""
     cache = getattr(world, "resource_nodes_by_type", None)
     if cache is None:
         return None
@@ -1362,6 +1419,7 @@ def _cached_resource_ids(
 
 
 def _active_gather_load(world: WorldState, resource_type: str) -> dict[EntityId, int]:
+    """Return the active gather load."""
     normalized = normalize_resource_type(resource_type)
     counts: dict[EntityId, int] = {
         node.id: 0 for node in cached_active_resource_nodes(world, normalized)
@@ -1385,12 +1443,14 @@ def _active_gather_load(world: WorldState, resource_type: str) -> dict[EntityId,
 
 
 def _cheap_distance_sq(first: WorldPosition, second: WorldPosition) -> float:
+    """Return the distance used for cheap distance sq."""
     dx = first.x - second.x
     dy = first.y - second.y
     return (dx * dx) + (dy * dy)
 
 
 def _debug_log_gather_performance(stats: GatherPerformanceCounters) -> None:
+    """Print gather performance counters when debugging is enabled."""
     print(
         "gather_perf "
         f"jobs={stats.path_jobs_processed} "
@@ -1401,6 +1461,7 @@ def _debug_log_gather_performance(stats: GatherPerformanceCounters) -> None:
 
 
 def _clear_gather_job(worker: object, queue: CommandQueue) -> None:
+    """Clear gather job."""
     worker.carry_type = None
     worker.carry_amount = 0
     queue.pop_next()
@@ -1408,6 +1469,7 @@ def _clear_gather_job(worker: object, queue: CommandQueue) -> None:
 
 
 def _is_settler(entity: object | None) -> bool:
+    """Return whether settler."""
     return (
         entity is not None
         and getattr(entity, "alive", False)
@@ -1416,19 +1478,23 @@ def _is_settler(entity: object | None) -> bool:
 
 
 def _set_state(entity: object, state: str) -> None:
+    """Set state."""
     if hasattr(entity, "state"):
         entity.state = state
 
 
 def _within(first: WorldPosition, second: WorldPosition, radius: float) -> bool:
+    """Return whether two positions are within a radius."""
     return _distance(first, second) <= radius
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    """Return the distance used for distance."""
     return hypot(first.x - second.x, first.y - second.y)
 
 
 def _entity_position(world: WorldState, entity_id: EntityId | None) -> WorldPosition | None:
+    """Return the position used for entity position."""
     if entity_id is None:
         return None
     entity = world.entities.get(entity_id)
@@ -1440,6 +1506,7 @@ def _enemy_can_hit_position(
     position: WorldPosition,
     friendly_owner: str,
 ) -> bool:
+    """Return the position used for enemy can hit position."""
     for entity in _entities_near_position(world, position, 512.0):
         if not getattr(entity, "alive", False):
             continue
@@ -1454,10 +1521,12 @@ def _enemy_can_hit_position(
 
 
 def _has_attack_threat(entity: object) -> bool:
+    """Return whether attack threat exists."""
     return int(getattr(entity, "damage", 0)) > 0 and float(getattr(entity, "attack_range", 0)) > 0
 
 
 def _threat_radius(entity: object) -> float:
+    """Return the range value used for threat radius."""
     attack_range = max(0.0, float(getattr(entity, "attack_range", 0)))
     if attack_range <= 55:
         return max(160.0, attack_range + 90.0)
@@ -1465,10 +1534,12 @@ def _threat_radius(entity: object) -> float:
 
 
 def _walkable_top(world: WorldState) -> float:
+    """Return the top y bound of the unit walkable lane."""
     return terrain_layout_for_height(world.settings.world_height).unit_walkable_top_y
 
 
 def _walkable_bottom(world: WorldState) -> float:
+    """Return the bottom y bound of the unit walkable lane."""
     return terrain_layout_for_height(world.settings.world_height).unit_walkable_bottom_y
 
 
@@ -1477,6 +1548,7 @@ def _resource_spawn_position_valid(
     position: WorldPosition,
     spec: ResourceNodeSpec,
 ) -> bool:
+    """Return the position used for resource spawn position valid."""
     bounds = spec.blocking_footprint.bounds_at(position)
     if position_blocked_by_hard_obstacle(world, position):
         return False
@@ -1499,6 +1571,7 @@ def _entities_near_position(
     position: WorldPosition,
     radius: float,
 ) -> list[object]:
+    """Return the position used for entities near position."""
     bounds = (
         position.x - radius,
         position.y - radius,
@@ -1517,6 +1590,7 @@ def _bounds_intersect(
     first: tuple[float, float, float, float],
     second: tuple[float, float, float, float],
 ) -> bool:
+    """Return the bounds used for bounds intersect."""
     first_left, first_top, first_width, first_height = first
     second_left, second_top, second_width, second_height = second
     return not (
@@ -1531,5 +1605,6 @@ def _inflate_bounds(
     bounds: tuple[float, float, float, float],
     amount: float,
 ) -> tuple[float, float, float, float]:
+    """Return the bounds used for inflate bounds."""
     left, top, width, height = bounds
     return (left - amount, top - amount, width + (amount * 2), height + (amount * 2))

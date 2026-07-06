@@ -123,6 +123,7 @@ class FarmSystem:
     animal_swing_ms: int = FARM_ANIMAL_SWING_MS
 
     def update(self, world: WorldState, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         self._cleanup_orphaned_farm_resources(world)
         for farm in list(world.entities.values()):
             if not is_farm_building(farm):
@@ -139,6 +140,7 @@ class FarmSystem:
         farm: Building,
         worker_id: EntityId,
     ) -> str | None:
+        """Assign a settler as the active worker for a farm."""
         if not farm.complete:
             return "Farm is not completed."
         if not is_farm_building(farm):
@@ -163,6 +165,7 @@ class FarmSystem:
         world: WorldState,
         farm: Building,
     ) -> None:
+        """Remove the current worker assignment from a farm."""
         worker_id = assigned_worker_id(farm)
         if worker_id is not None:
             worker = world.entities.get(worker_id)
@@ -184,11 +187,13 @@ class FarmSystem:
         world: WorldState,
         worker_id: EntityId,
     ) -> None:
+        """Clear any farm assignment already using this worker."""
         for farm in _farm_buildings(world):
             if assigned_worker_id(farm) == worker_id:
                 self.unassign_farm(world, farm)
 
     def _update_farm(self, world: WorldState, farm: Building, dt_ms: int) -> None:
+        """Advance farm for the current frame."""
         if not farm.complete:
             self.unassign_farm(world, farm)
             return
@@ -237,6 +242,7 @@ class FarmSystem:
         farm: Building,
         dt_ms: int,
     ) -> None:
+        """Advance farm lifecycle for the current frame."""
         animal = _farm_animal(world, farm)
         if animal is not None:
             if not _assigned_worker_close_to_animal(world, farm, animal, self.interaction_range):
@@ -251,6 +257,7 @@ class FarmSystem:
         self._spawn_or_wait(world, farm)
 
     def _spawn_or_wait(self, world: WorldState, farm: Building) -> None:
+        """Spawn or wait."""
         if _farm_animal(world, farm) is not None or _farm_carcass(world, farm) is not None:
             return
         if "farm_spawn_due_ms" not in farm.functions:
@@ -271,6 +278,7 @@ class FarmSystem:
         _set_farm_state(farm, FARM_STATE_ANIMAL_ALIVE)
 
     def _spawn_animal(self, world: WorldState, farm: Building) -> ResourceNode:
+        """Spawn animal."""
         spec = farm_spec_for(farm)
         if spec is None:
             raise ValueError("farm building has no farm spec")
@@ -304,6 +312,7 @@ class FarmSystem:
         animal: ResourceNode,
         dt_ms: int,
     ) -> None:
+        """Advance animal wander for the current frame."""
         spec = farm_spec_for(farm)
         if spec is None or dt_ms <= 0:
             return
@@ -359,6 +368,7 @@ class FarmSystem:
         animal: ResourceNode,
         dt_ms: int,
     ) -> None:
+        """Advance animal kill for the current frame."""
         interaction = _interaction_position(world, animal, worker.id)
         if not _within(worker.position, interaction, self.interaction_range):
             self._issue_farm_move(
@@ -387,6 +397,7 @@ class FarmSystem:
         farm: Building,
         animal: ResourceNode,
     ) -> None:
+        """Convert to carcass."""
         spec = farm_spec_for(farm)
         if spec is None:
             return
@@ -415,6 +426,7 @@ class FarmSystem:
         carcass: ResourceNode,
         dt_ms: int,
     ) -> None:
+        """Advance carcass harvest for the current frame."""
         if carcass.amount_remaining <= 0:
             _set_farm_state(farm, FARM_STATE_WAITING_FOR_WORKER_RETURN)
             self._finish_carcass_if_empty(world, farm, worker)
@@ -457,6 +469,7 @@ class FarmSystem:
         worker: object,
         queue: object,
     ) -> None:
+        """Deposit carried farm food into the player wallet."""
         hut = closest_deposit_hut(world, worker.position, farm.owner, worker.id)
         if hut is None:
             _set_farm_state(farm, FARM_STATE_DISABLED_NO_HUT)
@@ -493,6 +506,7 @@ class FarmSystem:
         farm: Building,
         worker: object,
     ) -> None:
+        """Finish carcass if empty."""
         carcass = _farm_carcass(world, farm)
         if carcass is not None and carcass.amount_remaining <= 0:
             world.remove_entity(carcass.id)
@@ -511,6 +525,7 @@ class FarmSystem:
         target: WorldPosition,
         worker_state: str,
     ) -> None:
+        """Issue farm move commands."""
         queue = world.command_queues.get(worker_id)
         command = queue.peek() if queue is not None else None
         move_key = _move_key(farm.id, target)
@@ -534,6 +549,7 @@ class FarmSystem:
             _set_state(worker, worker_state)
 
     def _cleanup_farm_resource(self, world: WorldState, farm: Building) -> None:
+        """Clean up farm resource."""
         for key in ("farm_animal_id", "farm_carcass_id"):
             resource_id = _payload_entity_id(farm.functions.get(key))
             resource = world.entities.get(resource_id) if resource_id is not None else None
@@ -548,6 +564,7 @@ class FarmSystem:
         farm.functions.pop("farm_spawn_ready", None)
 
     def _cleanup_orphaned_farm_resources(self, world: WorldState) -> None:
+        """Clean up orphaned farm resources."""
         for resource in list(world.entities.values()):
             if not isinstance(resource, ResourceNode) or "farm_food" not in resource.tags:
                 continue
@@ -558,6 +575,7 @@ class FarmSystem:
 
 
 def is_farm_building(entity: object | None) -> bool:
+    """Return whether a building type supports farm production."""
     return (
         isinstance(entity, Building)
         and "building" in getattr(entity, "tags", ())
@@ -566,6 +584,7 @@ def is_farm_building(entity: object | None) -> bool:
 
 
 def farm_spec_for(farm: Building) -> FarmBuildingSpec | None:
+    """Return the food farm configuration for a building type."""
     farm_type = str(farm.functions.get("farm_type", ""))
     for spec in FARM_BUILDING_SPECS.values():
         if spec.farm_type == farm_type:
@@ -574,22 +593,27 @@ def farm_spec_for(farm: Building) -> FarmBuildingSpec | None:
 
 
 def assigned_worker_id(farm: Building) -> EntityId | None:
+    """Return the settler currently assigned to a farm."""
     return _payload_entity_id(farm.functions.get("assigned_worker_id"))
 
 
 def farm_state(farm: Building) -> str:
+    """Return the current farm state label."""
     return str(farm.functions.get("farm_state", FARM_STATE_IDLE_NO_WORKER))
 
 
 def farm_resource(world: WorldState, farm: Building) -> ResourceNode | None:
+    """Return the resource entity owned by a farm."""
     return _farm_resource(world, farm)
 
 
 def farm_animal(world: WorldState, farm: Building) -> ResourceNode | None:
+    """Return the live farm animal entity if present."""
     return _farm_animal(world, farm)
 
 
 def farm_carcass(world: WorldState, farm: Building) -> ResourceNode | None:
+    """Return the farm carcass entity if present."""
     return _farm_carcass(world, farm)
 
 
@@ -609,6 +633,7 @@ def animal_area_bounds(world: WorldState, farm: Building) -> tuple[float, float,
 
 
 def _farm_buildings(world: WorldState) -> list[Building]:
+    """Iterate completed and active farm buildings."""
     return [
         entity
         for entity in world.entities.values()
@@ -617,10 +642,12 @@ def _farm_buildings(world: WorldState) -> list[Building]:
 
 
 def _farm_resource(world: WorldState, farm: Building) -> ResourceNode | None:
+    """Return a farm-owned resource by payload key."""
     return _farm_carcass(world, farm) or _farm_animal(world, farm)
 
 
 def _farm_animal(world: WorldState, farm: Building) -> ResourceNode | None:
+    """Return a farm-owned live animal if present."""
     resource = _farm_resource_for_key(world, farm, "farm_animal_id", "food_animal")
     if resource is not None:
         return resource
@@ -628,6 +655,7 @@ def _farm_animal(world: WorldState, farm: Building) -> ResourceNode | None:
 
 
 def _farm_carcass(world: WorldState, farm: Building) -> ResourceNode | None:
+    """Return a farm-owned carcass if present."""
     resource = _farm_resource_for_key(world, farm, "farm_carcass_id", "food_carcass")
     if resource is not None:
         return resource
@@ -640,6 +668,7 @@ def _farm_resource_for_key(
     key: str,
     required_tag: str,
 ) -> ResourceNode | None:
+    """Return a farm resource using its stored payload key."""
     resource_id = _payload_entity_id(farm.functions.get(key))
     resource = world.entities.get(resource_id) if resource_id is not None else None
     if isinstance(resource, ResourceNode) and resource.alive and required_tag in resource.tags:
@@ -649,6 +678,7 @@ def _farm_resource_for_key(
 
 
 def _is_farm_animal_alive(resource: ResourceNode | None) -> bool:
+    """Return whether farm animal alive."""
     return resource is not None and "food_animal" in resource.tags and resource.hp > 0
 
 
@@ -658,6 +688,7 @@ def _assigned_worker_close_to_animal(
     animal: ResourceNode,
     interaction_range: float,
 ) -> bool:
+    """Return whether the worker can strike the farm animal."""
     worker_id = assigned_worker_id(farm)
     worker = world.entities.get(worker_id) if worker_id is not None else None
     if not _is_settler(worker):
@@ -670,21 +701,25 @@ def _assigned_worker_close_to_animal(
 
 
 def _mark_spawn_ready_if_due(world: WorldState, farm: Building) -> None:
+    """Mark a farm ready to spawn when its timer expires."""
     due_ms = int(farm.functions.get("farm_spawn_due_ms", 0) or 0)
     if due_ms > 0 and due_ms <= world.elapsed_ms:
         farm.functions["farm_spawn_ready"] = True
 
 
 def _completed_hut_available(world: WorldState, owner: str) -> bool:
+    """Return completed hut available."""
     return bool(completed_deposit_huts(world, owner))
 
 
 def _worker_alive(world: WorldState, worker_id: EntityId) -> bool:
+    """Return whether the assigned farm worker still exists."""
     worker = world.entities.get(worker_id)
     return _is_settler(worker)
 
 
 def _is_settler(entity: object | None) -> bool:
+    """Return whether settler."""
     return (
         entity is not None
         and getattr(entity, "alive", False)
@@ -693,6 +728,7 @@ def _is_settler(entity: object | None) -> bool:
 
 
 def _queue_owned_by_farm(command: object | None, farm_id: EntityId) -> bool:
+    """Queue owned by farm work for later processing."""
     return (
         command is not None
         and getattr(command, "payload", {}).get("farm_work") is True
@@ -701,14 +737,17 @@ def _queue_owned_by_farm(command: object | None, farm_id: EntityId) -> bool:
 
 
 def _clear_completed_farm_move(farm: Building) -> None:
+    """Clear completed farm move."""
     farm.functions.pop(FARM_MOVE_KEY, None)
 
 
 def _set_farm_state(farm: Building, state: str) -> None:
+    """Set farm state."""
     farm.functions["farm_state"] = state
 
 
 def _set_state(entity: object, state: str) -> None:
+    """Set state."""
     if hasattr(entity, "state"):
         entity.state = state
 
@@ -718,6 +757,7 @@ def _interaction_position(
     resource: ResourceNode,
     worker_id: EntityId,
 ) -> WorldPosition:
+    """Return a worker interaction position near a target."""
     target = WorldPosition(resource.position.x, resource.position.y + 26)
     return nearest_free_position(
         world,
@@ -730,6 +770,7 @@ def _interaction_position(
 
 
 def _animal_spawn_position(world: WorldState, farm: Building) -> WorldPosition:
+    """Return the position used for animal spawn position."""
     bounds = animal_area_bounds(world, farm)
     left, top, width, height = bounds
     preferred = WorldPosition(left + width * 0.5, top + height * 0.44)
@@ -747,10 +788,12 @@ def _animal_spawn_position(world: WorldState, farm: Building) -> WorldPosition:
 
 
 def _within(first: WorldPosition, second: WorldPosition, radius: float) -> bool:
+    """Return whether two positions are within a radius."""
     return hypot(first.x - second.x, first.y - second.y) <= radius
 
 
 def _farm_respawn_delay_ms(farm: Building) -> int:
+    """Return the animal respawn delay for a farm."""
     spec = farm_spec_for(farm)
     if spec is None:
         return PIG_RESPAWN_DELAY_MS
@@ -758,6 +801,7 @@ def _farm_respawn_delay_ms(farm: Building) -> int:
 
 
 def _carcass_pickup_interval_ms(farm: Building) -> int:
+    """Return work time needed for each carcass pickup."""
     spec = farm_spec_for(farm)
     if spec is None:
         return PIG_CARCASS_HARVEST_DURATION_MS
@@ -766,6 +810,7 @@ def _carcass_pickup_interval_ms(farm: Building) -> int:
 
 
 def _animal_wander_target(farm: Building) -> WorldPosition | None:
+    """Return the position used for animal wander target."""
     x = farm.functions.get("animal_wander_target_x")
     y = farm.functions.get("animal_wander_target_y")
     if x is None or y is None:
@@ -778,12 +823,14 @@ def _choose_animal_wander_target(
     farm: Building,
     bounds: tuple[float, float, float, float],
 ) -> None:
+    """Return the position used for choose animal wander target."""
     left, top, width, height = bounds
     farm.functions["animal_wander_target_x"] = world.rng.uniform(left, left + width)
     farm.functions["animal_wander_target_y"] = world.rng.uniform(top, top + height)
 
 
 def _start_animal_idle(world: WorldState, farm: Building) -> None:
+    """Return entity identifiers for start animal idle."""
     farm.functions["animal_idle_remaining_ms"] = world.rng.randint(
         FARM_ANIMAL_IDLE_MIN_MS,
         FARM_ANIMAL_IDLE_MAX_MS,
@@ -791,11 +838,13 @@ def _start_animal_idle(world: WorldState, farm: Building) -> None:
 
 
 def _clear_animal_wander_target(farm: Building) -> None:
+    """Clear animal wander target."""
     farm.functions.pop("animal_wander_target_x", None)
     farm.functions.pop("animal_wander_target_y", None)
 
 
 def _clear_animal_wander_state(farm: Building) -> None:
+    """Clear animal wander state."""
     _clear_animal_wander_target(farm)
     farm.functions.pop("animal_idle_remaining_ms", None)
 
@@ -804,6 +853,7 @@ def _position_in_area(
     position: WorldPosition,
     bounds: tuple[float, float, float, float],
 ) -> bool:
+    """Return the position used for position in area."""
     left, top, width, height = bounds
     return left <= position.x <= left + width and top <= position.y <= top + height
 
@@ -812,6 +862,7 @@ def _clamp_to_area(
     position: WorldPosition,
     bounds: tuple[float, float, float, float],
 ) -> WorldPosition:
+    """Clamp an animal position inside its farm area."""
     left, top, width, height = bounds
     return WorldPosition(
         min(max(position.x, left), left + width),
@@ -820,10 +871,12 @@ def _clamp_to_area(
 
 
 def _payload_entity_id(value: object) -> EntityId | None:
+    """Return entity identifiers for payload entity id."""
     if value is None:
         return None
     return EntityId(int(value))
 
 
 def _move_key(farm_id: EntityId, target: WorldPosition) -> str:
+    """Move key."""
     return f"farm:{int(farm_id)}:{round(target.x)}:{round(target.y)}"

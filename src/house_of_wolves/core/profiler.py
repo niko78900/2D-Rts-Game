@@ -18,6 +18,7 @@ class Profiler:
 
     @contextmanager
     def span(self, name: str) -> Iterator[None]:
+        """Measure a named profiler span."""
         start = perf_counter()
         try:
             yield
@@ -27,6 +28,7 @@ class Profiler:
             self.counts[name] += 1
 
     def snapshot(self) -> dict[str, dict[str, float]]:
+        """Return a copy of current profiler timing data."""
         return {
             name: {
                 "total_ms": total,

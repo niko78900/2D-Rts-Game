@@ -25,10 +25,12 @@ _EPSILON = 0.0001
 
 
 def is_unit(entity: object) -> bool:
+    """Return whether the entity behaves as a unit."""
     return "unit" in getattr(entity, "tags", ())
 
 
 def is_hard_obstacle(entity: object) -> bool:
+    """Return whether the entity blocks movement hard."""
     tags = set(getattr(entity, "tags", ()))
     return getattr(entity, "alive", False) and bool(tags & {"building", "resource"})
 
@@ -43,6 +45,7 @@ def blocking_bounds_for_entity(entity: object) -> tuple[float, float, float, flo
 
 
 def unit_distance(first: Any, second: Any) -> float:
+    """Return edge-aware distance between two units."""
     first_pos = first.position
     second_pos = second.position
     return hypot(first_pos.x - second_pos.x, first_pos.y - second_pos.y)
@@ -57,6 +60,7 @@ def occupied_by_unit(
     friendly_ghost_ids: set[EntityId] | None = None,
     min_distance: float = UNIT_COLLISION_RADIUS,
 ) -> bool:
+    """Return whether a unit occupies the given position."""
     nearest = nearest_unit_distance(
         world,
         position,
@@ -77,6 +81,7 @@ def nearest_unit_distance(
     friendly_ghost_ids: set[EntityId] | None = None,
     query_radius: float | None = None,
 ) -> float | None:
+    """Return the nearest unit distance from a position."""
     nearest: float | None = None
     source_id = source_id or ignore_id
     candidates = (
@@ -375,6 +380,7 @@ def _add_pair_separation(
     max_push: float,
     friendly_ghost_ids: set[EntityId],
 ) -> None:
+    """Add pair separation."""
     if _same_owner(first, second) and (
         first.id in friendly_ghost_ids or second.id in friendly_ghost_ids
     ):
@@ -406,6 +412,7 @@ def _movement_segment_distance(
     move_length: float,
     position: WorldPosition,
 ) -> tuple[float, float]:
+    """Return the distance used for movement segment distance."""
     rel_x = position.x - origin.x
     rel_y = position.y - origin.y
     projection = rel_x * direction_x + rel_y * direction_y
@@ -424,6 +431,7 @@ def _shove_side_direction(
     entity: Any,
     mover_id: EntityId,
 ) -> tuple[float, float]:
+    """Return the bounds used for shove side direction."""
     clamped_projection = min(max(projection, 0.0), move_length)
     closest_x = origin.x + direction_x * clamped_projection
     closest_y = origin.y + direction_y * clamped_projection
@@ -443,6 +451,7 @@ def _closest_overlapping_unit(
     friendly_ghost_ids: set[EntityId] | None,
     min_distance: float,
 ) -> tuple[Any | None, float]:
+    """Return the closest overlapping unit."""
     closest: Any | None = None
     closest_distance = min_distance
     checked = 0
@@ -475,6 +484,7 @@ def _collision_normal(
     blocker_id: EntityId,
     origin: WorldPosition,
 ) -> tuple[float, float]:
+    """Return the separating normal for a unit overlap."""
     dx = position.x - blocker_position.x
     dy = position.y - blocker_position.y
     distance = hypot(dx, dy)
@@ -496,6 +506,7 @@ def _slide_tangent(
     entity_id: EntityId,
     blocker_id: EntityId,
 ) -> tuple[float, float]:
+    """Return entity identifiers for slide tangent."""
     side = 1.0 if int(entity_id) < int(blocker_id) else -1.0
     return -normal_y * side, normal_x * side
 
@@ -504,6 +515,7 @@ def _deterministic_pair_direction(
     first_id: EntityId,
     second_id: EntityId,
 ) -> tuple[float, float]:
+    """Return the bounds used for deterministic pair direction."""
     first_value = int(first_id)
     second_value = int(second_id)
     low = min(first_value, second_value)
@@ -558,6 +570,7 @@ def position_blocked_by_hard_obstacle(
     ignore_id: EntityId | None = None,
     clearance: float = HARD_OBSTACLE_CLEARANCE,
 ) -> bool:
+    """Return whether hard blockers reject a position."""
     return _hard_obstacle_at_position(
         world,
         position,
@@ -625,6 +638,7 @@ def first_hard_obstacle_on_segment(
 
 
 def _ring_offsets(radius: int) -> tuple[tuple[float, float], ...]:
+    """Yield expanding offset candidates around a blocked position."""
     return (
         (radius, 0),
         (-radius, 0),
@@ -638,6 +652,7 @@ def _ring_offsets(radius: int) -> tuple[tuple[float, float], ...]:
 
 
 def _clamp_for_world(world: WorldState, position: WorldPosition) -> WorldPosition:
+    """Clamp a position inside the world and walkable lane."""
     return clamp_unit_position_to_walkable_lane_for_height(
         position,
         world.settings.world_height,
@@ -652,6 +667,7 @@ def _resolve_hard_obstacles(
     *,
     max_adjustment: float,
 ) -> WorldPosition:
+    """Push a proposed unit position out of hard blockers."""
     adjusted = desired
     for _ in range(3):
         collision = _first_hard_obstacle_collision(world, entity_id, origin, adjusted)
@@ -714,6 +730,7 @@ def _first_hard_obstacle_collision(
     *,
     clearance: float = HARD_OBSTACLE_CLEARANCE,
 ) -> tuple[Any, tuple[float, float, float, float], float, float, float] | None:
+    """Return the first hard blocker hit by a move segment."""
     first_collision: (
         tuple[Any, tuple[float, float, float, float], float, float, float] | None
     ) = None
@@ -755,6 +772,7 @@ def _hard_obstacle_at_position(
     ignore_id: EntityId | None,
     clearance: float,
 ) -> Any | None:
+    """Return the position used for hard obstacle at position."""
     checked = 0
     for obstacle in _hard_obstacles_for_bounds(
         world,
@@ -773,6 +791,7 @@ def _bounds_around_position(
     position: WorldPosition,
     radius: float,
 ) -> tuple[float, float, float, float]:
+    """Return the bounds used for bounds around position."""
     radius = max(0.0, float(radius))
     return (position.x - radius, position.y - radius, radius * 2.0, radius * 2.0)
 
@@ -782,6 +801,7 @@ def _segment_query_bounds(
     desired: WorldPosition,
     padding: float,
 ) -> tuple[float, float, float, float]:
+    """Return the bounds used for segment query bounds."""
     padding = max(0.0, float(padding))
     left = min(origin.x, desired.x) - padding
     top = min(origin.y, desired.y) - padding
@@ -794,6 +814,7 @@ def _entities_for_bounds(
     world: WorldState,
     bounds: tuple[float, float, float, float],
 ) -> list[Any]:
+    """Return the bounds used for entities for bounds."""
     return [
         entity
         for entity_id in world.spatial_hash.query(bounds)
@@ -806,6 +827,7 @@ def _entities_near_position(
     position: WorldPosition,
     radius: float,
 ) -> list[Any]:
+    """Return the position used for entities near position."""
     return _entities_for_bounds(world, _bounds_around_position(position, radius))
 
 
@@ -813,6 +835,7 @@ def _units_for_bounds(
     world: WorldState,
     bounds: tuple[float, float, float, float],
 ) -> list[Any]:
+    """Return the bounds used for units for bounds."""
     query_ids = world.spatial_hash.query(bounds)
     indexed_unit_ids = getattr(world, "unit_ids", set())
     if indexed_unit_ids:
@@ -829,6 +852,7 @@ def _unit_entities_near_position(
     position: WorldPosition,
     radius: float,
 ) -> list[Any]:
+    """Return the position used for unit entities near position."""
     radius_sq = max(0.0, radius) * max(0.0, radius)
     query_ids = world.spatial_hash.query(_bounds_around_position(position, radius))
     indexed_unit_ids = getattr(world, "unit_ids", set())
@@ -854,6 +878,7 @@ def _nearby_units(
     ignore_id: EntityId | None = None,
     max_count: int | None = None,
 ) -> list[Any]:
+    """Return nearby units for collision and separation checks."""
     candidates: list[tuple[float, Any]] = []
     for entity in _unit_entities_near_position(world, position, radius):
         if entity.id == ignore_id:
@@ -876,6 +901,7 @@ def _hard_obstacles_for_bounds(
     *,
     ignore_id: EntityId | None,
 ) -> list[Any]:
+    """Return the bounds used for hard obstacles for bounds."""
     query_ids = world.spatial_hash.query(bounds)
     indexed_obstacle_ids = getattr(world, "hard_obstacle_ids", set())
     if indexed_obstacle_ids:
@@ -891,6 +917,7 @@ def _hard_obstacles_for_bounds(
 
 
 def _hard_obstacles(world: WorldState, *, ignore_id: EntityId | None) -> list[Any]:
+    """Return hard blockers currently registered in the world."""
     return [
         entity
         for entity in world.entities.values()
@@ -903,6 +930,7 @@ def _inflated_obstacle_rect(
     *,
     clearance: float = HARD_OBSTACLE_CLEARANCE,
 ) -> tuple[float, float, float, float]:
+    """Return the bounds used for inflated obstacle rect."""
     clearance = _clearance_for_obstacle(obstacle, clearance)
     left, top, width, height = blocking_bounds_for_entity(obstacle)
     return (
@@ -914,12 +942,14 @@ def _inflated_obstacle_rect(
 
 
 def _clearance_for_obstacle(obstacle: Any, requested_clearance: float) -> float:
+    """Return movement clearance needed around a blocker."""
     if "resource" in getattr(obstacle, "tags", ()):
         return min(requested_clearance, RESOURCE_OBSTACLE_CLEARANCE)
     return requested_clearance
 
 
 def _point_in_rect(position: WorldPosition, rect: tuple[float, float, float, float]) -> bool:
+    """Return the bounds used for point in rect."""
     left, top, right, bottom = rect
     return left <= position.x <= right and top <= position.y <= bottom
 
@@ -929,6 +959,7 @@ def _segment_rect_entry(
     desired: WorldPosition,
     rect: tuple[float, float, float, float],
 ) -> tuple[float, float, float] | None:
+    """Return the bounds used for segment rect entry."""
     left, top, right, bottom = rect
     dx = desired.x - origin.x
     dy = desired.y - origin.y
@@ -968,6 +999,7 @@ def _nearest_rect_normal(
     position: WorldPosition,
     rect: tuple[float, float, float, float],
 ) -> tuple[float, float]:
+    """Return the nearest rect normal."""
     left, top, right, bottom = rect
     distances = (
         (abs(position.x - left), -1.0, 0.0),
@@ -983,6 +1015,7 @@ def _nearest_point_outside_rect(
     position: WorldPosition,
     rect: tuple[float, float, float, float],
 ) -> WorldPosition:
+    """Return the nearest point outside rect."""
     left, top, right, bottom = rect
     normal_x, normal_y = _nearest_rect_normal(position, rect)
     if normal_x < 0:
@@ -1003,6 +1036,7 @@ def _perpendicular_slide_candidates(
     desired: WorldPosition,
     max_adjustment: float,
 ) -> list[WorldPosition]:
+    """Return entity identifiers for perpendicular slide candidates."""
     tangent_x, tangent_y = -normal_y, normal_x
     candidates = [
         _clamp_for_world(
@@ -1033,6 +1067,7 @@ def _skip_unit_collision(
     ignore_id: EntityId | None,
     friendly_ghost_ids: set[EntityId] | None,
 ) -> bool:
+    """Return whether a unit collision should be ignored."""
     if not is_unit(entity) or entity.id == ignore_id:
         return True
     if source_id is None or not friendly_ghost_ids:
@@ -1046,4 +1081,5 @@ def _skip_unit_collision(
 
 
 def _same_owner(first: Any, second: Any) -> bool:
+    """Return whether two entities share the same owner."""
     return getattr(first, "owner", None) == getattr(second, "owner", None)

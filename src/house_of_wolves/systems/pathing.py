@@ -74,6 +74,7 @@ def _best_detour_points(
     target: WorldPosition,
     inflated_rect: tuple[float, float, float, float],
 ) -> list[WorldPosition]:
+    """Return candidate detour points around a blocker."""
     left, top, right, bottom = inflated_rect
     moving_right = target.x >= origin.x
     before_x = (left - DETOUR_MARGIN) if moving_right else (right + DETOUR_MARGIN)
@@ -108,6 +109,7 @@ def _valid_waypoint(
     entity_id: EntityId,
     position: WorldPosition,
 ) -> WorldPosition | None:
+    """Return entity identifiers for valid waypoint."""
     candidate = _clamp_to_world(world, position)
     candidate = project_position_out_of_hard_obstacles(
         world,
@@ -125,6 +127,7 @@ def _route_clear(
     entity_id: EntityId,
     points: list[WorldPosition],
 ) -> bool:
+    """Return whether a path segment avoids hard blockers."""
     for start, end in zip(points, points[1:], strict=False):
         if (
             first_hard_obstacle_on_segment(world, start, end, ignore_id=entity_id)
@@ -135,18 +138,22 @@ def _route_clear(
 
 
 def _route_length(points: list[WorldPosition]) -> float:
+    """Return total length for a waypoint route."""
     return sum(_distance(start, end) for start, end in zip(points, points[1:], strict=False))
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    """Return the distance used for distance."""
     return hypot(first.x - second.x, first.y - second.y)
 
 
 def _far_enough(first: WorldPosition, second: WorldPosition) -> bool:
+    """Return whether a detour point gives enough clearance."""
     return _distance(first, second) >= MIN_WAYPOINT_DISTANCE
 
 
 def _clamp_to_world(world: WorldState, position: WorldPosition) -> WorldPosition:
+    """Clamp a point inside world bounds."""
     clamped = clamp_unit_position_to_walkable_lane_for_height(
         position,
         world.settings.world_height,

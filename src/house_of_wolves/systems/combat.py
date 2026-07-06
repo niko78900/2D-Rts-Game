@@ -30,6 +30,7 @@ class CombatSystem:
     chase_timeout_ms: int = ATTACK_MOVE_CHASE_TIMEOUT_MS
 
     def update(self, world: WorldState, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         for entity in list(world.entities.values()):
             if not _can_attack(entity):
                 continue
@@ -82,6 +83,7 @@ class CombatSystem:
         command: Command,
         dt_ms: int,
     ) -> None:
+        """Advance attack command for the current frame."""
         queue = world.command_queues.get(entity.id)
         target = world.entities.get(command.target_entity_id)
         if target is None or not _is_enemy_unit(entity, target):
@@ -98,6 +100,7 @@ class CombatSystem:
             queue.pop_next()
 
     def _update_guard_unit(self, world: WorldState, entity: object, dt_ms: int) -> None:
+        """Advance guard unit for the current frame."""
         if not _is_guard_unit(entity):
             _clear_attack_target_state(entity)
             return
@@ -118,6 +121,7 @@ class CombatSystem:
         entity: object,
         dt_ms: int,
     ) -> bool:
+        """Advance gather defense for the current frame."""
         target = _nearest_enemy_threatening_unit(world, entity.id)
         if target is None:
             return False
@@ -132,15 +136,18 @@ class CombatSystem:
 
 
 def _current_command(world: WorldState, entity_id: EntityId) -> Command | None:
+    """Return the current command for an entity if one exists."""
     queue = world.command_queues.get(entity_id)
     return queue.peek() if queue is not None else None
 
 
 def _is_attack_move_command(command: Command) -> bool:
+    """Return whether attack move command."""
     return command.type == "move" and command.payload.get("attack_move") is True
 
 
 def _is_gather_related_command(command: Command) -> bool:
+    """Return whether gather related command."""
     return command.type == "gather" or command.payload.get("gather_move") is True
 
 
@@ -151,6 +158,7 @@ def _nearest_enemy_unit(
     *,
     ignored_id: EntityId | None = None,
 ) -> object | None:
+    """Return the nearest enemy unit."""
     entity = world.entities.get(entity_id)
     if entity is None:
         return None
@@ -172,6 +180,7 @@ def _nearest_enemy_threatening_unit(
     world: WorldState,
     entity_id: EntityId,
 ) -> object | None:
+    """Return the nearest enemy threatening unit."""
     entity = world.entities.get(entity_id)
     if entity is None:
         return None
@@ -194,6 +203,7 @@ def _entities_near_position(
     position: WorldPosition,
     radius: float,
 ) -> list[object]:
+    """Return the position used for entities near position."""
     bounds = (
         position.x - radius,
         position.y - radius,
@@ -218,6 +228,7 @@ def _locked_or_nearest_enemy_unit(
     command: Command,
     radius: float,
 ) -> object | None:
+    """Return the locked target or nearest valid enemy."""
     ignored_id = _payload_entity_id(command, "attack_move_ignored_target_id")
     locked_id = _payload_entity_id(command, "attack_move_target_id")
     if locked_id is not None and locked_id != ignored_id:
@@ -233,6 +244,7 @@ def _locked_or_nearest_enemy_unit(
 
 
 def _can_attack(entity: object) -> bool:
+    """Return whether attack can proceed."""
     return (
         getattr(entity, "alive", False)
         and "unit" in getattr(entity, "tags", ())
@@ -242,10 +254,12 @@ def _can_attack(entity: object) -> bool:
 
 
 def _is_guard_unit(entity: object) -> bool:
+    """Return whether guard unit."""
     return _can_attack(entity) and getattr(entity, "owner", NEUTRAL_OWNER) != NEUTRAL_OWNER
 
 
 def _is_enemy_unit(entity: object, other: object) -> bool:
+    """Return whether enemy unit."""
     return (
         entity is not None
         and other is not entity
@@ -257,14 +271,17 @@ def _is_enemy_unit(entity: object, other: object) -> bool:
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    """Return the distance used for distance."""
     return hypot(first.x - second.x, first.y - second.y)
 
 
 def _attack_range_for(entity: object) -> float:
+    """Return the range value used for attack range for."""
     return max(0.0, float(getattr(entity, "attack_range", 0.0)))
 
 
 def _last_contact_ms(command: Command, elapsed_ms: int) -> int:
+    """Return the last time an attacker could hit its target."""
     value = command.payload.get("attack_move_last_contact_ms")
     if isinstance(value, int):
         return value
@@ -273,6 +290,7 @@ def _last_contact_ms(command: Command, elapsed_ms: int) -> int:
 
 
 def _payload_entity_id(command: Command, key: str) -> EntityId | None:
+    """Return entity identifiers for payload entity id."""
     value = command.payload.get(key)
     if value is None:
         return None
@@ -280,17 +298,20 @@ def _payload_entity_id(command: Command, key: str) -> EntityId | None:
 
 
 def _clear_attack_target(command: Command) -> None:
+    """Clear attack target."""
     command.payload.pop("attack_move_target_id", None)
     command.payload.pop("attack_move_chase_target_id", None)
     command.payload.pop("attack_move_last_contact_ms", None)
 
 
 def _clear_attack_target_state(entity: object) -> None:
+    """Clear attack target state."""
     if getattr(entity, "state", None) in {"attacking", "moving"}:
         entity.state = "idle"
 
 
 def _attack_target(world: WorldState, attacker: object, target: object) -> bool:
+    """Return the position used for attack target."""
     attacker.state = "attacking"
     if int(getattr(attacker, "cooldown_remaining_ms", 0)) > 0:
         return False
@@ -309,6 +330,7 @@ def _move_entity_toward(
     target: WorldPosition,
     dt_ms: int,
 ) -> None:
+    """Move entity toward."""
     dx = target.x - entity.position.x
     dy = target.y - entity.position.y
     distance = hypot(dx, dy)

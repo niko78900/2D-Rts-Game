@@ -14,6 +14,7 @@ class EncounterZone:
     faction: str
 
     def contains_x(self, x: float) -> bool:
+        """Return whether the x coordinate is inside this zone."""
         return self.x_start <= x <= self.x_end
 
 

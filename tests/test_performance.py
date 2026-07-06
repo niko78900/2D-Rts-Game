@@ -6,6 +6,7 @@ from house_of_wolves.world.world import WorldState
 
 
 def test_performance_stats_reset_keeps_world_count_snapshot_separate() -> None:
+    """Verify that performance stats reset keeps world count snapshot separate."""
     stats = PerformanceStats()
     world = create_demo_world()
 
@@ -27,6 +28,7 @@ def test_performance_stats_reset_keeps_world_count_snapshot_separate() -> None:
 
 
 def test_world_notifications_dedupe_refresh_and_expire() -> None:
+    """Verify that world notifications dedupe refresh and expire."""
     world = WorldState()
 
     world.notify("Cannot reach resource.", duration_ms=1000)

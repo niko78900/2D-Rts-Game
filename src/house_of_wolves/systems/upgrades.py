@@ -15,4 +15,5 @@ class UpgradeSystem:
     state: UpgradeState = field(default_factory=UpgradeState)
 
     def update(self, world: object, dt_ms: int) -> None:
+        """Advance this system for one simulation tick."""
         return None

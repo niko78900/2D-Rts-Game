@@ -38,6 +38,7 @@ from house_of_wolves.world.demo import create_demo_world
 
 
 def test_settler_gather_command_swings_carries_deposits_and_returns() -> None:
+    """Verify that settler gather command swings carries deposits and returns."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
@@ -80,6 +81,7 @@ def test_settler_gather_command_swings_carries_deposits_and_returns() -> None:
 
 
 def test_gather_command_rejects_wrong_resource_type() -> None:
+    """Verify that gather command rejects wrong resource type."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
@@ -105,6 +107,7 @@ def test_gather_command_rejects_wrong_resource_type() -> None:
 
 
 def test_gather_starts_when_failed_move_left_settler_at_resource_edge() -> None:
+    """Verify that gather starts when failed move left settler at resource edge."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -135,6 +138,7 @@ def test_gather_starts_when_failed_move_left_settler_at_resource_edge() -> None:
 
 
 def test_resource_interaction_position_stays_outside_resource_blocker() -> None:
+    """Verify that resource interaction position stays outside resource blocker."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
@@ -146,6 +150,7 @@ def test_resource_interaction_position_stays_outside_resource_blocker() -> None:
 
 
 def test_gather_command_requires_completed_deposit_hut() -> None:
+    """Verify that gather command requires completed deposit hut."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
@@ -173,6 +178,7 @@ def test_gather_command_requires_completed_deposit_hut() -> None:
 
 
 def test_completed_player_huts_are_the_only_deposit_hubs() -> None:
+    """Verify that completed player huts are the only deposit hubs."""
     world = create_demo_world()
     completed_hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     incomplete_hut = Building(
@@ -207,6 +213,7 @@ def test_completed_player_huts_are_the_only_deposit_hubs() -> None:
 
 
 def test_auto_gather_avoids_unsafe_resource_nodes() -> None:
+    """Verify that auto gather avoids unsafe resource nodes."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     enemy = next(entity for entity in world.entities.values() if entity.owner == "wolves")
@@ -225,6 +232,7 @@ def test_auto_gather_avoids_unsafe_resource_nodes() -> None:
 
 
 def test_auto_gather_redistributes_settlers_across_safe_nodes() -> None:
+    """Verify that auto gather redistributes settlers across safe nodes."""
     world = create_demo_world()
     settlers = [entity for entity in world.entities.values() if "settler" in entity.tags]
     first = settlers[0]
@@ -243,6 +251,7 @@ def test_auto_gather_redistributes_settlers_across_safe_nodes() -> None:
 
 
 def test_resource_node_cache_updates_when_nodes_are_added_and_removed() -> None:
+    """Verify that resource node cache updates when nodes are added and removed."""
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
 
@@ -258,6 +267,7 @@ def test_resource_node_cache_updates_when_nodes_are_added_and_removed() -> None:
 
 
 def test_auto_gather_assignment_jobs_are_budgeted_across_frames() -> None:
+    """Verify that auto gather assignment jobs are budgeted across frames."""
     world = create_demo_world()
     settlers = [entity for entity in world.entities.values() if "settler" in entity.tags]
     first = settlers[0]
@@ -291,6 +301,7 @@ def test_auto_gather_assignment_jobs_are_budgeted_across_frames() -> None:
 
 
 def test_destroyed_tree_respawns_after_exact_delay() -> None:
+    """Verify that destroyed tree respawns after exact delay."""
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
     starting_ids = {node.id for node in active_resource_nodes(world, "wood")}
@@ -323,6 +334,7 @@ def test_destroyed_tree_respawns_after_exact_delay() -> None:
 
 
 def test_tree_respawn_retries_when_active_tree_cap_is_full() -> None:
+    """Verify that tree respawn retries when active tree cap is full."""
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
     system = EconomySystem()
@@ -336,6 +348,7 @@ def test_tree_respawn_retries_when_active_tree_cap_is_full() -> None:
 
 
 def test_wood_gatherer_waits_for_new_tree_when_none_are_active() -> None:
+    """Verify that wood gatherer waits for new tree when none are active."""
     world = create_demo_world()
     settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
@@ -376,6 +389,7 @@ def test_wood_gatherer_waits_for_new_tree_when_none_are_active() -> None:
 
 
 def test_destroyed_mine_resource_respawns_after_exact_delay() -> None:
+    """Verify that destroyed mine resource respawns after exact delay."""
     world = create_demo_world()
     gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
     starting_ids = {node.id for node in active_resource_nodes(world, "gold")}
@@ -412,6 +426,7 @@ def test_destroyed_mine_resource_respawns_after_exact_delay() -> None:
 
 
 def test_mine_respawn_skips_when_resource_type_is_at_cap() -> None:
+    """Verify that mine respawn skips when resource type is at cap."""
     world = create_demo_world()
     gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
     system = EconomySystem()
@@ -424,6 +439,7 @@ def test_mine_respawn_skips_when_resource_type_is_at_cap() -> None:
 
 
 def test_mine_respawn_retries_when_no_valid_spawn_location_exists() -> None:
+    """Verify that mine respawn retries when no valid spawn location exists."""
     world = create_demo_world()
     gold = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
     world.remove_entity(gold.id)
@@ -454,6 +470,7 @@ def _remove_resource_nodes(
     *,
     keep_ids: set[object] | None = None,
 ) -> None:
+    """Remove resource nodes test fixture data."""
     kept = keep_ids or set()
     for resource in list(active_resource_nodes(world, resource_type)):
         if resource.id in kept:
@@ -462,6 +479,7 @@ def _remove_resource_nodes(
 
 
 def _add_settler_like(world, position: WorldPosition):
+    """Add settler like test fixture data."""
     template = next(entity for entity in world.entities.values() if "settler" in entity.tags)
     entity = type(template)(
         id=world.allocate_entity_id(),
@@ -485,6 +503,7 @@ def _add_extra_resource_node(
     resource_type: str,
     position: WorldPosition,
 ) -> ResourceNode:
+    """Add extra resource node test fixture data."""
     tags_by_type = {
         "wood": ("resource", "wood_tree", "selectable"),
         "stone": ("resource", "stone_outcrop", "selectable"),
@@ -511,4 +530,5 @@ def _add_extra_resource_node(
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
+    """Return distance between two test positions."""
     return hypot(first.x - second.x, first.y - second.y)

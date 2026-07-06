@@ -6,6 +6,7 @@ from house_of_wolves.world.demo import create_demo_world
 
 
 def test_selection_pick_click_add_and_clear() -> None:
+    """Verify that selection pick click add and clear."""
     world = create_demo_world()
     units = _player_selectable_units(world)
     selection = SelectionSystem()
@@ -22,6 +23,7 @@ def test_selection_pick_click_add_and_clear() -> None:
 
 
 def test_box_select_replaces_or_adds_visible_units() -> None:
+    """Verify that box select replaces or adds visible units."""
     world = create_demo_world()
     units = _player_selectable_units(world)
     selection = SelectionSystem()
@@ -39,6 +41,7 @@ def test_box_select_replaces_or_adds_visible_units() -> None:
 
 
 def test_selection_can_pick_buildings_and_resource_objects() -> None:
+    """Verify that selection can pick buildings and resource objects."""
     world = create_demo_world()
     building = next(entity for entity in world.entities.values() if "building" in entity.tags)
     resource = next(entity for entity in world.entities.values() if "resource" in entity.tags)
@@ -52,6 +55,7 @@ def test_selection_can_pick_buildings_and_resource_objects() -> None:
 
 
 def test_shift_clicking_building_or_resource_replaces_selection_instead_of_adding() -> None:
+    """Verify that shift clicking building or resource replaces selection instead of adding."""
     world = create_demo_world()
     units = _player_selectable_units(world)
     building = next(entity for entity in world.entities.values() if "building" in entity.tags)
@@ -68,6 +72,7 @@ def test_shift_clicking_building_or_resource_replaces_selection_instead_of_addin
 
 
 def test_shift_clicking_unit_replaces_existing_building_or_resource_selection() -> None:
+    """Verify that shift clicking unit replaces existing building or resource selection."""
     world = create_demo_world()
     unit = _player_selectable_units(world)[0]
     building = next(entity for entity in world.entities.values() if "building" in entity.tags)
@@ -80,6 +85,7 @@ def test_shift_clicking_unit_replaces_existing_building_or_resource_selection() 
 
 
 def test_box_select_only_selects_units_even_when_objects_overlap_bounds() -> None:
+    """Verify that box select only selects units even when objects overlap bounds."""
     world = create_demo_world()
     units = _player_selectable_units(world)
     selection = SelectionSystem()
@@ -94,6 +100,7 @@ def test_box_select_only_selects_units_even_when_objects_overlap_bounds() -> Non
 
 
 def test_clicking_enemy_unit_selects_it_for_stats_only() -> None:
+    """Verify that clicking enemy unit selects it for stats only."""
     world = create_demo_world()
     enemy = _enemy_units(world)[0]
     selection = SelectionSystem()
@@ -105,6 +112,7 @@ def test_clicking_enemy_unit_selects_it_for_stats_only() -> None:
 
 
 def test_shift_clicking_enemy_replaces_friendly_unit_selection() -> None:
+    """Verify that shift clicking enemy replaces friendly unit selection."""
     world = create_demo_world()
     units = _player_selectable_units(world)
     enemy = _enemy_units(world)[0]
@@ -117,6 +125,7 @@ def test_shift_clicking_enemy_replaces_friendly_unit_selection() -> None:
 
 
 def test_shift_clicking_friendly_unit_replaces_enemy_selection() -> None:
+    """Verify that shift clicking friendly unit replaces enemy selection."""
     world = create_demo_world()
     unit = _player_selectable_units(world)[0]
     enemy = _enemy_units(world)[0]
@@ -129,6 +138,7 @@ def test_shift_clicking_friendly_unit_replaces_enemy_selection() -> None:
 
 
 def test_box_select_ignores_enemy_units() -> None:
+    """Verify that box select ignores enemy units."""
     world = create_demo_world()
     selection = SelectionSystem()
 
@@ -139,6 +149,7 @@ def test_box_select_ignores_enemy_units() -> None:
 
 
 def _player_selectable_units(world: object) -> list[object]:
+    """Provide test helper logic for player selectable units."""
     return [
         entity for entity in world.entities.values()
         if "unit" in entity.tags
@@ -148,6 +159,7 @@ def _player_selectable_units(world: object) -> list[object]:
 
 
 def _enemy_units(world: object) -> list[object]:
+    """Provide test helper logic for enemy units."""
     return [
         entity for entity in world.entities.values()
         if "unit" in entity.tags
@@ -156,6 +168,7 @@ def _enemy_units(world: object) -> list[object]:
 
 
 def _bounds_around(entities: object) -> tuple[float, float, float, float]:
+    """Provide test helper logic for bounds around."""
     bounds = [entity.bounds for entity in entities]
     left = min(bound[0] for bound in bounds)
     top = min(bound[1] for bound in bounds)
