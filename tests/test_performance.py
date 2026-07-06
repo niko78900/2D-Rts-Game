@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from house_of_wolves.core.performance import PerformanceStats, add_collision_checks
 from house_of_wolves.world.demo import create_demo_world
+from house_of_wolves.world.world import WorldState
 
 
 def test_performance_stats_reset_keeps_world_count_snapshot_separate() -> None:
@@ -23,3 +24,21 @@ def test_performance_stats_reset_keeps_world_count_snapshot_separate() -> None:
     assert stats.counters.path_jobs_processed == 0
     assert stats.counters.collision_checks == 0
     assert stats.unit_count > 0
+
+
+def test_world_notifications_dedupe_refresh_and_expire() -> None:
+    world = WorldState()
+
+    world.notify("Cannot reach resource.", duration_ms=1000)
+    world.notify("Cannot reach resource.", duration_ms=2500)
+
+    assert len(world.notifications) == 1
+    assert world.notifications[0].remaining_ms == 2500
+    assert world.performance_stats.counters.notifications_created == 1
+    assert world.performance_stats.counters.notifications_suppressed == 1
+    assert world.performance_stats.counters.notifications_active == 1
+
+    world.update_notifications(2500)
+
+    assert world.notifications == []
+    assert world.performance_stats.counters.notifications_active == 0

@@ -475,6 +475,28 @@ def test_renderer_settings_keybind_rows_are_hit_testable() -> None:
         pygame.quit()
 
 
+def test_renderer_caches_notification_text_surfaces() -> None:
+    pygame.init()
+    try:
+        world = create_demo_world()
+        world.notify("Cannot reach resource.")
+        renderer = GameRenderer(AppSettings())
+        surface = pygame.Surface(AppSettings().virtual_size)
+        selection = type("Selection", (), {"selected_ids": []})()
+
+        renderer.render(surface, world, selection, fps=0)
+        cached = renderer._notification_surface_cache[
+            ("Cannot reach resource.", (247, 229, 169))
+        ]
+        renderer.render(surface, world, selection, fps=0)
+
+        assert renderer._notification_surface_cache[
+            ("Cannot reach resource.", (247, 229, 169))
+        ] is cached
+    finally:
+        pygame.quit()
+
+
 def _entity_screen_rect(world: object, entity: object) -> pygame.Rect:
     left, top, width, height = entity.bounds
     screen_pos = world.camera.world_to_screen(WorldPosition(left, top))

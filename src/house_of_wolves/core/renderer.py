@@ -106,6 +106,10 @@ class GameRenderer:
         init=False,
         repr=False,
     )
+    _notification_surface_cache: dict[tuple[str, tuple[int, int, int]], pygame.Surface] = field(
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not pygame.font.get_init():
@@ -114,6 +118,7 @@ class GameRenderer:
         self.small_font = pygame.font.Font(None, 18)
         self.animal_sprites = _load_animal_sprites()
         self._scaled_sprite_cache = {}
+        self._notification_surface_cache = {}
 
     def render(
         self,
@@ -143,6 +148,7 @@ class GameRenderer:
                 self._draw_drag_rect(surface, drag_rect)
         with time_block(stats, "render_hud"):
             self._draw_hud(surface, world, selection, fps)
+        with time_block(stats, "render_notifications"):
             self._draw_notifications(surface, world)
         with time_block(stats, "render_ui"):
             self._draw_selected_panel(surface, world, selection, active_ability, ability_override)
@@ -691,12 +697,27 @@ class GameRenderer:
 
     def _draw_notifications(self, surface: pygame.Surface, world: WorldState) -> None:
         for index, notification in enumerate(world.notifications[-4:]):
-            text = self.small_font.render(notification.message, True, (247, 229, 169))
+            text = self._notification_surface(notification.message, (247, 229, 169))
             rect = text.get_rect(midtop=(surface.get_width() // 2, 62 + index * 24))
             background = rect.inflate(18, 8)
             pygame.draw.rect(surface, (36, 42, 38), background, border_radius=4)
             pygame.draw.rect(surface, (128, 114, 76), background, width=1, border_radius=4)
             surface.blit(text, rect)
+
+    def _notification_surface(
+        self,
+        message: str,
+        color: tuple[int, int, int],
+    ) -> pygame.Surface:
+        key = (message, color)
+        cached = self._notification_surface_cache.get(key)
+        if cached is not None:
+            return cached
+        if len(self._notification_surface_cache) > 64:
+            self._notification_surface_cache.clear()
+        rendered = self.small_font.render(message, True, color)
+        self._notification_surface_cache[key] = rendered
+        return rendered
 
     def _draw_settings_button(self, surface: pygame.Surface) -> None:
         rect = self.settings_button_rect(surface)
@@ -1027,6 +1048,12 @@ class GameRenderer:
             (
                 f"Render entities {timings.get('render_entities', 0.0):0.2f}  "
                 f"HUD/UI {timings.get('render_hud', 0.0) + timings.get('render_ui', 0.0):0.2f}"
+            ),
+            (
+                f"Notifications {counters.notifications_active}  "
+                f"new {counters.notifications_created}  "
+                f"suppressed {counters.notifications_suppressed}  "
+                f"render {timings.get('render_notifications', 0.0):0.2f}"
             ),
             (
                 f"Path jobs {counters.path_jobs_processed}  "

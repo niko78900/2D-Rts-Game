@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from house_of_wolves.entities.base import Entity
 
 
+MAX_ACTIVE_NOTIFICATIONS = 8
+
+
 @dataclass(slots=True)
 class Notification:
     message: str
@@ -129,7 +132,18 @@ class WorldState:
                 self.completed_deposit_huts_by_owner.setdefault(owner, []).append(entity.id)
 
     def notify(self, message: str, *, duration_ms: int = 2500) -> None:
+        for notification in self.notifications:
+            if notification.message != message:
+                continue
+            notification.remaining_ms = max(notification.remaining_ms, duration_ms)
+            self.performance_stats.counters.notifications_suppressed += 1
+            self.performance_stats.counters.notifications_active = len(self.notifications)
+            return
         self.notifications.append(Notification(message, duration_ms))
+        if len(self.notifications) > MAX_ACTIVE_NOTIFICATIONS:
+            self.notifications = self.notifications[-MAX_ACTIVE_NOTIFICATIONS:]
+        self.performance_stats.counters.notifications_created += 1
+        self.performance_stats.counters.notifications_active = len(self.notifications)
 
     def update_notifications(self, dt_ms: int) -> None:
         for notification in self.notifications:
@@ -139,6 +153,7 @@ class WorldState:
             for notification in self.notifications
             if notification.remaining_ms > 0
         ]
+        self.performance_stats.counters.notifications_active = len(self.notifications)
 
     def enqueue_command(self, entity_id: EntityId, command: Command) -> None:
         queue = self.command_queues.setdefault(entity_id, CommandQueue(entity_id))

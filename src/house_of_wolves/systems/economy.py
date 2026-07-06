@@ -12,6 +12,8 @@ from house_of_wolves.entities.resource_node import ResourceNode, resource_hp_for
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.pathing import move_waypoints_around_blockers
 from house_of_wolves.world.collision import (
+    UNIT_COLLISION_RADIUS,
+    UNIT_HITBOX_RADIUS,
     blocking_bounds_for_entity,
     nearest_free_position,
     occupied_by_unit,
@@ -28,6 +30,9 @@ GATHER_CARRY_AMOUNT = 5
 GATHER_SWINGS_PER_LOAD = 5
 GATHER_DAMAGE_PER_SWING = 1
 GATHER_SWING_MS = 650
+GATHER_INTERACTION_RANGE = 76.0
+RESOURCE_INTERACTION_PADDING = UNIT_HITBOX_RADIUS + 8.0
+RESOURCE_INTERACTION_MAX_RETRIES = 3
 RESOURCE_DESTRUCTION_MS = 1500
 TREE_RESPAWN_DELAY_SECONDS = 60
 STONE_RESPAWN_DELAY_SECONDS = 60
@@ -152,7 +157,7 @@ class GatherPerformanceCounters:
 
 @dataclass(slots=True)
 class EconomySystem:
-    gather_interaction_range: float = 76.0
+    gather_interaction_range: float = GATHER_INTERACTION_RANGE
     deposit_interaction_range: float = 140.0
     gather_swing_ms: int = GATHER_SWING_MS
     tree_respawn_delay_ms: int = TREE_RESPAWN_DELAY_MS
@@ -459,6 +464,11 @@ class EconomySystem:
         command.payload["current_resource_id"] = resource.id.to_json()
         command.payload["phase"] = GATHER_STATE_MOVING_TO_RESOURCE
 
+        if is_unit_in_gather_range(worker, resource, self.gather_interaction_range):
+            command.payload.pop("pending_move_key", None)
+            self._swing_at_resource(world, worker, queue, command, resource, resource_type, dt_ms)
+            return
+
         interaction_point = _cached_resource_interaction_position(
             world,
             command,
@@ -467,6 +477,9 @@ class EconomySystem:
         )
         if not _within(worker.position, interaction_point, self.gather_interaction_range):
             if _pending_move_failed(command, _move_key("resource", resource.id)):
+                if self._retry_resource_interaction_move(world, worker, queue, command, resource):
+                    _set_state(worker, GATHER_STATE_MOVING_TO_RESOURCE)
+                    return
                 world.notify("Cannot reach resource.")
                 _clear_gather_job(worker, queue)
                 return
@@ -481,6 +494,36 @@ class EconomySystem:
             return
         command.payload.pop("pending_move_key", None)
         self._swing_at_resource(world, worker, queue, command, resource, resource_type, dt_ms)
+
+    def _retry_resource_interaction_move(
+        self,
+        world: WorldState,
+        worker: object,
+        queue: CommandQueue,
+        command: Command,
+        resource: ResourceNode,
+    ) -> bool:
+        retry_count = int(command.payload.get("resource_interaction_retry_count", 0) or 0)
+        if retry_count >= RESOURCE_INTERACTION_MAX_RETRIES:
+            return False
+        command.payload["resource_interaction_retry_count"] = retry_count + 1
+        interaction_point = _cached_resource_interaction_position(
+            world,
+            command,
+            resource,
+            worker.id,
+            force_refresh=True,
+        )
+        if is_unit_in_gather_range(worker, resource, self.gather_interaction_range):
+            return False
+        _insert_move_before_gather(
+            queue,
+            worker.id,
+            interaction_point,
+            command,
+            _move_key("resource", resource.id),
+        )
+        return True
 
     def _swing_at_resource(
         self,
@@ -560,7 +603,12 @@ class EconomySystem:
             self._request_reassignment_or_idle(world, worker, command, resource_type)
             return
         command.payload["current_resource_id"] = resource.id.to_json()
-        interaction_point = resource_interaction_position(world, resource, worker.id)
+        interaction_point = _cached_resource_interaction_position(
+            world,
+            command,
+            resource,
+            worker.id,
+        )
         _insert_move_before_gather(
             queue,
             worker.id,
@@ -997,27 +1045,74 @@ def resource_node_safe_for_auto_gather(
     return not _enemy_can_hit_position(world, interaction, owner)
 
 
+def resource_interaction_candidates(
+    world: WorldState,
+    resource: ResourceNode,
+    gatherer_id: EntityId | None = None,
+) -> list[WorldPosition]:
+
+    left, top, width, height = blocking_bounds_for_entity(resource)
+    right = left + width
+    bottom = top + height
+    origin = _entity_position(world, gatherer_id) or resource.position
+    offset = RESOURCE_INTERACTION_PADDING
+    nearest_x = min(max(origin.x, left), right)
+    nearest_y = min(max(origin.y, top), bottom)
+    raw_candidates = (
+        WorldPosition(nearest_x, top - offset),
+        WorldPosition(nearest_x, bottom + offset),
+        WorldPosition(left - offset, nearest_y),
+        WorldPosition(right + offset, nearest_y),
+        WorldPosition(left + (width / 2), bottom + offset),
+        WorldPosition(left + (width / 2), top - offset),
+        WorldPosition(left - offset, top + (height / 2)),
+        WorldPosition(right + offset, top + (height / 2)),
+        WorldPosition(left - offset, bottom + offset),
+        WorldPosition(right + offset, bottom + offset),
+        WorldPosition(left - offset, top - offset),
+        WorldPosition(right + offset, top - offset),
+    )
+    candidates: list[WorldPosition] = []
+    seen: set[tuple[int, int]] = set()
+    for raw in sorted(raw_candidates, key=lambda candidate: _distance(origin, candidate)):
+        clamped = clamp_unit_position_to_walkable_lane_for_height(
+            raw,
+            world.settings.world_height,
+        )
+        candidate = nearest_free_position(
+            world,
+            clamped,
+            ignore_id=gatherer_id,
+            min_distance=UNIT_COLLISION_RADIUS,
+        )
+        if position_blocked_by_hard_obstacle(world, candidate, ignore_id=gatherer_id):
+            continue
+        if resource_edge_distance(candidate, resource) > GATHER_INTERACTION_RANGE:
+            continue
+        key = (round(candidate.x), round(candidate.y))
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+    return candidates
+
+
 def resource_interaction_position(
     world: WorldState,
     resource: ResourceNode,
     gatherer_id: EntityId | None = None,
+    *,
+    candidate_index: int = 0,
 ) -> WorldPosition:
-    left, top, width, height = blocking_bounds_for_entity(resource)
-    candidates = (
-        WorldPosition(left + (width / 2), top + height + 28),
-        WorldPosition(left + (width / 2), top - 18),
-        WorldPosition(left - 26, top + (height / 2)),
-        WorldPosition(left + width + 26, top + (height / 2)),
+    candidates = resource_interaction_candidates(world, resource, gatherer_id)
+    if candidates:
+        return candidates[min(max(0, int(candidate_index)), len(candidates) - 1)]
+    return nearest_free_position(
+        world,
+        resource.position,
+        ignore_id=gatherer_id,
+        min_distance=UNIT_COLLISION_RADIUS,
     )
-    origin = _entity_position(world, gatherer_id) or resource.position
-    ordered = sorted(candidates, key=lambda candidate: _distance(origin, candidate))
-    for candidate in ordered:
-        clamped = clamp_unit_position_to_walkable_lane_for_height(
-            candidate,
-            world.settings.world_height,
-        )
-        return nearest_free_position(world, clamped, ignore_id=gatherer_id)
-    return nearest_free_position(world, resource.position, ignore_id=gatherer_id)
 
 
 def _cached_resource_interaction_position(
@@ -1025,21 +1120,52 @@ def _cached_resource_interaction_position(
     command: Command,
     resource: ResourceNode,
     worker_id: EntityId,
+    *,
+    force_refresh: bool = False,
 ) -> WorldPosition:
     cached_id = _payload_entity_id(command, "resource_interaction_resource_id")
     cached_x = command.payload.get("resource_interaction_x")
     cached_y = command.payload.get("resource_interaction_y")
     if (
-        cached_id == resource.id
+        not force_refresh
+        and cached_id == resource.id
         and isinstance(cached_x, (int, float))
         and isinstance(cached_y, (int, float))
     ):
         return WorldPosition(float(cached_x), float(cached_y))
-    position = resource_interaction_position(world, resource, worker_id)
+    if force_refresh:
+        candidate_index = int(command.payload.get("resource_interaction_candidate_index", 0) or 0)
+        candidate_index += 1
+    else:
+        candidate_index = int(command.payload.get("resource_interaction_candidate_index", 0) or 0)
+    position = resource_interaction_position(
+        world,
+        resource,
+        worker_id,
+        candidate_index=candidate_index,
+    )
     command.payload["resource_interaction_resource_id"] = resource.id.to_json()
+    command.payload["resource_interaction_candidate_index"] = candidate_index
     command.payload["resource_interaction_x"] = position.x
     command.payload["resource_interaction_y"] = position.y
     return position
+
+
+def is_unit_in_gather_range(
+    unit: object,
+    resource: ResourceNode,
+    gather_range: float = GATHER_INTERACTION_RANGE,
+) -> bool:
+    return resource_edge_distance(unit.position, resource) <= gather_range
+
+
+def resource_edge_distance(position: WorldPosition, resource: ResourceNode) -> float:
+    left, top, width, height = blocking_bounds_for_entity(resource)
+    right = left + width
+    bottom = top + height
+    dx = max(left - position.x, 0.0, position.x - right)
+    dy = max(top - position.y, 0.0, position.y - bottom)
+    return hypot(dx, dy)
 
 
 def hut_deposit_position(

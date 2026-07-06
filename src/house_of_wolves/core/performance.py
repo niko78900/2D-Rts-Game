@@ -17,6 +17,9 @@ class PerformanceCounters:
     resource_searches: int = 0
     resource_candidates_checked: int = 0
     collision_checks: int = 0
+    notifications_created: int = 0
+    notifications_suppressed: int = 0
+    notifications_active: int = 0
 
     def reset(self) -> None:
         self.path_jobs_processed = 0
@@ -24,6 +27,8 @@ class PerformanceCounters:
         self.resource_searches = 0
         self.resource_candidates_checked = 0
         self.collision_checks = 0
+        self.notifications_created = 0
+        self.notifications_suppressed = 0
 
 
 @dataclass(slots=True)

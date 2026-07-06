@@ -29,8 +29,11 @@ from house_of_wolves.systems.economy import (
     cached_active_resource_nodes,
     completed_deposit_huts,
     hut_deposit_position,
+    is_unit_in_gather_range,
+    resource_edge_distance,
     resource_interaction_position,
 )
+from house_of_wolves.world.collision import position_blocked_by_hard_obstacle
 from house_of_wolves.world.demo import create_demo_world
 
 
@@ -99,6 +102,47 @@ def test_gather_command_rejects_wrong_resource_type() -> None:
     assert world.command_queues[settler.id].peek() is None
     assert tree.amount_remaining == tree.max_amount_remaining
     assert settler.state == "idle"
+
+
+def test_gather_starts_when_failed_move_left_settler_at_resource_edge() -> None:
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    left, top, width, height = mine.blocking_bounds
+    valid_edge_position = WorldPosition(left + width + 30, top + (height / 2))
+    stale_wrong_side_target = WorldPosition(left - 30, top + (height / 2))
+    world.update_entity_position(settler.id, valid_edge_position)
+    command = make_command(
+        "gather",
+        [settler.id],
+        target_entity_id=mine.id,
+        target_pos=stale_wrong_side_target,
+        resource_type="gold",
+        current_resource_id=mine.id.to_json(),
+        resource_interaction_resource_id=mine.id.to_json(),
+        resource_interaction_x=stale_wrong_side_target.x,
+        resource_interaction_y=stale_wrong_side_target.y,
+        pending_move_key=f"resource:{int(mine.id)}",
+    )
+    world.enqueue_command(settler.id, command)
+
+    EconomySystem().update(world, 16)
+
+    assert is_unit_in_gather_range(settler, mine)
+    assert world.command_queues[settler.id].peek() == command
+    assert settler.state == "gathering"
+    assert world.notifications == []
+
+
+def test_resource_interaction_position_stays_outside_resource_blocker() -> None:
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+
+    interaction = resource_interaction_position(world, mine, settler.id)
+
+    assert not position_blocked_by_hard_obstacle(world, interaction, ignore_id=settler.id)
+    assert resource_edge_distance(interaction, mine) <= EconomySystem().gather_interaction_range
 
 
 def test_gather_command_requires_completed_deposit_hut() -> None:
