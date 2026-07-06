@@ -22,6 +22,7 @@ ABILITY_ORDER = (
     "Train Settler",
     "Train Spearman",
     "Dropoff",
+    "Unassign Worker",
 )
 
 
@@ -86,6 +87,12 @@ def entity_display_name(entity: Any) -> str:
         "archer": "Archer",
         "raider_swordsman": "Raider Swordsman",
         "hut": "Hut",
+        "chicken_farm": "Chicken Farm",
+        "pig_farm": "Pig Farm",
+        "chicken": "Chicken",
+        "pig": "Pig",
+        "chicken_carcass": "Chicken Carcass",
+        "pig_carcass": "Pig Carcass",
         "wood_tree": "Tree",
         "gold_mine": "Gold Mine",
         "stone_outcrop": "Stone Outcrop",
@@ -114,6 +121,8 @@ def entity_health_text(entity: Any) -> str:
     tags = set(getattr(entity, "tags", ()))
     hp = max(0, int(getattr(entity, "hp", 0)))
     if "resource" in tags:
+        if "food_animal" in tags:
+            return f"Health: {hp}"
         amount = _resource_remaining(entity)
         resource_type = display_resource_type(str(getattr(entity, "resource_type", "resource")))
         return f"Health: {hp}    Remaining {resource_type}: {amount}"
@@ -128,12 +137,23 @@ def entity_details(entity: Any) -> tuple[str, ...]:
         return (f"Speed: {speed}", f"State: {state}")
     if "building" in tags:
         functions = getattr(entity, "functions", {})
+        if functions.get("farm_type"):
+            state = str(functions.get("farm_state", "idle_no_worker")).replace("_", " ").title()
+            worker = functions.get("assigned_worker_id")
+            worker_text = f"Worker: {worker}" if worker is not None else "Worker: None"
+            food = int(functions.get("farm_food_remaining", 0) or 0)
+            return (f"State: {state}", worker_text, f"Food Remaining: {food}")
         pop_bonus = functions.get("population_cap_bonus", 0)
         if not getattr(entity, "complete", False):
             return ("Status: Under Construction", f"Build Progress: {_build_progress(entity)}%")
         complete = "Complete"
         return (f"Status: {complete}", f"Population Bonus: {pop_bonus}")
     if "resource" in tags:
+        if "food_animal" in tags:
+            return ("State: Live Animal",)
+        if "food_carcass" in tags:
+            amount = _resource_remaining(entity)
+            return (f"Food Remaining: {amount}",)
         slots = int(getattr(entity, "harvest_slots", 0))
         gather_time = int(getattr(entity, "gather_time_ms", 0))
         return (f"Harvest Slots: {slots}", f"Gather Time: {gather_time} ms")
@@ -160,6 +180,8 @@ def entity_abilities(entity: Any) -> tuple[str, ...]:
             abilities.append(f"Train {entity_display_from_id(str(unit_id))}")
         if functions.get("dropoff"):
             abilities.append("Dropoff")
+        if functions.get("farm_type") and functions.get("assigned_worker_id") is not None:
+            abilities.append("Unassign Worker")
     if "resource" in tags:
         resource_type = str(getattr(entity, "resource_type", "resource"))
         abilities.append(f"Gather {display_resource_type(resource_type)}")

@@ -6,8 +6,9 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pygame
 
-from house_of_wolves.core.contracts import Footprint, WorldPosition
+from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
 from house_of_wolves.core.renderer import (
+    ANIMAL_SPRITE_PATHS,
     HUT_CONSTRUCTION_SPRITES,
     HUT_STAGE_COMPLETE,
     HUT_STAGE_PARTIAL,
@@ -24,6 +25,7 @@ from house_of_wolves.core.renderer import (
     status_bar_for_entity,
 )
 from house_of_wolves.core.settings import AppSettings
+from house_of_wolves.entities.resource_node import ResourceNode
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.ui.selected_panel import mutual_abilities, selected_panel_for
@@ -209,6 +211,25 @@ def test_resource_placeholder_inner_colors_distinguish_ore_and_stone() -> None:
     assert surface.get_at(rect.center)[:3] == (154, 154, 148)
 
 
+def test_named_animal_sprite_assets_exist_with_transparent_backgrounds() -> None:
+    old_uuid_files = (
+        ANIMAL_SPRITE_PATHS["pig"].parents[1] / "55e8e3d1-73ed-4119-b38a-0ccb3f6b2fdd.png",
+        ANIMAL_SPRITE_PATHS["chicken"].parents[1] / "970e59ef-10f2-4178-96bd-99a1b1c3d875.png",
+    )
+
+    assert not any(path.exists() for path in old_uuid_files)
+    for path in ANIMAL_SPRITE_PATHS.values():
+        assert path.exists()
+        sprite = pygame.image.load(str(path))
+        assert sprite.get_at((0, 0)).a == 0
+
+
+def test_renderer_loads_chicken_and_pig_sprites() -> None:
+    renderer = GameRenderer(AppSettings())
+
+    assert set(renderer.animal_sprites) >= {"chicken", "pig"}
+
+
 def test_selected_panel_for_enemy_unit_shows_stats_without_commands() -> None:
     world = create_demo_world()
     enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
@@ -245,6 +266,28 @@ def test_status_bar_for_resource_uses_yellow_depletion_ratio() -> None:
     assert spec.ratio == 0.5
     assert spec.fill_color == (230, 193, 77)
     assert spec.empty_color == (118, 87, 35)
+
+
+def test_status_bar_for_live_farm_animal_uses_health_ratio() -> None:
+    animal = ResourceNode(
+        id=EntityId(999),
+        owner="neutral",
+        position=WorldPosition(100, 100),
+        footprint=Footprint(24, 20),
+        hp=5,
+        max_hp=10,
+        tags=("resource", "farm_food", "food_animal", "chicken", "selectable"),
+        resource_type="food",
+        amount_remaining=20,
+        max_amount_remaining=20,
+    )
+
+    spec = status_bar_for_entity(animal)
+
+    assert spec is not None
+    assert spec.ratio == 0.5
+    assert spec.fill_color == (54, 174, 86)
+    assert spec.empty_color == (139, 47, 43)
 
 
 def test_hut_construction_stage_thresholds() -> None:

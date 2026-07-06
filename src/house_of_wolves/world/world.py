@@ -36,6 +36,16 @@ class WorldState:
     resources: dict[str, int] = field(
         default_factory=lambda: {"wood": 0, "food": 0, "stone": 0, "iron": 0, "gold": 0}
     )
+    resource_nodes_by_type: dict[str, list[EntityId]] = field(
+        default_factory=lambda: {
+            "wood": [],
+            "food": [],
+            "stone": [],
+            "iron": [],
+            "ore": [],
+            "gold": [],
+        }
+    )
     current_population: int = 0
     max_population: int = 0
     notifications: list[Notification] = field(default_factory=list)
@@ -57,6 +67,7 @@ class WorldState:
         self.entities[entity.id] = entity
         self.command_queues.setdefault(entity.id, CommandQueue(entity.id))
         self.spatial_hash.insert(entity.id, entity.bounds)
+        self._index_resource_node(entity)
         self.recalculate_population()
 
     def update_entity_position(self, entity_id: EntityId, position: WorldPosition) -> None:
@@ -68,7 +79,25 @@ class WorldState:
         self.entities.pop(entity_id, None)
         self.command_queues.pop(entity_id, None)
         self.spatial_hash.remove(entity_id)
+        self.unindex_resource_node(entity_id)
         self.recalculate_population()
+
+    def unindex_resource_node(self, entity_id: EntityId) -> None:
+        self._remove_resource_node_index(entity_id)
+
+    def _index_resource_node(self, entity: Entity) -> None:
+        resource_type = _resource_type_for_index(entity)
+        if resource_type is None:
+            return
+        for key in _resource_index_keys(resource_type):
+            bucket = self.resource_nodes_by_type.setdefault(key, [])
+            if entity.id not in bucket:
+                bucket.append(entity.id)
+
+    def _remove_resource_node_index(self, entity_id: EntityId) -> None:
+        for bucket in self.resource_nodes_by_type.values():
+            if entity_id in bucket:
+                bucket.remove(entity_id)
 
     def recalculate_population(self) -> None:
         self.current_population = sum(
@@ -153,3 +182,21 @@ def _population_cap_bonus(entity: object) -> int:
     if production_config is None:
         return 0
     return max(0, int(production_config.population_cap_bonus))
+
+
+def _resource_type_for_index(entity: object) -> str | None:
+    tags = getattr(entity, "tags", ())
+    if "resource" not in tags:
+        return None
+    resource_type = getattr(entity, "resource_type", None)
+    if resource_type is None:
+        return None
+    return str(resource_type)
+
+
+def _resource_index_keys(resource_type: str) -> tuple[str, ...]:
+    if resource_type == "iron":
+        return ("iron", "ore")
+    if resource_type == "ore":
+        return ("ore", "iron")
+    return (resource_type,)

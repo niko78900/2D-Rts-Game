@@ -27,6 +27,20 @@
     "functions": {"resource_source": "food", "renewable": true},
     "animations": {"construction": 4, "idle": 2, "damaged": 2, "destroyed": 4}
   },
+  "chicken_farm": {
+    "display_name": "Chicken Farm",
+    "stats": {"hp": 75, "footprint_px": [118, 76], "build_time_ms": 8000},
+    "cost": {"wood": 75, "food": 0, "stone": 0, "iron": 0, "gold": 0},
+    "functions": {"farm_type": "chicken", "resource_source": "food", "renewable": true},
+    "animations": {"construction": 4, "idle": 2, "damaged": 2, "destroyed": 4}
+  },
+  "pig_farm": {
+    "display_name": "Pig Farm",
+    "stats": {"hp": 300, "footprint_px": [152, 88], "build_time_ms": 10000},
+    "cost": {"wood": 60, "food": 0, "stone": 20, "iron": 0, "gold": 0},
+    "functions": {"farm_type": "pig", "resource_source": "food", "renewable": true},
+    "animations": {"construction": 4, "idle": 2, "damaged": 2, "destroyed": 4}
+  },
   "barracks": {
     "display_name": "Barracks",
     "stats": {"hp": 850, "footprint_px": [190, 135], "build_time_ms": 18000},

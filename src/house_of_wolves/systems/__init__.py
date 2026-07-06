@@ -9,6 +9,7 @@ from house_of_wolves.systems.construction import (
     starting_construction_hp,
 )
 from house_of_wolves.systems.economy import EconomySystem, ResourceWallet
+from house_of_wolves.systems.farming import FarmSystem
 from house_of_wolves.systems.group_movement import (
     assign_units_to_slots,
     generate_loose_formation_slots,
@@ -22,6 +23,7 @@ __all__ = [
     "CombatSystem",
     "ConstructionSystem",
     "EconomySystem",
+    "FarmSystem",
     "MovementSystem",
     "ProductionError",
     "ResourceWallet",

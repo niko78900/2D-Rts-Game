@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from math import hypot
 
@@ -38,6 +39,10 @@ ORE_RESPAWN_DELAY_MS = ORE_RESPAWN_DELAY_SECONDS * 1000
 GOLD_RESPAWN_DELAY_MS = GOLD_RESPAWN_DELAY_SECONDS * 1000
 RESPAWN_RETRY_MS = 5000
 RESPAWN_AVOID_RADIUS = 140.0
+MAX_PATH_JOBS_PER_FRAME = 2
+MAX_RESOURCE_CANDIDATES_TO_PATHCHECK = 5
+SAFETY_CACHE_REFRESH_SECONDS = 1.0
+SAFETY_CACHE_REFRESH_MS = round(SAFETY_CACHE_REFRESH_SECONDS * 1000)
 MAX_ACTIVE_TREES = 40
 MAX_ACTIVE_STONE_NODES = 5
 MAX_ACTIVE_IRON_NODES = 5
@@ -120,6 +125,31 @@ class ResourceRespawn:
 
 
 @dataclass(slots=True)
+class ResourceSafetyCacheEntry:
+    safe: bool
+    checked_ms: int
+
+
+@dataclass(slots=True)
+class GatherAssignmentJob:
+    gatherer_id: EntityId
+    resource_type: str
+    owner: str
+    queued: bool = False
+    safe: bool = True
+    manual: bool = False
+    existing_command: bool = False
+    notify_on_failure: bool = False
+
+
+@dataclass(slots=True)
+class GatherPerformanceCounters:
+    path_jobs_processed: int = 0
+    resource_candidates_checked: int = 0
+    full_path_calculations: int = 0
+
+
+@dataclass(slots=True)
 class EconomySystem:
     gather_interaction_range: float = 76.0
     deposit_interaction_range: float = 140.0
@@ -129,6 +159,10 @@ class EconomySystem:
     ore_respawn_delay_ms: int = ORE_RESPAWN_DELAY_MS
     gold_respawn_delay_ms: int = GOLD_RESPAWN_DELAY_MS
     respawn_retry_ms: int = RESPAWN_RETRY_MS
+    max_path_jobs_per_frame: int = MAX_PATH_JOBS_PER_FRAME
+    max_resource_candidates_to_pathcheck: int = MAX_RESOURCE_CANDIDATES_TO_PATHCHECK
+    safety_cache_refresh_ms: int = SAFETY_CACHE_REFRESH_MS
+    debug_gather_performance: bool = False
     max_active_trees: int = MAX_ACTIVE_TREES
     max_nodes_by_type: dict[str, int] = field(
         default_factory=lambda: {
@@ -138,12 +172,234 @@ class EconomySystem:
         }
     )
     respawns: list[ResourceRespawn] = field(default_factory=list)
+    gather_assignment_jobs: list[GatherAssignmentJob] = field(default_factory=list)
+    safety_cache: dict[tuple[EntityId, str], ResourceSafetyCacheEntry] = field(
+        default_factory=dict
+    )
+    last_frame_stats: GatherPerformanceCounters = field(
+        default_factory=GatherPerformanceCounters
+    )
 
     def update(self, world: WorldState, dt_ms: int) -> None:
+        self.last_frame_stats = GatherPerformanceCounters()
         self._update_resource_lifecycle(world, dt_ms)
         self._update_respawns(world)
+        self._process_gather_assignment_jobs(world)
         for worker_id, queue in list(world.command_queues.items()):
             self._update_worker(world, worker_id, queue, dt_ms)
+        if self.debug_gather_performance:
+            _debug_log_gather_performance(self.last_frame_stats)
+
+    def queue_auto_gather(
+        self,
+        world: WorldState,
+        gatherer_ids: list[EntityId],
+        resource_type: str,
+        *,
+        owner: str = "frontier",
+    ) -> str | None:
+        resource_type = normalize_resource_type(resource_type)
+        if not completed_deposit_huts(world, owner):
+            return "Needs hut to deposit."
+        if not cached_active_resource_nodes(world, resource_type):
+            return f"No safe {display_resource_name(resource_type).lower()} source found."
+        for index, gatherer_id in enumerate(gatherer_ids):
+            self.gather_assignment_jobs.append(
+                GatherAssignmentJob(
+                    gatherer_id=gatherer_id,
+                    resource_type=resource_type,
+                    owner=owner,
+                    safe=True,
+                    manual=False,
+                    notify_on_failure=index == 0,
+                )
+            )
+        return None
+
+    def _queue_gather_reassignment(
+        self,
+        worker: object,
+        command: Command,
+        resource_type: str,
+    ) -> None:
+        resource_type = normalize_resource_type(resource_type)
+        if command.payload.get("reassignment_pending") is True:
+            return
+        command.payload["reassignment_pending"] = True
+        self.gather_assignment_jobs.append(
+            GatherAssignmentJob(
+                gatherer_id=worker.id,
+                resource_type=resource_type,
+                owner=worker.owner,
+                safe=False,
+                manual=bool(command.payload.get("manual", False)),
+                existing_command=True,
+            )
+        )
+
+    def _process_gather_assignment_jobs(self, world: WorldState) -> None:
+        pending: list[GatherAssignmentJob] = []
+        budget = max(0, int(self.max_path_jobs_per_frame))
+        for job in self.gather_assignment_jobs:
+            if budget <= 0:
+                pending.append(job)
+                continue
+            self._process_gather_assignment_job(world, job)
+            budget -= 1
+            self.last_frame_stats.path_jobs_processed += 1
+        self.gather_assignment_jobs = pending
+
+    def _process_gather_assignment_job(
+        self,
+        world: WorldState,
+        job: GatherAssignmentJob,
+    ) -> bool:
+        gatherer = world.entities.get(job.gatherer_id)
+        if not _is_settler(gatherer):
+            return False
+        if job.existing_command:
+            queue = world.command_queues.get(job.gatherer_id)
+            command = queue.peek() if queue is not None else None
+            if command is None or command.type != "gather":
+                return False
+            command.payload.pop("reassignment_pending", None)
+
+        resource = self._find_nearest_resource_node(
+            world,
+            job.gatherer_id,
+            gatherer.position,
+            job.resource_type,
+            safe=job.safe,
+            owner=job.owner,
+        )
+        if resource is None:
+            self._handle_gather_assignment_failure(world, gatherer, job)
+            return False
+
+        if job.existing_command:
+            self._assign_existing_gather_command(world, gatherer, resource)
+        else:
+            issue_gather_command(
+                world,
+                resource,
+                job.gatherer_id,
+                queued=job.queued,
+                manual=job.manual,
+            )
+        return True
+
+    def _assign_existing_gather_command(
+        self,
+        world: WorldState,
+        worker: object,
+        resource: ResourceNode,
+    ) -> None:
+        queue = world.command_queues.get(worker.id)
+        command = queue.peek() if queue is not None else None
+        if command is None or command.type != "gather":
+            return
+        command.payload["current_resource_id"] = resource.id.to_json()
+        command.payload["resource_type"] = resource.resource_type
+        command.payload["phase"] = GATHER_STATE_RETURNING_TO_RESOURCE
+        interaction_point = resource_interaction_position(world, resource, worker.id)
+        _insert_move_before_gather(
+            queue,
+            worker.id,
+            interaction_point,
+            command,
+            _move_key("resource", resource.id),
+        )
+        _set_state(worker, GATHER_STATE_RETURNING_TO_RESOURCE)
+
+    def _handle_gather_assignment_failure(
+        self,
+        world: WorldState,
+        gatherer: object,
+        job: GatherAssignmentJob,
+    ) -> None:
+        queue = world.command_queues.get(job.gatherer_id)
+        command = queue.peek() if queue is not None else None
+        if job.existing_command and command is not None and command.type == "gather":
+            command.payload.pop("reassignment_pending", None)
+            if self._should_wait_for_resource_respawn(world, command, job.resource_type):
+                command.payload["reassignment_pending"] = True
+                command.payload["phase"] = GATHER_STATE_IDLE
+                _set_state(gatherer, GATHER_STATE_IDLE)
+                return
+            _clear_gather_job(gatherer, queue)
+            return
+        if job.notify_on_failure:
+            world.notify(
+                f"No safe {display_resource_name(job.resource_type).lower()} source found."
+            )
+        _set_state(gatherer, GATHER_STATE_IDLE)
+
+    def _find_nearest_resource_node(
+        self,
+        world: WorldState,
+        entity_id: EntityId,
+        origin: WorldPosition,
+        resource_type: str,
+        *,
+        safe: bool,
+        owner: str = "frontier",
+    ) -> ResourceNode | None:
+        resource_type = normalize_resource_type(resource_type)
+        candidates = closest_resource_candidates(
+            world,
+            resource_type,
+            origin,
+            max_candidates=self.max_resource_candidates_to_pathcheck,
+            safety_checker=(
+                lambda node: self._resource_safe_for_auto_gather(world, node, owner)
+                if safe
+                else True
+            ),
+            stats=self.last_frame_stats,
+        )
+        if not candidates:
+            return None
+
+        load_by_resource = _active_gather_load(world, resource_type)
+        return min(
+            candidates,
+            key=lambda node: (
+                self._estimated_travel_distance(
+                    world,
+                    entity_id,
+                    origin,
+                    resource_interaction_position(world, node, entity_id),
+                )
+                + load_by_resource.get(node.id, 0) * AUTO_DISTRIBUTION_LOAD_PENALTY
+            ),
+        )
+
+    def _estimated_travel_distance(
+        self,
+        world: WorldState,
+        entity_id: EntityId | None,
+        origin: WorldPosition,
+        target: WorldPosition,
+    ) -> float:
+        self.last_frame_stats.full_path_calculations += 1
+        return estimated_travel_distance(world, entity_id, origin, target)
+
+    def _resource_safe_for_auto_gather(
+        self,
+        world: WorldState,
+        resource: ResourceNode,
+        owner: str,
+    ) -> bool:
+        key = (resource.id, owner)
+        cached = self.safety_cache.get(key)
+        if (
+            cached is not None
+            and world.elapsed_ms - cached.checked_ms < self.safety_cache_refresh_ms
+        ):
+            return cached.safe
+        safe = resource_node_safe_for_auto_gather(world, resource, owner)
+        self.safety_cache[key] = ResourceSafetyCacheEntry(safe, world.elapsed_ms)
+        return safe
 
     def _update_worker(
         self,
@@ -173,18 +429,26 @@ class EconomySystem:
             world.notify("Needs hut to deposit.")
             _clear_gather_job(worker, queue)
             return
+        if _gather_target_type_invalid(world, command, resource_type):
+            _clear_gather_job(worker, queue)
+            return
 
         if int(getattr(worker, "carry_amount", 0)) > 0:
             self._advance_deposit(world, worker, queue, command, resource_type)
             return
 
-        resource = _current_or_replacement_resource(world, command, resource_type, worker)
-        if resource is None:
-            if self._should_wait_for_resource_respawn(world, command, resource_type):
-                command.payload["phase"] = GATHER_STATE_IDLE
+        if command.payload.get("reassignment_pending") is True:
+            if self._assignment_job_pending(worker.id, resource_type):
                 _set_state(worker, GATHER_STATE_IDLE)
                 return
-            _clear_gather_job(worker, queue)
+            if not cached_active_resource_nodes(world, resource_type):
+                _set_state(worker, GATHER_STATE_IDLE)
+                return
+            command.payload.pop("reassignment_pending", None)
+
+        resource = _current_or_replacement_resource(world, command, resource_type, worker)
+        if resource is None:
+            self._request_reassignment_or_idle(world, worker, command, resource_type)
             return
         command.payload["current_resource_id"] = resource.id.to_json()
         command.payload["phase"] = GATHER_STATE_MOVING_TO_RESOURCE
@@ -223,33 +487,9 @@ class EconomySystem:
         while elapsed >= self.gather_swing_ms and swings < GATHER_SWINGS_PER_LOAD:
             elapsed -= self.gather_swing_ms
             if not active_resource(resource):
-                replacement = find_nearest_resource_node(
-                    world,
-                    worker.id,
-                    worker.position,
-                    resource_type,
-                    safe=False,
-                )
-                if replacement is None:
-                    command.payload["successful_swings"] = swings
-                    command.payload["swing_elapsed_ms"] = elapsed
-                    if self._should_wait_for_resource_respawn(world, command, resource_type):
-                        command.payload["phase"] = GATHER_STATE_IDLE
-                        _set_state(worker, GATHER_STATE_IDLE)
-                        return
-                    _clear_gather_job(worker, queue)
-                    return
-                resource = replacement
-                command.payload["current_resource_id"] = resource.id.to_json()
-                interaction_point = resource_interaction_position(world, resource, worker.id)
-                _insert_move_before_gather(
-                    queue,
-                    worker.id,
-                    interaction_point,
-                    command,
-                    _move_key("resource", resource.id),
-                )
-                _set_state(worker, GATHER_STATE_RETURNING_TO_RESOURCE)
+                command.payload["successful_swings"] = swings
+                command.payload["swing_elapsed_ms"] = elapsed
+                self._request_reassignment_or_idle(world, worker, command, resource_type)
                 return
             _damage_resource(world, resource, GATHER_DAMAGE_PER_SWING)
             swings += 1
@@ -307,11 +547,7 @@ class EconomySystem:
 
         resource = _current_or_replacement_resource(world, command, resource_type, worker)
         if resource is None:
-            if self._should_wait_for_resource_respawn(world, command, resource_type):
-                command.payload["phase"] = GATHER_STATE_IDLE
-                _set_state(worker, GATHER_STATE_IDLE)
-                return
-            _clear_gather_job(worker, queue)
+            self._request_reassignment_or_idle(world, worker, command, resource_type)
             return
         command.payload["current_resource_id"] = resource.id.to_json()
         interaction_point = resource_interaction_position(world, resource, worker.id)
@@ -323,6 +559,32 @@ class EconomySystem:
             _move_key("resource", resource.id),
         )
         _set_state(worker, GATHER_STATE_RETURNING_TO_RESOURCE)
+
+    def _request_reassignment_or_idle(
+        self,
+        world: WorldState,
+        worker: object,
+        command: Command,
+        resource_type: str,
+    ) -> None:
+        if (
+            not cached_active_resource_nodes(world, resource_type)
+            and self._should_wait_for_resource_respawn(world, command, resource_type)
+        ):
+            command.payload["phase"] = GATHER_STATE_IDLE
+            _set_state(worker, GATHER_STATE_IDLE)
+            return
+        self._queue_gather_reassignment(worker, command, resource_type)
+        command.payload["phase"] = GATHER_STATE_IDLE
+        _set_state(worker, GATHER_STATE_IDLE)
+
+    def _assignment_job_pending(self, gatherer_id: EntityId, resource_type: str) -> bool:
+        return any(
+            job.gatherer_id == gatherer_id
+            and job.resource_type == resource_type
+            and job.existing_command
+            for job in self.gather_assignment_jobs
+        )
 
     def _update_resource_lifecycle(self, world: WorldState, dt_ms: int) -> None:
         for resource in list(world.entities.values()):
@@ -383,11 +645,13 @@ class EconomySystem:
         return len(active_resource_nodes(world, resource_type))
 
     def _cap_for(self, resource_type: str) -> int:
+        resource_type = normalize_resource_type(resource_type)
         if resource_type == "wood":
             return self.max_active_trees
         return self.max_nodes_by_type.get(resource_type, 0)
 
     def _respawn_delay_for(self, resource_type: str) -> int:
+        resource_type = normalize_resource_type(resource_type)
         if resource_type == "wood":
             return self.tree_respawn_delay_ms
         if resource_type == "stone":
@@ -515,24 +779,34 @@ def assign_auto_gather_targets(
     *,
     owner: str = "frontier",
 ) -> tuple[dict[EntityId, ResourceNode], str | None]:
+    resource_type = normalize_resource_type(resource_type)
     if not completed_deposit_huts(world, owner):
         return {}, "Needs hut to deposit."
 
-    safe_nodes = [
-        node for node in active_resource_nodes(world, resource_type)
-        if resource_node_safe_for_auto_gather(world, node, owner)
-    ]
-    if not safe_nodes:
+    if not cached_active_resource_nodes(world, resource_type):
         return {}, f"No safe {display_resource_name(resource_type).lower()} source found."
 
-    assigned_counts: dict[EntityId, int] = {node.id: 0 for node in safe_nodes}
     assignments: dict[EntityId, ResourceNode] = {}
+    assigned_counts: dict[EntityId, int] = _active_gather_load(world, resource_type)
     for gatherer_id in gatherer_ids:
         gatherer = world.entities.get(gatherer_id)
         if gatherer is None:
             continue
+        candidates = closest_resource_candidates(
+            world,
+            resource_type,
+            gatherer.position,
+            max_candidates=MAX_RESOURCE_CANDIDATES_TO_PATHCHECK,
+            safety_checker=lambda node: resource_node_safe_for_auto_gather(
+                world,
+                node,
+                owner,
+            ),
+        )
+        if not candidates:
+            continue
         node = min(
-            safe_nodes,
+            candidates,
             key=lambda candidate: (
                 estimated_travel_distance(
                     world,
@@ -545,6 +819,8 @@ def assign_auto_gather_targets(
         )
         assigned_counts[node.id] += 1
         assignments[gatherer_id] = node
+    if not assignments:
+        return {}, f"No safe {display_resource_name(resource_type).lower()} source found."
     return assignments, None
 
 
@@ -557,16 +833,22 @@ def find_nearest_resource_node(
     safe: bool,
     owner: str = "frontier",
 ) -> ResourceNode | None:
-    nodes = active_resource_nodes(world, resource_type)
-    if safe:
-        nodes = [
-            node for node in nodes
-            if resource_node_safe_for_auto_gather(world, node, owner)
-        ]
-    if not nodes:
+    resource_type = normalize_resource_type(resource_type)
+    candidates = closest_resource_candidates(
+        world,
+        resource_type,
+        origin,
+        max_candidates=MAX_RESOURCE_CANDIDATES_TO_PATHCHECK,
+        safety_checker=(
+            lambda node: resource_node_safe_for_auto_gather(world, node, owner)
+            if safe
+            else True
+        ),
+    )
+    if not candidates:
         return None
     return min(
-        nodes,
+        candidates,
         key=lambda node: estimated_travel_distance(
             world,
             entity_id,
@@ -580,13 +862,92 @@ def active_resource_nodes(
     world: WorldState,
     resource_type: str | None = None,
 ) -> list[ResourceNode]:
-    return [
-        entity
-        for entity in world.entities.values()
-        if isinstance(entity, ResourceNode)
-        and active_resource(entity)
-        and (resource_type is None or entity.resource_type == resource_type)
-    ]
+    return cached_active_resource_nodes(world, resource_type)
+
+
+def cached_active_resource_nodes(
+    world: WorldState,
+    resource_type: str | None = None,
+) -> list[ResourceNode]:
+    indexed_ids = _cached_resource_ids(world, resource_type)
+    if indexed_ids is None:
+        normalized = normalize_resource_type(resource_type) if resource_type is not None else None
+        return [
+            entity
+            for entity in world.entities.values()
+            if isinstance(entity, ResourceNode)
+            and active_resource(entity)
+            and (normalized is None or entity.resource_type == normalized)
+        ]
+    nodes: list[ResourceNode] = []
+    for entity_id in indexed_ids:
+        entity = world.entities.get(entity_id)
+        if not isinstance(entity, ResourceNode) or not active_resource(entity):
+            continue
+        if (
+            resource_type is not None
+            and entity.resource_type != normalize_resource_type(resource_type)
+        ):
+            continue
+        nodes.append(entity)
+    return nodes
+
+
+def closest_resource_candidates(
+    world: WorldState,
+    resource_type: str,
+    origin: WorldPosition,
+    *,
+    max_candidates: int = MAX_RESOURCE_CANDIDATES_TO_PATHCHECK,
+    safety_checker: Callable[[ResourceNode], bool] | None = None,
+    stats: GatherPerformanceCounters | None = None,
+) -> list[ResourceNode]:
+    ordered = sorted(
+        cached_active_resource_nodes(world, resource_type),
+        key=lambda node: _cheap_distance_sq(origin, node.position),
+    )
+    candidates: list[ResourceNode] = []
+    for node in ordered:
+        if stats is not None:
+            stats.resource_candidates_checked += 1
+        if safety_checker is not None and not safety_checker(node):
+            continue
+        candidates.append(node)
+        if len(candidates) >= max(1, int(max_candidates)):
+            break
+    return candidates
+
+
+def issue_gather_command(
+    world: WorldState,
+    resource: ResourceNode,
+    gatherer_id: EntityId,
+    *,
+    queued: bool,
+    manual: bool,
+) -> None:
+    interaction_point = resource_interaction_position(
+        world,
+        resource,
+        gatherer_id,
+    )
+    world.enqueue_command(
+        gatherer_id,
+        make_command("move", [gatherer_id], target_pos=interaction_point, queued=queued),
+    )
+    world.enqueue_command(
+        gatherer_id,
+        make_command(
+            "gather",
+            [gatherer_id],
+            target_entity_id=resource.id,
+            target_pos=interaction_point,
+            queued=True,
+            resource_type=resource.resource_type,
+            current_resource_id=resource.id.to_json(),
+            manual=manual,
+        ),
+    )
 
 
 def active_resource(resource: ResourceNode) -> bool:
@@ -659,13 +1020,17 @@ def estimated_travel_distance(
 
 
 def display_resource_name(resource_type: str) -> str:
-    return "ore" if resource_type == "iron" else resource_type
+    return "ore" if normalize_resource_type(resource_type) == "iron" else resource_type
+
+
+def normalize_resource_type(resource_type: str) -> str:
+    return "iron" if resource_type == "ore" else resource_type
 
 
 def _command_resource_type(world: WorldState, command: Command) -> str | None:
     value = command.payload.get("resource_type")
     if isinstance(value, str):
-        return value
+        return normalize_resource_type(value)
     resource = _resource_target(world, command.target_entity_id)
     return resource.resource_type if resource is not None else None
 
@@ -690,14 +1055,7 @@ def _current_or_replacement_resource(
         and resource.resource_type == resource_type
     ):
         return resource
-    return find_nearest_resource_node(
-        world,
-        worker.id,
-        worker.position,
-        resource_type,
-        safe=False,
-        owner=worker.owner,
-    )
+    return None
 
 
 def _damage_resource(world: WorldState, resource: ResourceNode, amount: int) -> None:
@@ -708,6 +1066,7 @@ def _damage_resource(world: WorldState, resource: ResourceNode, amount: int) -> 
     resource.amount_remaining = 0
     resource.state = "destroying"
     resource.destruction_remaining_ms = RESOURCE_DESTRUCTION_MS
+    world.unindex_resource_node(resource.id)
     for queue in world.command_queues.values():
         for command in queue.commands:
             if (
@@ -749,11 +1108,84 @@ def _resource_target(world: WorldState, target_id: EntityId | None) -> ResourceN
     return target if isinstance(target, ResourceNode) else None
 
 
+def _gather_target_type_invalid(
+    world: WorldState,
+    command: Command,
+    resource_type: str,
+) -> bool:
+    for target_id in (
+        _payload_entity_id(command, "current_resource_id"),
+        command.target_entity_id,
+    ):
+        resource = _resource_target(world, target_id)
+        if resource is not None and resource.resource_type != resource_type:
+            return True
+    return False
+
+
 def _payload_entity_id(command: Command, key: str) -> EntityId | None:
     value = command.payload.get(key)
     if value is None:
         return None
     return EntityId(int(value))
+
+
+def _cached_resource_ids(
+    world: WorldState,
+    resource_type: str | None,
+) -> list[EntityId] | None:
+    cache = getattr(world, "resource_nodes_by_type", None)
+    if cache is None:
+        return None
+    if resource_type is not None:
+        return list(cache.get(normalize_resource_type(resource_type), []))
+    ids: list[EntityId] = []
+    seen: set[EntityId] = set()
+    for bucket in cache.values():
+        for entity_id in bucket:
+            if entity_id in seen:
+                continue
+            seen.add(entity_id)
+            ids.append(entity_id)
+    return ids
+
+
+def _active_gather_load(world: WorldState, resource_type: str) -> dict[EntityId, int]:
+    normalized = normalize_resource_type(resource_type)
+    counts: dict[EntityId, int] = {
+        node.id: 0 for node in cached_active_resource_nodes(world, normalized)
+    }
+    for queue in world.command_queues.values():
+        for command in queue.commands:
+            if command.type != "gather":
+                continue
+            target = _resource_target(world, _payload_entity_id(command, "current_resource_id"))
+            if target is None:
+                target = _resource_target(world, command.target_entity_id)
+            if (
+                target is None
+                or not active_resource(target)
+                or target.resource_type != normalized
+                or target.id not in counts
+            ):
+                continue
+            counts[target.id] += 1
+    return counts
+
+
+def _cheap_distance_sq(first: WorldPosition, second: WorldPosition) -> float:
+    dx = first.x - second.x
+    dy = first.y - second.y
+    return (dx * dx) + (dy * dy)
+
+
+def _debug_log_gather_performance(stats: GatherPerformanceCounters) -> None:
+    print(
+        "gather_perf "
+        f"jobs={stats.path_jobs_processed} "
+        f"candidates={stats.resource_candidates_checked} "
+        f"paths={stats.full_path_calculations}"
+    )
 
 
 def _clear_gather_job(worker: object, queue: CommandQueue) -> None:

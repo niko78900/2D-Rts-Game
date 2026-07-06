@@ -544,7 +544,7 @@ def test_runtime_build_button_replaces_unit_actions_with_build_choices() -> None
 
         assert runtime.build_menu_open is True
         assert runtime.active_building_placement is None
-        assert runtime._ability_override() == ("Hut", "Back")
+        assert runtime._ability_override() == ("Hut", "Chicken Farm", "Pig Farm", "Back")
     finally:
         runtime.shutdown()
 
@@ -560,7 +560,7 @@ def test_runtime_build_hotkey_opens_build_menu() -> None:
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_b}))
 
         assert runtime.build_menu_open is True
-        assert runtime._ability_override() == ("Hut", "Back")
+        assert runtime._ability_override() == ("Hut", "Chicken Farm", "Pig Farm", "Back")
     finally:
         runtime.shutdown()
 
@@ -599,7 +599,7 @@ def test_runtime_command_slot_build_hotkey_works_for_settler_only_selection() ->
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_z}))
 
         assert runtime.build_menu_open is True
-        assert runtime._ability_override() == ("Hut", "Back")
+        assert runtime._ability_override() == ("Hut", "Chicken Farm", "Pig Farm", "Back")
     finally:
         runtime.shutdown()
 
@@ -627,6 +627,36 @@ def test_runtime_hut_build_choice_enters_placement_mode() -> None:
 
         assert runtime.build_menu_open is False
         assert runtime.active_building_placement == "hut"
+        assert runtime._ability_override() == ("Cancel",)
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_chicken_farm_build_choice_enters_placement_mode() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        runtime.selection_system.state.replace([settler.id])
+        runtime.build_menu_open = True
+
+        runtime.handle_event(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {
+                    "button": 1,
+                    "pos": override_ability_center(
+                        runtime,
+                        "Chicken Farm",
+                        ("Hut", "Chicken Farm", "Pig Farm", "Back"),
+                    ),
+                },
+            )
+        )
+
+        assert runtime.build_menu_open is False
+        assert runtime.active_building_placement == "chicken_farm"
         assert runtime._ability_override() == ("Cancel",)
     finally:
         runtime.shutdown()
@@ -803,6 +833,7 @@ def test_runtime_gather_button_auto_queues_move_and_gather() -> None:
                 {"button": 1, "pos": ability_center(runtime, "Gather Wood")},
             )
         )
+        runtime.update(16)
 
         commands = runtime.world.command_queues[settler.id].commands
         assert [command.type for command in commands[:2]] == ["move", "gather"]
@@ -826,6 +857,7 @@ def test_runtime_gather_hotkey_auto_queues_gather_gold_command() -> None:
         runtime.selection_system.state.replace([settler.id])
 
         runtime.handle_event(pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_g}))
+        runtime.update(16)
 
         commands = runtime.world.command_queues[settler.id].commands
         assert [command.type for command in commands[:2]] == ["move", "gather"]
@@ -1186,6 +1218,65 @@ def test_runtime_right_click_incomplete_building_orders_selected_settlers_to_ass
             assert [command.type for command in commands[:2]] == ["move", "build"]
             assert commands[1].target_entity_id == site.id
             assert commands[1].payload["building_id"] == "hut"
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_chicken_farm_placement_spends_cost_and_creates_site() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        runtime.selection_system.state.replace([settler.id])
+        runtime.active_building_placement = "chicken_farm"
+        starting_wood = runtime.world.resources["wood"]
+        layout = terrain_layout_for_height(runtime.world.settings.world_height)
+        click_pos = (980, round((layout.building_lane_top_y + layout.building_lane_bottom_y) / 2))
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": click_pos})
+        )
+
+        farms = [
+            entity
+            for entity in runtime.world.entities.values()
+            if "chicken_farm" in entity.tags
+        ]
+        farm = max(farms, key=lambda entity: int(entity.id))
+        commands = runtime.world.command_queues[settler.id].commands
+
+        assert runtime.world.resources["wood"] == starting_wood - 75
+        assert farm.complete is False
+        assert farm.max_hp == 75
+        assert commands[1].payload["building_id"] == "chicken_farm"
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_right_click_completed_farm_assigns_selected_settler() -> None:
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        runtime.selection_system.state.replace([settler.id])
+        farm = runtime._create_building_construction_site(
+            "chicken_farm",
+            WorldPosition(920, 300),
+        )
+        farm.complete = True
+        farm.hp = farm.max_hp
+        screen_pos = runtime.world.camera.world_to_screen(
+            WorldPosition(farm.position.x, farm.position.y - 30)
+        )
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3, "pos": screen_pos})
+        )
+
+        assert farm.functions["assigned_worker_id"] == settler.id.to_json()
+        assert runtime.world.notifications[-1].message == "Assigned worker to farm."
     finally:
         runtime.shutdown()
 

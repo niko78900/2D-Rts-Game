@@ -18,6 +18,7 @@ from house_of_wolves.systems.economy import (
     GOLD_RESPAWN_DELAY_MS,
     MAX_ACTIVE_GOLD_NODES,
     MAX_ACTIVE_TREES,
+    MAX_RESOURCE_CANDIDATES_TO_PATHCHECK,
     RESPAWN_AVOID_RADIUS,
     RESPAWN_RETRY_MS,
     TREE_RESPAWN_DELAY_MS,
@@ -25,6 +26,7 @@ from house_of_wolves.systems.economy import (
     ResourceRespawn,
     active_resource_nodes,
     assign_auto_gather_targets,
+    cached_active_resource_nodes,
     completed_deposit_huts,
     hut_deposit_position,
     resource_interaction_position,
@@ -196,6 +198,54 @@ def test_auto_gather_redistributes_settlers_across_safe_nodes() -> None:
     assert len({resource.id for resource in assignments.values()}) == 2
 
 
+def test_resource_node_cache_updates_when_nodes_are_added_and_removed() -> None:
+    world = create_demo_world()
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+
+    world.remove_entity(tree.id)
+
+    assert tree.id not in world.resource_nodes_by_type["wood"]
+    assert len(cached_active_resource_nodes(world, "wood")) == MAX_ACTIVE_TREES - 1
+
+    replacement = _add_extra_resource_node(world, "wood", tree.position)
+
+    assert replacement.id in world.resource_nodes_by_type["wood"]
+    assert len(cached_active_resource_nodes(world, "wood")) == MAX_ACTIVE_TREES
+
+
+def test_auto_gather_assignment_jobs_are_budgeted_across_frames() -> None:
+    world = create_demo_world()
+    settlers = [entity for entity in world.entities.values() if "settler" in entity.tags]
+    first = settlers[0]
+    second = _add_settler_like(world, WorldPosition(first.position.x + 34, first.position.y))
+    third = _add_settler_like(world, WorldPosition(first.position.x + 68, first.position.y))
+    gatherer_ids = [first.id, second.id, third.id]
+    system = EconomySystem(max_path_jobs_per_frame=2)
+
+    message = system.queue_auto_gather(world, gatherer_ids, "wood")
+
+    assert message is None
+    assert all(not world.command_queues[gatherer_id].commands for gatherer_id in gatherer_ids)
+
+    system.update(world, 16)
+
+    assigned_after_first_frame = [
+        gatherer_id
+        for gatherer_id in gatherer_ids
+        if world.command_queues[gatherer_id].commands
+    ]
+    assert len(assigned_after_first_frame) == 2
+    assert system.last_frame_stats.path_jobs_processed == 2
+    assert system.last_frame_stats.full_path_calculations <= (
+        2 * MAX_RESOURCE_CANDIDATES_TO_PATHCHECK
+    )
+
+    system.update(world, 16)
+
+    assert all(world.command_queues[gatherer_id].commands for gatherer_id in gatherer_ids)
+    assert system.last_frame_stats.path_jobs_processed == 1
+
+
 def test_destroyed_tree_respawns_after_exact_delay() -> None:
     world = create_demo_world()
     tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
@@ -273,6 +323,7 @@ def test_wood_gatherer_waits_for_new_tree_when_none_are_active() -> None:
     assert settler.state == "idle"
 
     world.elapsed_ms = TREE_RESPAWN_DELAY_MS
+    system.update(world, 16)
     system.update(world, 16)
 
     commands = world.command_queues[settler.id].commands

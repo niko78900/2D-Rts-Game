@@ -34,9 +34,15 @@ from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.construction import ConstructionSystem, starting_construction_hp
 from house_of_wolves.systems.economy import (
     EconomySystem,
-    assign_auto_gather_targets,
     completed_deposit_huts,
-    resource_interaction_position,
+    issue_gather_command,
+)
+from house_of_wolves.systems.farming import (
+    CHICKEN_FARM_ID,
+    FARM_BUILDING_SPECS,
+    PIG_FARM_ID,
+    FarmSystem,
+    is_farm_building,
 )
 from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.systems.movement import MovementSystem
@@ -56,7 +62,12 @@ HUT_BUILDING_ID = "hut"
 HUT_FOOTPRINT = Footprint(150, 116)
 HUT_MAX_HP = 650
 HUT_BUILD_TIME_MS = 12_000
-BUILD_MENU_ABILITIES = ("Hut", "Back")
+BUILD_MENU_ABILITIES = ("Hut", "Chicken Farm", "Pig Farm", "Back")
+BUILDING_ID_BY_BUILD_ABILITY = {
+    "Hut": HUT_BUILDING_ID,
+    "Chicken Farm": CHICKEN_FARM_ID,
+    "Pig Farm": PIG_FARM_ID,
+}
 PLACEMENT_MENU_ABILITIES = ("Cancel",)
 GATHER_RESOURCE_TYPES = {
     "Gather Wood": "wood",
@@ -85,6 +96,7 @@ class GameRuntime:
     combat_system: CombatSystem = field(default_factory=CombatSystem)
     construction_system: ConstructionSystem = field(default_factory=ConstructionSystem)
     economy_system: EconomySystem = field(default_factory=EconomySystem)
+    farm_system: FarmSystem = field(default_factory=FarmSystem)
     running: bool = False
     screen: pygame.Surface | None = None
     clock: pygame.time.Clock | None = None
@@ -265,6 +277,9 @@ class GameRuntime:
             self.active_building_placement = None
             self._stop_selected_units()
             return True
+        if ability == "Unassign Worker":
+            self._unassign_selected_farm_worker()
+            return True
         if ability == "Build":
             if not self._selected_builder_ids():
                 return True
@@ -293,9 +308,10 @@ class GameRuntime:
         if ability == "Back":
             self.build_menu_open = False
             return True
-        if ability == "Hut":
+        building_id = BUILDING_ID_BY_BUILD_ABILITY.get(ability)
+        if building_id is not None:
             self.build_menu_open = False
-            self.active_building_placement = HUT_BUILDING_ID
+            self.active_building_placement = building_id
             return True
         return True
 
@@ -344,14 +360,17 @@ class GameRuntime:
             and self.renderer.panel_contains(self.screen, screen_pos)
         ):
             return True
-        if self.active_building_placement != HUT_BUILDING_ID:
-            return True
+        building_id = self.active_building_placement
+        if building_id is None:
+            return False
         world_pos = self.world.camera.screen_to_world(*screen_pos)
-        if not self._valid_hut_placement_at(world_pos):
+        if not self._valid_building_placement_at(building_id, world_pos):
             return True
-        hut = self._create_hut_construction_site(world_pos)
+        if not self._spend_building_cost(building_id):
+            return True
+        site = self._create_building_construction_site(building_id, world_pos)
         queued = _shift_pressed()
-        self._order_selected_builders_to_site(hut, queued=queued)
+        self._order_selected_builders_to_site(site, queued=queued)
         if not queued:
             self.active_building_placement = None
         return True
@@ -456,6 +475,9 @@ class GameRuntime:
                 return False
             if not entity.complete:
                 self._order_selected_builders_to_site(entity, queued=queued)
+                return True
+            if is_farm_building(entity):
+                self._assign_selected_worker_to_farm(entity)
                 return True
             if _needs_repair(entity):
                 self._order_selected_repairers_to_site(entity, queued=queued)
@@ -638,6 +660,7 @@ class GameRuntime:
         self.movement_system.update(self.world, dt_ms)
         self.construction_system.update(self.world, dt_ms)
         self.economy_system.update(self.world, dt_ms)
+        self.farm_system.update(self.world, dt_ms)
         self.world.update_notifications(dt_ms)
 
     def render(self) -> None:
@@ -890,7 +913,7 @@ class GameRuntime:
         self.active_command_ability = None
         self.build_menu_open = False
         self.active_building_placement = None
-        assignments, message = assign_auto_gather_targets(
+        message = self.economy_system.queue_auto_gather(
             self.world,
             gatherer_ids,
             resource_type,
@@ -899,13 +922,6 @@ class GameRuntime:
         if message is not None:
             self.world.notify(message)
             return
-        for gatherer_id, resource in assignments.items():
-            self._order_gatherer_to_resource(
-                resource,
-                gatherer_id,
-                queued=False,
-                manual=False,
-            )
 
     def _stop_selected_units(self) -> None:
         for entity_id in self._selected_player_movable_unit_ids():
@@ -950,25 +966,34 @@ class GameRuntime:
         return builder_ids
 
     def _placement_preview(self) -> BuildingPlacementPreview | None:
-        if self.active_building_placement != HUT_BUILDING_ID:
+        building_id = self.active_building_placement
+        if building_id is None:
             return None
         position = self.world.camera.screen_to_world(*self.mouse_screen_pos)
-        snapped_position = self._snapped_hut_position(position)
+        footprint = self._building_footprint(building_id)
+        snapped_position = self._snapped_building_position(position)
         return BuildingPlacementPreview(
-            building_id=HUT_BUILDING_ID,
+            building_id=building_id,
             position=snapped_position,
-            footprint=HUT_FOOTPRINT,
-            valid=self._valid_hut_placement_at(position),
+            footprint=footprint,
+            valid=self._valid_building_placement_at(building_id, position),
         )
 
     def _valid_hut_placement_at(self, position: WorldPosition) -> bool:
-        snapped = self._snapped_hut_position(position)
-        half_width = HUT_FOOTPRINT.width / 2
+        return self._valid_building_placement_at(HUT_BUILDING_ID, position)
+
+    def _valid_building_placement_at(self, building_id: str, position: WorldPosition) -> bool:
+        footprint = self._building_footprint(building_id)
+        snapped = self._snapped_building_position(position)
+        half_width = footprint.width / 2
         if snapped.x < half_width or snapped.x > self.world.settings.world_width - half_width:
             return False
-        return not self._building_overlaps_existing_building(snapped, HUT_FOOTPRINT)
+        return not self._building_overlaps_existing_building(snapped, footprint)
 
     def _snapped_hut_position(self, position: WorldPosition) -> WorldPosition:
+        return self._snapped_building_position(position)
+
+    def _snapped_building_position(self, position: WorldPosition) -> WorldPosition:
         layout = terrain_layout_for_height(self.world.settings.world_height)
         return WorldPosition(position.x, layout.building_lane_bottom_y)
 
@@ -986,29 +1011,79 @@ class GameRuntime:
         return False
 
     def _create_hut_construction_site(self, position: WorldPosition) -> Building:
-        build_position = self._snapped_hut_position(position)
-        hut = Building(
+        return self._create_building_construction_site(HUT_BUILDING_ID, position)
+
+    def _create_building_construction_site(
+        self,
+        building_id: str,
+        position: WorldPosition,
+    ) -> Building:
+        build_position = self._snapped_building_position(position)
+        if building_id == HUT_BUILDING_ID:
+            building = Building(
+                id=self.world.allocate_entity_id(),
+                owner="frontier",
+                position=build_position,
+                footprint=HUT_FOOTPRINT,
+                hp=starting_construction_hp(HUT_MAX_HP),
+                max_hp=HUT_MAX_HP,
+                tags=("building", "hut", "selectable"),
+                build_time_ms=HUT_BUILD_TIME_MS,
+                complete=False,
+                functions=Building.production_functions(
+                    dropoff=True,
+                    population_cap_bonus=self.settings.hut_pop_cap_bonus,
+                    trainable_units=("settler", "spearman"),
+                ),
+                dropoff_point=WorldPosition(
+                    build_position.x + 220,
+                    terrain_layout_for_height(
+                        self.world.settings.world_height
+                    ).unit_walkable_top_y,
+                ),
+            )
+            self.world.add_entity(building)
+            return building
+
+        spec = FARM_BUILDING_SPECS[building_id]
+        farm = Building(
             id=self.world.allocate_entity_id(),
             owner="frontier",
             position=build_position,
-            footprint=HUT_FOOTPRINT,
-            hp=starting_construction_hp(HUT_MAX_HP),
-            max_hp=HUT_MAX_HP,
-            tags=("building", "hut", "selectable"),
-            build_time_ms=HUT_BUILD_TIME_MS,
+            footprint=spec.footprint,
+            hp=starting_construction_hp(spec.hp),
+            max_hp=spec.hp,
+            tags=("building", building_id, "selectable"),
+            build_time_ms=spec.build_time_ms,
             complete=False,
-            functions=Building.production_functions(
-                dropoff=True,
-                population_cap_bonus=self.settings.hut_pop_cap_bonus,
-                trainable_units=("settler", "spearman"),
-            ),
-            dropoff_point=WorldPosition(
-                build_position.x + 220,
-                terrain_layout_for_height(self.world.settings.world_height).unit_walkable_top_y,
-            ),
+            functions={
+                "farm_type": spec.farm_type,
+                "farm_state": "idle_no_worker",
+                "food_output": spec.animal_food_yield,
+            },
         )
-        self.world.add_entity(hut)
-        return hut
+        self.world.add_entity(farm)
+        return farm
+
+    def _building_footprint(self, building_id: str) -> Footprint:
+        if building_id == HUT_BUILDING_ID:
+            return HUT_FOOTPRINT
+        return FARM_BUILDING_SPECS[building_id].footprint
+
+    def _building_cost(self, building_id: str) -> dict[str, int]:
+        if building_id == HUT_BUILDING_ID:
+            return {}
+        return FARM_BUILDING_SPECS[building_id].cost
+
+    def _spend_building_cost(self, building_id: str) -> bool:
+        cost = self._building_cost(building_id)
+        for resource, amount in cost.items():
+            if self.world.resources.get(resource, 0) < amount:
+                self.world.notify(f"Needs {resource}.")
+                return False
+        for resource, amount in cost.items():
+            self.world.resources[resource] = self.world.resources.get(resource, 0) - amount
+        return True
 
     def _order_selected_builders_to_site(self, hut: Building, *, queued: bool = False) -> None:
         builder_ids = self._selected_builder_ids()
@@ -1050,9 +1125,25 @@ class GameRuntime:
                 target_entity_id=hut.id,
                 target_pos=interaction_point,
                 queued=True,
-                building_id=HUT_BUILDING_ID,
+                building_id=_building_id_for_site(hut),
             ),
         )
+
+    def _assign_selected_worker_to_farm(self, farm: Building) -> None:
+        builder_ids = self._selected_builder_ids()
+        if not builder_ids:
+            return
+        message = self.farm_system.assign_worker(self.world, farm, builder_ids[0])
+        if message is not None:
+            self.world.notify(message)
+
+    def _unassign_selected_farm_worker(self) -> None:
+        if len(self.selection_system.state.selected_ids) != 1:
+            return
+        entity = self.world.entities.get(self.selection_system.state.selected_ids[0])
+        if not isinstance(entity, Building) or not is_farm_building(entity):
+            return
+        self.farm_system.unassign_farm(self.world, entity)
 
     def _order_selected_repairers_to_site(
         self,
@@ -1113,27 +1204,12 @@ class GameRuntime:
         queued: bool,
         manual: bool,
     ) -> None:
-        interaction_point = resource_interaction_position(
+        issue_gather_command(
             self.world,
             resource,
             gatherer_id,
-        )
-        self.world.enqueue_command(
-            gatherer_id,
-            make_command("move", [gatherer_id], target_pos=interaction_point, queued=queued),
-        )
-        self.world.enqueue_command(
-            gatherer_id,
-            make_command(
-                "gather",
-                [gatherer_id],
-                target_entity_id=resource.id,
-                target_pos=interaction_point,
-                queued=True,
-                resource_type=resource.resource_type,
-                current_resource_id=resource.id.to_json(),
-                manual=manual,
-            ),
+            queued=queued,
+            manual=manual,
         )
 
     def _builder_interaction_point(
@@ -1259,3 +1335,10 @@ def _bounds_intersect(
 def _needs_repair(building: Building) -> bool:
     max_hp = int(getattr(building, "max_hp", 0) or getattr(building, "hp", 0))
     return max_hp > 0 and building.hp < max_hp
+
+
+def _building_id_for_site(building: Building) -> str:
+    for building_id in (HUT_BUILDING_ID, CHICKEN_FARM_ID, PIG_FARM_ID):
+        if building_id in building.tags:
+            return building_id
+    return HUT_BUILDING_ID

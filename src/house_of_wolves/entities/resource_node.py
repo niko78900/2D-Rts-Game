@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from house_of_wolves.core.contracts import Footprint
+from house_of_wolves.core.contracts import EntityId, Footprint
 from house_of_wolves.entities.base import Entity
 
 WOOD_RESOURCE_HP = 150
@@ -31,6 +31,7 @@ class ResourceNode(Entity):
     state: str = "active"
     destruction_remaining_ms: int = 0
     respawn_enabled: bool = True
+    source_entity_id: EntityId | None = None
 
     @property
     def blocking_bounds(self) -> tuple[float, float, float, float]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from math import hypot
+from pathlib import Path
 
 import pygame
 
@@ -51,6 +52,11 @@ HUT_CONSTRUCTION_SPRITES = {
     HUT_STAGE_PARTIAL: "assets/art/buildings/hut_partial.png",
     HUT_STAGE_COMPLETE: "assets/art/buildings/hut_complete.png",
 }
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ANIMAL_SPRITE_PATHS = {
+    "chicken": PROJECT_ROOT / "assets" / "art" / "resources" / "chicken.png",
+    "pig": PROJECT_ROOT / "assets" / "art" / "resources" / "pig.png",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,12 +100,19 @@ class GameRenderer:
     settings: AppSettings
     font: pygame.font.Font = field(init=False)
     small_font: pygame.font.Font = field(init=False)
+    animal_sprites: dict[str, pygame.Surface] = field(init=False, repr=False)
+    _scaled_sprite_cache: dict[tuple[str, tuple[int, int]], pygame.Surface] = field(
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         if not pygame.font.get_init():
             pygame.font.init()
         self.font = pygame.font.Font(None, 24)
         self.small_font = pygame.font.Font(None, 18)
+        self.animal_sprites = _load_animal_sprites()
+        self._scaled_sprite_cache = {}
 
     def render(
         self,
@@ -199,7 +212,7 @@ class GameRenderer:
                 if self.settings.show_building_hitboxes:
                     self._draw_entity_hitbox(surface, rect, "building")
             elif "resource" in tags:
-                self._draw_resource(surface, rect, entity.tags)
+                self._draw_resource(surface, rect, entity)
                 if self.settings.show_resource_hitboxes:
                     self._draw_resource_hitbox(surface, world, entity)
             else:
@@ -211,7 +224,11 @@ class GameRenderer:
                 self._draw_selection(surface, rect, enemy=_is_enemy_entity(entity))
 
     def _draw_unit(self, surface: pygame.Surface, rect: pygame.Rect, entity: object) -> None:
-        tags = tuple(getattr(entity, "tags", ()))
+        tags = (
+            tuple(entity)
+            if isinstance(entity, tuple)
+            else tuple(getattr(entity, "tags", ()))
+        )
         color = (86, 145, 92)
         if getattr(entity, "owner", "frontier") != "frontier":
             color = (169, 76, 68)
@@ -228,8 +245,40 @@ class GameRenderer:
         self,
         surface: pygame.Surface,
         rect: pygame.Rect,
-        tags: tuple[str, ...],
+        entity: object,
     ) -> None:
+        tags = tuple(entity) if isinstance(entity, tuple) else tuple(getattr(entity, "tags", ()))
+        if "chicken" in tags:
+            if self._draw_animal_sprite(surface, rect, "chicken"):
+                return
+            pygame.draw.ellipse(surface, (246, 241, 212), rect)
+            pygame.draw.circle(surface, (238, 195, 77), (rect.right - 4, rect.centery - 2), 4)
+            pygame.draw.line(
+                surface,
+                (144, 96, 42),
+                rect.midbottom,
+                (rect.centerx - 4, rect.bottom + 4),
+                2,
+            )
+            pygame.draw.line(
+                surface,
+                (144, 96, 42),
+                rect.midbottom,
+                (rect.centerx + 4, rect.bottom + 4),
+                2,
+            )
+            return
+        if "pig" in tags:
+            if self._draw_animal_sprite(surface, rect, "pig"):
+                return
+            pygame.draw.ellipse(surface, (219, 130, 149), rect)
+            pygame.draw.circle(surface, (236, 154, 169), (rect.right - 6, rect.centery), 6)
+            pygame.draw.rect(surface, (83, 50, 55), rect, width=1, border_radius=5)
+            return
+        if "food_carcass" in tags:
+            pygame.draw.ellipse(surface, (151, 91, 70), rect.inflate(4, -4))
+            pygame.draw.line(surface, (224, 205, 158), rect.midleft, rect.midright, 2)
+            return
         if "wood_tree" in tags:
             trunk = pygame.Rect(rect.centerx - 8, rect.bottom - 45, 16, 45)
             pygame.draw.rect(surface, (93, 61, 42), trunk)
@@ -243,6 +292,24 @@ class GameRenderer:
                 inner_color = (154, 154, 148)
             pygame.draw.ellipse(surface, (112, 102, 82), rect)
             pygame.draw.ellipse(surface, inner_color, rect.inflate(-30, -24))
+
+    def _draw_animal_sprite(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        sprite_id: str,
+    ) -> bool:
+        sprite = self.animal_sprites.get(sprite_id)
+        if sprite is None:
+            return False
+        target_size = _sprite_target_size(sprite, rect)
+        cache_key = (sprite_id, target_size)
+        scaled = self._scaled_sprite_cache.get(cache_key)
+        if scaled is None:
+            scaled = pygame.transform.smoothscale(sprite, target_size)
+            self._scaled_sprite_cache[cache_key] = scaled
+        surface.blit(scaled, scaled.get_rect(center=rect.center))
+        return True
 
     def _draw_resource_hitbox(
         self,
@@ -269,6 +336,14 @@ class GameRenderer:
         entity: object,
     ) -> None:
         tags = tuple(getattr(entity, "tags", ()))
+        if "chicken_farm" in tags:
+            self._draw_chicken_farm(surface, rect, complete=bool(getattr(entity, "complete", True)))
+            self._draw_label(surface, _short_label(tags), rect.center)
+            return
+        if "pig_farm" in tags:
+            self._draw_pig_farm(surface, rect, complete=bool(getattr(entity, "complete", True)))
+            self._draw_label(surface, _short_label(tags), rect.center)
+            return
         stage = hut_construction_stage_for(entity)
         if stage == HUT_STAGE_SCAFFOLDING:
             self._draw_hut_scaffolding(surface, rect)
@@ -309,6 +384,50 @@ class GameRenderer:
         pygame.draw.polygon(surface, (82, 58, 47), roof)
         pygame.draw.rect(surface, (49, 36, 32), rect, width=3, border_radius=4)
 
+    def _draw_chicken_farm(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        *,
+        complete: bool,
+    ) -> None:
+        fill = (132, 93, 58) if complete else (88, 89, 72)
+        pygame.draw.rect(surface, fill, rect, border_radius=4)
+        roof = pygame.Rect(
+            rect.left + 12,
+            rect.top + 10,
+            rect.width - 24,
+            max(10, rect.height // 4),
+        )
+        pygame.draw.rect(surface, (86, 57, 44), roof, border_radius=3)
+        door = pygame.Rect(rect.centerx - 12, rect.bottom - 28, 24, 22)
+        pygame.draw.rect(surface, (42, 35, 30), door, border_radius=2)
+        pygame.draw.rect(surface, (48, 36, 30), rect, width=3, border_radius=4)
+        if not complete:
+            pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
+            pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
+
+    def _draw_pig_farm(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        *,
+        complete: bool,
+    ) -> None:
+        pen_color = (102, 76, 52) if complete else (88, 89, 72)
+        pygame.draw.rect(surface, (83, 112, 67), rect, border_radius=4)
+        for x in range(rect.left + 8, rect.right, 22):
+            pygame.draw.line(surface, pen_color, (x, rect.top + 6), (x, rect.bottom - 6), 4)
+        pygame.draw.rect(surface, pen_color, rect, width=4, border_radius=4)
+        pygame.draw.ellipse(
+            surface,
+            (219, 130, 149),
+            rect.inflate(-rect.width // 2, -rect.height // 2),
+        )
+        if not complete:
+            pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
+            pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
+
     def _draw_building_placement_preview(
         self,
         surface: pygame.Surface,
@@ -323,12 +442,23 @@ class GameRenderer:
         overlay.fill((*color, 42))
         surface.blit(overlay, rect)
         pygame.draw.rect(surface, color, rect, width=3, border_radius=4)
-        roof = [
-            (rect.left - 10, rect.top + 28),
-            (rect.centerx, rect.top - 18),
-            (rect.right + 10, rect.top + 28),
-        ]
-        pygame.draw.polygon(surface, color, roof, width=2)
+        if preview.building_id == "hut":
+            roof = [
+                (rect.left - 10, rect.top + 28),
+                (rect.centerx, rect.top - 18),
+                (rect.right + 10, rect.top + 28),
+            ]
+            pygame.draw.polygon(surface, color, roof, width=2)
+        elif preview.building_id == "pig_farm":
+            pygame.draw.rect(surface, color, rect.inflate(-16, -16), width=2, border_radius=4)
+        else:
+            pygame.draw.line(
+                surface,
+                color,
+                (rect.left + 12, rect.top + 18),
+                (rect.right - 12, rect.top + 18),
+                2,
+            )
         self._draw_label(surface, preview.building_id[:3].upper(), rect.center)
 
     def _draw_selection(
@@ -748,7 +878,7 @@ class GameRenderer:
         )
 
         detail_x = 290
-        for row, detail in enumerate(panel.details[:2]):
+        for row, detail in enumerate(panel.details[:3]):
             self._draw_text(
                 surface,
                 detail,
@@ -846,13 +976,50 @@ def _rect_on_screen(surface: pygame.Surface, rect: pygame.Rect) -> bool:
 
 def _short_label(tags: tuple[str, ...]) -> str:
     for tag in tags:
-        if tag not in {"unit", "resource", "building", "selectable", "movable"}:
+        if tag not in {
+            "unit",
+            "resource",
+            "building",
+            "selectable",
+            "movable",
+            "farm_food",
+            "food_animal",
+            "food_carcass",
+        }:
             return tag[:3].upper()
     return "?"
 
 
 def _is_enemy_entity(entity: object) -> bool:
     return getattr(entity, "owner", "neutral") not in {"frontier", "neutral"}
+
+
+def _load_animal_sprites() -> dict[str, pygame.Surface]:
+    sprites: dict[str, pygame.Surface] = {}
+    for sprite_id, path in ANIMAL_SPRITE_PATHS.items():
+        if not path.exists():
+            continue
+        try:
+            sprites[sprite_id] = pygame.image.load(str(path))
+        except pygame.error:
+            continue
+    return sprites
+
+
+def _sprite_target_size(sprite: pygame.Surface, rect: pygame.Rect) -> tuple[int, int]:
+    box_width = max(1, rect.width * 2)
+    box_height = max(1, rect.height * 2)
+    width, height = sprite.get_size()
+    if width <= 0 or height <= 0:
+        return (max(1, rect.width), max(1, rect.height))
+    aspect = width / height
+    if box_width / box_height > aspect:
+        target_height = box_height
+        target_width = round(target_height * aspect)
+    else:
+        target_width = box_width
+        target_height = round(target_width / aspect)
+    return (max(1, target_width), max(1, target_height))
 
 
 def hut_construction_stage_for(entity: object) -> str:
@@ -877,6 +1044,16 @@ def hut_sprite_reference_for(entity: object) -> str:
 
 def status_bar_for_entity(entity: object) -> StatusBarSpec | None:
     tags = set(getattr(entity, "tags", ()))
+    if "food_animal" in tags:
+        hp = max(0, int(getattr(entity, "hp", 0)))
+        max_hp = int(getattr(entity, "max_hp", 0) or hp)
+        if max_hp <= 0:
+            return None
+        return StatusBarSpec(
+            _ratio(hp, max_hp),
+            HEALTH_FILL,
+            HEALTH_EMPTY,
+        )
     if "resource" in tags:
         amount = max(0, int(getattr(entity, "amount_remaining", 0)))
         max_amount = int(getattr(entity, "max_amount_remaining", 0) or amount)
