@@ -1054,6 +1054,58 @@ def test_runtime_right_click_resource_orders_selected_settlers_to_gather() -> No
         runtime.shutdown()
 
 
+def test_runtime_right_click_tree_assigns_harvest_slots_to_large_group() -> None:
+    """Verify that manual tree gather spreads first eight settlers across slots."""
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        first = selected_settler(runtime)
+        settlers = [first]
+        for index in range(9):
+            settlers.append(
+                add_settler(
+                    runtime,
+                    first.position.x + 12 + index * 6,
+                    first.position.y + (index % 3) * 8,
+                )
+            )
+        tree = next(
+            entity for entity in runtime.world.entities.values() if "wood_tree" in entity.tags
+        )
+        runtime.selection_system.state.replace([settler.id for settler in settlers])
+        left, top, width, height = tree.bounds
+        screen_pos = runtime.world.camera.world_to_screen(
+            WorldPosition(left + (width / 2), top + (height / 2))
+        )
+
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3, "pos": screen_pos})
+        )
+
+        gather_commands = [
+            runtime.world.command_queues[settler.id].commands[1] for settler in settlers
+        ]
+        move_targets = [
+            runtime.world.command_queues[settler.id].commands[0].target_pos
+            for settler in settlers
+        ]
+        first_eight_targets = {
+            (round(target.x), round(target.y)) for target in move_targets[:8]
+        }
+        slot_indexes = [
+            command.payload["resource_interaction_candidate_index"]
+            for command in gather_commands
+        ]
+        assert len(first_eight_targets) == 8
+        assert slot_indexes[:8] == list(range(8))
+        assert slot_indexes[8:] == [0, 1]
+        assert all(command.target_entity_id == tree.id for command in gather_commands)
+        assert all(command.payload["manual"] is True for command in gather_commands)
+    finally:
+        runtime.shutdown()
+
+
 def test_runtime_shift_right_click_resource_appends_gather_after_existing_move() -> None:
     """Verify that runtime shift right click resource appends gather after existing move."""
     runtime = GameRuntime(AppSettings())
@@ -1088,6 +1140,49 @@ def test_runtime_shift_right_click_resource_appends_gather_after_existing_move()
         assert [command.type for command in commands[:3]] == ["move", "move", "gather"]
         assert commands[2].target_entity_id == mine.id
         assert commands[2].payload["manual"] is True
+    finally:
+        pygame.key.set_mods(0)
+        runtime.shutdown()
+
+
+def test_runtime_shift_right_click_tree_preserves_harvest_slot_target() -> None:
+    """Verify that queued tree gather stores the assigned slot target."""
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        tree = next(
+            entity for entity in runtime.world.entities.values() if "wood_tree" in entity.tags
+        )
+        runtime.selection_system.state.replace([settler.id])
+        runtime.world.enqueue_command(
+            settler.id,
+            make_command(
+                "move",
+                [settler.id],
+                target_pos=WorldPosition(settler.position.x + 120, settler.position.y),
+            ),
+        )
+        left, top, width, height = tree.bounds
+        screen_pos = runtime.world.camera.world_to_screen(
+            WorldPosition(left + (width / 2), top + (height / 2))
+        )
+
+        pygame.key.set_mods(pygame.KMOD_SHIFT)
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 3, "pos": screen_pos})
+        )
+        pygame.key.set_mods(0)
+
+        commands = runtime.world.command_queues[settler.id].commands
+        gather = commands[2]
+        slot_target = commands[1].target_pos
+        assert [command.type for command in commands[:3]] == ["move", "move", "gather"]
+        assert gather.target_entity_id == tree.id
+        assert gather.payload["resource_interaction_candidate_index"] == 0
+        assert gather.payload["resource_interaction_x"] == slot_target.x
+        assert gather.payload["resource_interaction_y"] == slot_target.y
     finally:
         pygame.key.set_mods(0)
         runtime.shutdown()

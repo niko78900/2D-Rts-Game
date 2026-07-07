@@ -34,6 +34,7 @@ from house_of_wolves.systems.combat import CombatSystem
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.construction import ConstructionSystem, starting_construction_hp
 from house_of_wolves.systems.economy import (
+    TREE_HARVEST_MAX_SLOTS,
     EconomySystem,
     completed_deposit_huts,
     issue_gather_command,
@@ -1383,12 +1384,14 @@ class GameRuntime:
         if not completed_deposit_huts(self.world, "frontier"):
             self.world.notify("Needs hut to deposit.")
             return
-        for gatherer_id in gatherer_ids:
+        for index, gatherer_id in enumerate(gatherer_ids):
+            slot_index = index % TREE_HARVEST_MAX_SLOTS if "wood_tree" in resource.tags else 0
             self._order_gatherer_to_resource(
                 resource,
                 gatherer_id,
                 queued=queued,
                 manual=True,
+                slot_index=slot_index,
             )
 
     def _order_gatherer_to_resource(
@@ -1398,6 +1401,7 @@ class GameRuntime:
         *,
         queued: bool,
         manual: bool,
+        slot_index: int = 0,
     ) -> None:
         """Issue orders for gatherer to resource."""
         issue_gather_command(
@@ -1406,6 +1410,7 @@ class GameRuntime:
             gatherer_id,
             queued=queued,
             manual=manual,
+            slot_index=slot_index,
         )
 
     def _builder_interaction_point(

@@ -21,6 +21,8 @@ from house_of_wolves.systems.economy import (
     MAX_RESOURCE_CANDIDATES_TO_PATHCHECK,
     RESPAWN_AVOID_RADIUS,
     RESPAWN_RETRY_MS,
+    TREE_HARVEST_MAX_SLOTS,
+    TREE_HARVEST_MIN_SLOTS,
     TREE_RESPAWN_DELAY_MS,
     EconomySystem,
     ResourceRespawn,
@@ -32,6 +34,8 @@ from house_of_wolves.systems.economy import (
     is_unit_in_gather_range,
     resource_edge_distance,
     resource_interaction_position,
+    tree_harvest_area_bounds,
+    tree_harvest_slot_candidates,
 )
 from house_of_wolves.world.collision import position_blocked_by_hard_obstacle
 from house_of_wolves.world.demo import create_demo_world
@@ -147,6 +151,50 @@ def test_resource_interaction_position_stays_outside_resource_blocker() -> None:
 
     assert not position_blocked_by_hard_obstacle(world, interaction, ignore_id=settler.id)
     assert resource_edge_distance(interaction, mine) <= EconomySystem().gather_interaction_range
+
+
+def test_tree_harvest_slots_are_distinct_inside_front_area() -> None:
+    """Verify that tree harvest slots are stable, distinct, and outside the blocker."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+
+    slots = tree_harvest_slot_candidates(world, tree, settler.id)
+    first_four = slots[:TREE_HARVEST_MIN_SLOTS]
+
+    assert TREE_HARVEST_MIN_SLOTS <= len(slots) <= TREE_HARVEST_MAX_SLOTS
+    assert len({(round(slot.x), round(slot.y)) for slot in first_four}) == 4
+    assert all(_point_in_bounds(slot, tree_harvest_area_bounds(tree)) for slot in first_four)
+    assert all(
+        not position_blocked_by_hard_obstacle(world, slot, ignore_id=settler.id)
+        for slot in first_four
+    )
+
+
+def test_tree_gather_range_uses_large_front_area() -> None:
+    """Verify that tree gathering starts anywhere inside the harvest area."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    slot = tree_harvest_slot_candidates(world, tree, settler.id)[0]
+    world.update_entity_position(settler.id, slot)
+
+    assert is_unit_in_gather_range(settler, tree)
+
+
+def test_tree_interaction_position_falls_back_when_first_slot_is_blocked() -> None:
+    """Verify that blocked tree slots fall back to another slot in the harvest area."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    blocked_slot = tree_harvest_slot_candidates(world, tree, settler.id)[0]
+    _add_settler_like(world, blocked_slot)
+
+    interaction = resource_interaction_position(world, tree, settler.id, candidate_index=0)
+
+    assert _distance(interaction, blocked_slot) > 0
+    assert _point_in_bounds(interaction, tree_harvest_area_bounds(tree))
+    assert not position_blocked_by_hard_obstacle(world, interaction, ignore_id=settler.id)
 
 
 def test_gather_command_requires_completed_deposit_hut() -> None:
@@ -532,3 +580,9 @@ def _add_extra_resource_node(
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
     """Return distance between two test positions."""
     return hypot(first.x - second.x, first.y - second.y)
+
+
+def _point_in_bounds(position: WorldPosition, bounds: tuple[float, float, float, float]) -> bool:
+    """Return whether a test position is inside bounds."""
+    left, top, width, height = bounds
+    return left <= position.x <= left + width and top <= position.y <= top + height
