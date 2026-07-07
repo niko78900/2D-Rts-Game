@@ -9,6 +9,7 @@ from house_of_wolves.core.contracts import Command, EntityId, WorldPosition
 from house_of_wolves.world.collision import (
     MAX_COLLISION_ADJUSTMENT,
     MAX_SHOVE_PUSH,
+    blocking_bounds_for_entity,
     resolve_unit_position,
     shove_units_from_movement,
 )
@@ -63,8 +64,7 @@ class CombatSystem:
             command.payload["attack_move_target_id"] = target.id.to_json()
             command.payload["attack_move_chase_target_id"] = target.id.to_json()
 
-            distance = _distance(entity.position, target.position)
-            if distance > _attack_range_for(entity):
+            if _attack_distance(entity, target) > _attack_range_for(entity):
                 last_contact_ms = _last_contact_ms(command, world.elapsed_ms)
                 if world.elapsed_ms - last_contact_ms >= self.chase_timeout_ms:
                     command.payload["attack_move_ignored_target_id"] = target.id.to_json()
@@ -95,7 +95,7 @@ class CombatSystem:
             _clear_attack_target_state(entity)
             return
 
-        if _distance(entity.position, target.position) > _attack_range_for(entity):
+        if _attack_distance(entity, target) > _attack_range_for(entity):
             _move_entity_toward(world, entity, target.position, dt_ms)
             return
 
@@ -119,8 +119,7 @@ class CombatSystem:
             _clear_attack_target_state(entity)
             return
 
-        distance = _distance(entity.position, target.position)
-        if distance <= _attack_range_for(entity):
+        if _attack_distance(entity, target) <= _attack_range_for(entity):
             _attack_target(world, entity, target)
             return
         _move_entity_toward(world, entity, target.position, dt_ms)
@@ -179,7 +178,7 @@ def _nearest_enemy_target(
             continue
         if not _is_enemy_target(entity, other):
             continue
-        distance = _distance(entity.position, other.position)
+        distance = _attack_distance(entity, other)
         if distance <= nearest_distance:
             nearest = other
             nearest_distance = distance
@@ -285,12 +284,27 @@ def _is_enemy_target(entity: object, other: object) -> bool:
 
 
 def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return the distance used for distance."""
+    """Return center-to-center distance between two world positions."""
     return hypot(first.x - second.x, first.y - second.y)
 
 
+def _attack_distance(attacker: object, target: object) -> float:
+    """Return how far an attacker is from being able to damage a target."""
+    if "building" not in getattr(target, "tags", ()):
+        return _distance(attacker.position, target.position)
+
+    # Buildings block movement as rectangles, so melee range must be measured
+    # to the wall edge instead of the unreachable center point.
+    left, top, width, height = blocking_bounds_for_entity(target)
+    right = left + width
+    bottom = top + height
+    dx = max(left - attacker.position.x, 0.0, attacker.position.x - right)
+    dy = max(top - attacker.position.y, 0.0, attacker.position.y - bottom)
+    return hypot(dx, dy)
+
+
 def _attack_range_for(entity: object) -> float:
-    """Return the range value used for attack range for."""
+    """Return the configured attack range for an entity."""
     return max(0.0, float(getattr(entity, "attack_range", 0.0)))
 
 
@@ -325,7 +339,7 @@ def _clear_attack_target_state(entity: object) -> None:
 
 
 def _attack_target(world: WorldState, attacker: object, target: object) -> bool:
-    """Return the position used for attack target."""
+    """Apply one attack if the attacker's cooldown is ready."""
     attacker.state = "attacking"
     if int(getattr(attacker, "cooldown_remaining_ms", 0)) > 0:
         return False
@@ -344,7 +358,7 @@ def _move_entity_toward(
     target: WorldPosition,
     dt_ms: int,
 ) -> None:
-    """Move entity toward."""
+    """Move a combat unit toward a target position using normal collision."""
     dx = target.x - entity.position.x
     dy = target.y - entity.position.y
     distance = hypot(dx, dy)
@@ -385,7 +399,7 @@ def _move_entity_toward(
 
 
 def _primary_enemy_objective(world: WorldState) -> object | None:
-    """Return the nearest player building enemy idle units should pressure."""
+    """Return the nearest player building for right-side enemy pressure."""
     buildings = [
         entity
         for entity in world.entities.values()
@@ -396,4 +410,4 @@ def _primary_enemy_objective(world: WorldState) -> object | None:
     if not buildings:
         return None
     huts = [entity for entity in buildings if "hut" in getattr(entity, "tags", ())]
-    return min(huts or buildings, key=lambda entity: entity.position.x)
+    return max(huts or buildings, key=lambda entity: entity.position.x)

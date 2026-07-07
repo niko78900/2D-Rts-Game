@@ -288,3 +288,35 @@ def test_enemy_unit_can_damage_player_building() -> None:
     CombatSystem().update(world, 16)
 
     assert building.id not in world.entities
+
+
+def test_attack_move_enemy_damages_building_from_footprint_edge() -> None:
+    """Verify that wave-style attack move can hit a building wall edge."""
+    world = create_demo_world()
+    raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
+    building = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(raider.position.x - 92, raider.position.y),
+        footprint=Footprint(150, 116),
+        hp=1,
+        max_hp=650,
+        tags=("building", "hut", "selectable"),
+        complete=True,
+    )
+    world.add_entity(building)
+    world.enqueue_command(
+        raider.id,
+        make_command(
+            "move",
+            [raider.id],
+            target_pos=WorldPosition(raider.position.x - 220, raider.position.y),
+            attack_move=True,
+            wave_attack=True,
+        ),
+    )
+
+    CombatSystem().update(world, 16)
+
+    assert building.id not in world.entities
+    assert raider.state == "attacking"
