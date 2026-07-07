@@ -375,7 +375,7 @@ def test_runtime_settings_menu_grants_debug_resources() -> None:
         )
         starting = {
             resource_key: runtime.world.resources.get(resource_key, 0)
-            for resource_key in ("wood", "stone", "iron", "gold")
+            for resource_key in ("wood", "food", "stone", "iron", "gold")
         }
 
         for resource_key in starting:
@@ -388,6 +388,7 @@ def test_runtime_settings_menu_grants_debug_resources() -> None:
             )
 
         assert runtime.world.resources["wood"] == starting["wood"] + 10
+        assert runtime.world.resources["food"] == starting["food"] + 10
         assert runtime.world.resources["stone"] == starting["stone"] + 10
         assert runtime.world.resources["iron"] == starting["iron"] + 10
         assert runtime.world.resources["gold"] == starting["gold"] + 10

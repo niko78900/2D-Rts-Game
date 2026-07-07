@@ -42,6 +42,7 @@ KEYBIND_COLUMN_GAP = 8
 STATUS_BAR_HEIGHT = 6
 SETTINGS_RESOURCE_GRANT_RESOURCES = (
     ("wood", "Wood"),
+    ("food", "Food"),
     ("stone", "Stone"),
     ("iron", "Ore"),
     ("gold", "Gold"),
@@ -1044,9 +1045,9 @@ class GameRenderer:
         menu = self.settings_menu_rect(surface)
         resource_keys = [key for key, _label in SETTINGS_RESOURCE_GRANT_RESOURCES]
         index = resource_keys.index(resource_key)
-        gap = 6
+        gap = 1
         usable_width = menu.width - 28
-        button_width = (usable_width - (gap * 3)) // 4
+        button_width = (usable_width - (gap * (len(resource_keys) - 1))) // len(resource_keys)
         return pygame.Rect(
             menu.left + 14 + index * (button_width + gap),
             menu.top + 332,

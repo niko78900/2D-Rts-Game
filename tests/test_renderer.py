@@ -511,7 +511,7 @@ def test_renderer_settings_resource_grant_buttons_are_hit_testable() -> None:
         renderer = GameRenderer(AppSettings())
         surface = pygame.Surface(AppSettings().virtual_size)
 
-        for resource_key in ("wood", "stone", "iron", "gold"):
+        for resource_key in ("wood", "food", "stone", "iron", "gold"):
             rect = renderer.settings_resource_grant_rect(surface, resource_key)
             assert renderer.settings_resource_grant_at(surface, rect.center) == resource_key
     finally:
