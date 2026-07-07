@@ -60,6 +60,16 @@ def test_start_wave_now_spawns_archers_on_later_waves() -> None:
     assert any("enemy_archer" in entity.tags for entity in spawned)
 
 
+def test_wave_system_spawns_enemies_from_right_side_only() -> None:
+    """Verify that wave units enter from the eastern side of the world."""
+    world = create_demo_world()
+    spawned_ids = WaveSystem().start_wave_now(world)
+
+    spawned = [world.entities[entity_id] for entity_id in spawned_ids]
+    right_side_threshold = world.settings.world_width - 500
+    assert all(entity.position.x >= right_side_threshold for entity in spawned)
+
+
 def test_wave_timer_text_reports_disabled_and_countdown_states() -> None:
     """Verify that the HUD wave timer text reflects wave state."""
     disabled = create_demo_world(AppSettings(waves_enabled=False))

@@ -12,6 +12,7 @@ from house_of_wolves.world.terrain import terrain_layout_for_height
 from house_of_wolves.world.world import WorldState
 
 WAVE_TARGET_FALLBACK_X = 520.0
+WAVE_SPAWN_RIGHT_MARGIN = 72.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +35,7 @@ WAVE_COMPOSITIONS = (
 class WaveSystem:
     """Spawns small enemy waves and sends them toward player buildings."""
 
-    spawn_x: float = 72.0
+    spawn_right_margin: float = WAVE_SPAWN_RIGHT_MARGIN
     spawn_spacing: float = 42.0
 
     def update(self, world: WorldState, dt_ms: int) -> None:
@@ -80,13 +81,15 @@ class WaveSystem:
         return spawn_ids
 
     def _spawn_enemy(self, world: WorldState, unit_id: str, index: int) -> EntityId:
-        """Create one enemy wave unit at the configured spawn edge."""
+        """Create one enemy wave unit at the configured right-side spawn edge."""
         layout = terrain_layout_for_height(world.settings.world_height)
-        # Stagger spawn rows and columns so a wave does not start fully overlapped.
+        # Stagger spawn rows and columns inward from the right edge so a wave does
+        # not start fully overlapped or outside the playable world.
         row = index % 5
         column = index // 5
+        spawn_x = world.settings.world_width - self.spawn_right_margin
         desired = WorldPosition(
-            self.spawn_x - column * self.spawn_spacing,
+            spawn_x - column * self.spawn_spacing,
             layout.unit_walkable_top_y + 32 + row * self.spawn_spacing,
         )
         position = nearest_free_position(world, desired)
@@ -119,7 +122,7 @@ def primary_wave_target(world: WorldState) -> WorldPosition:
 
 
 def _nearest_player_building(world: WorldState, *, prefer_hut: bool) -> object | None:
-    """Return the closest matching player building to the western spawn edge."""
+    """Return the closest matching player building to the eastern spawn edge."""
     candidates = [
         entity
         for entity in world.entities.values()
@@ -130,4 +133,4 @@ def _nearest_player_building(world: WorldState, *, prefer_hut: bool) -> object |
     ]
     if not candidates:
         return None
-    return min(candidates, key=lambda entity: entity.position.x)
+    return max(candidates, key=lambda entity: entity.position.x)
