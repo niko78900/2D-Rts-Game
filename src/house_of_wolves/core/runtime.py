@@ -824,6 +824,10 @@ class GameRuntime:
         if self.renderer.settings_start_wave_rect(self.screen).collidepoint(screen_pos):
             self.wave_system.start_wave_now(self.world)
             return True
+        resource_key = self.renderer.settings_resource_grant_at(self.screen, screen_pos)
+        if resource_key is not None:
+            self._grant_debug_resource(resource_key)
+            return True
         keybind_action = self.renderer.settings_keybind_action_at(self.screen, screen_pos)
         if keybind_action is not None:
             self.rebinding_action = keybind_action
@@ -899,6 +903,12 @@ class GameRuntime:
         )
         self.world.settings = self.settings
         self.renderer = GameRenderer(self.settings)
+
+    def _grant_debug_resource(self, resource_key: str, amount: int = 10) -> None:
+        """Add resources from the settings debug menu."""
+        # Keep the cheat local to runtime state; it should behave like gathered
+        # inventory and avoid touching resource-node depletion logic.
+        self.world.resources[resource_key] = self.world.resources.get(resource_key, 0) + amount
 
     def _update_camera(self, dt_ms: int) -> None:
         """Advance camera for the current frame."""

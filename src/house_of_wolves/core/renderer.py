@@ -33,13 +33,19 @@ ABILITY_CHIP_HEIGHT = 24
 SETTINGS_BUTTON_WIDTH = 96
 SETTINGS_BUTTON_HEIGHT = 28
 SETTINGS_MENU_WIDTH = 320
-SETTINGS_MENU_HEIGHT = 600
+SETTINGS_MENU_HEIGHT = 650
 KEYBIND_ROW_HEIGHT = 24
 KEYBIND_ROW_GAP = 3
-KEYBIND_START_Y_OFFSET = 358
+KEYBIND_START_Y_OFFSET = 386
 KEYBIND_ROWS_PER_COLUMN = 9
 KEYBIND_COLUMN_GAP = 8
 STATUS_BAR_HEIGHT = 6
+SETTINGS_RESOURCE_GRANT_RESOURCES = (
+    ("wood", "Wood"),
+    ("stone", "Stone"),
+    ("iron", "Ore"),
+    ("gold", "Gold"),
+)
 STATUS_BAR_TOP_MARGIN = 9
 HEALTH_FILL = (54, 174, 86)
 HEALTH_EMPTY = (139, 47, 43)
@@ -936,10 +942,19 @@ class GameRenderer:
         start_wave_text = self.small_font.render("Start Enemy Wave Now", True, (244, 238, 213))
         surface.blit(start_wave_text, start_wave_text.get_rect(center=start_wave.center))
 
+        # Debug economy buttons let us test production/build costs without waiting
+        # for gather loops during balance passes.
+        for resource_key, label in SETTINGS_RESOURCE_GRANT_RESOURCES:
+            button = self.settings_resource_grant_rect(surface, resource_key)
+            pygame.draw.rect(surface, (58, 74, 62), button, border_radius=4)
+            pygame.draw.rect(surface, (125, 153, 108), button, width=1, border_radius=4)
+            text = self.small_font.render(f"+10 {label}", True, (244, 238, 213))
+            surface.blit(text, text.get_rect(center=button.center))
+
         self._draw_text(
             surface,
             "Keybinds",
-            (rect.left + 14, rect.top + 336),
+            (rect.left + 14, rect.top + 364),
             self.small_font,
             color=(221, 204, 145),
         )
@@ -1020,6 +1035,25 @@ class GameRenderer:
         menu = self.settings_menu_rect(surface)
         return pygame.Rect(menu.left + 14, menu.top + 300, menu.width - 28, 30)
 
+    def settings_resource_grant_rect(
+        self,
+        surface: pygame.Surface,
+        resource_key: str,
+    ) -> pygame.Rect:
+        """Return the debug resource-grant button rectangle."""
+        menu = self.settings_menu_rect(surface)
+        resource_keys = [key for key, _label in SETTINGS_RESOURCE_GRANT_RESOURCES]
+        index = resource_keys.index(resource_key)
+        gap = 6
+        usable_width = menu.width - 28
+        button_width = (usable_width - (gap * 3)) // 4
+        return pygame.Rect(
+            menu.left + 14 + index * (button_width + gap),
+            menu.top + 332,
+            button_width,
+            24,
+        )
+
     def settings_keybind_rect(self, surface: pygame.Surface, action: str) -> pygame.Rect:
         """Return the keybinding row rectangle for an action."""
         menu = self.settings_menu_rect(surface)
@@ -1044,6 +1078,17 @@ class GameRenderer:
         for action in KEYBIND_ACTION_ORDER:
             if self.settings_keybind_rect(surface, action).collidepoint(screen_pos):
                 return action
+        return None
+
+    def settings_resource_grant_at(
+        self,
+        surface: pygame.Surface,
+        screen_pos: tuple[int, int],
+    ) -> str | None:
+        """Return the resource key for a clicked debug resource-grant button."""
+        for resource_key, _label in SETTINGS_RESOURCE_GRANT_RESOURCES:
+            if self.settings_resource_grant_rect(surface, resource_key).collidepoint(screen_pos):
+                return resource_key
         return None
 
     def settings_menu_contains(self, surface: pygame.Surface, screen_pos: tuple[int, int]) -> bool:

@@ -504,6 +504,20 @@ def test_renderer_settings_keybind_rows_are_hit_testable() -> None:
         pygame.quit()
 
 
+def test_renderer_settings_resource_grant_buttons_are_hit_testable() -> None:
+    """Verify that settings resource grant buttons return their resource keys."""
+    pygame.init()
+    try:
+        renderer = GameRenderer(AppSettings())
+        surface = pygame.Surface(AppSettings().virtual_size)
+
+        for resource_key in ("wood", "stone", "iron", "gold"):
+            rect = renderer.settings_resource_grant_rect(surface, resource_key)
+            assert renderer.settings_resource_grant_at(surface, rect.center) == resource_key
+    finally:
+        pygame.quit()
+
+
 def test_renderer_caches_notification_text_surfaces() -> None:
     """Verify that renderer caches notification text surfaces."""
     pygame.init()

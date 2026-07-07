@@ -361,6 +361,40 @@ def test_runtime_settings_menu_toggles_and_starts_enemy_waves() -> None:
         runtime.shutdown()
 
 
+def test_runtime_settings_menu_grants_debug_resources() -> None:
+    """Verify that settings resource buttons add debug resources."""
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        assert runtime.screen is not None
+        assert runtime.renderer is not None
+        settings_center = runtime.renderer.settings_button_rect(runtime.screen).center
+        runtime.handle_event(
+            pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": settings_center})
+        )
+        starting = {
+            resource_key: runtime.world.resources.get(resource_key, 0)
+            for resource_key in ("wood", "stone", "iron", "gold")
+        }
+
+        for resource_key in starting:
+            button_center = runtime.renderer.settings_resource_grant_rect(
+                runtime.screen,
+                resource_key,
+            ).center
+            runtime.handle_event(
+                pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": button_center})
+            )
+
+        assert runtime.world.resources["wood"] == starting["wood"] + 10
+        assert runtime.world.resources["stone"] == starting["stone"] + 10
+        assert runtime.world.resources["iron"] == starting["iron"] + 10
+        assert runtime.world.resources["gold"] == starting["gold"] + 10
+    finally:
+        runtime.shutdown()
+
+
 def test_runtime_settings_menu_toggles_debug_waypoint_rendering() -> None:
     """Verify that runtime settings menu toggles debug waypoint rendering."""
     runtime = GameRuntime(AppSettings())
