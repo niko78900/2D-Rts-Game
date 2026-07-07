@@ -779,10 +779,16 @@ class GameRenderer:
         self._draw_text(surface, resources, (16, 10), self.font)
         population = f"Population: {world.current_population} / {world.max_population}"
         self._draw_text(surface, population, (16, 34), self.small_font, color=(221, 204, 145))
-        wave_text = wave_timer_text(world)
-        self._draw_text(surface, wave_text, (260, 10), self.small_font, color=(236, 178, 140))
+        # Keep the wave timer in the right HUD cluster so it does not overlap resources.
+        wave = self.small_font.render(wave_timer_text(world), True, (236, 178, 140))
+        wave_rect = wave.get_rect(
+            midright=(self.settings_button_rect(surface).left - 16, 18),
+        )
         status = f"Selected: {len(selection.selected_ids)}   FPS: {fps:0.0f}"
-        self._draw_text(surface, status, (surface.get_width() - 380, 10), self.font)
+        status_text = self.font.render(status, True, (240, 235, 214))
+        status_rect = status_text.get_rect(midright=(wave_rect.left - 24, 18))
+        surface.blit(status_text, status_rect)
+        surface.blit(wave, wave_rect)
         hint = (
             "A/D or arrows pan | select, right click, shift queue | Ctrl+1-9 groups"
         )
