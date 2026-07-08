@@ -62,19 +62,10 @@ HUT_CONSTRUCTION_SPRITES = {
     HUT_STAGE_COMPLETE: "assets/art/buildings/hut_complete.png",
 }
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-UNIT_SPRITE_ROOT = PROJECT_ROOT / "assets" / "art" / "units" / "cropped"
 ANIMAL_SPRITE_PATHS = {
     "chicken": PROJECT_ROOT / "assets" / "art" / "resources" / "chicken.png",
     "pig": PROJECT_ROOT / "assets" / "art" / "resources" / "pig.png",
 }
-UNIT_SPRITE_PATHS = {
-    "friendly_settler": UNIT_SPRITE_ROOT / "friendly_settler.png",
-    "friendly_spearman": UNIT_SPRITE_ROOT / "friendly_spearman.png",
-    "friendly_archer": UNIT_SPRITE_ROOT / "friendly_archer.png",
-    "enemy_swordsman": UNIT_SPRITE_ROOT / "enemy_swordsman.png",
-    "enemy_archer": UNIT_SPRITE_ROOT / "enemy_archer.png",
-}
-_SPRITE_LOAD_CACHE: dict[tuple[tuple[tuple[str, str], ...], bool], dict[str, pygame.Surface]] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +111,6 @@ class GameRenderer:
     font: pygame.font.Font = field(init=False)
     small_font: pygame.font.Font = field(init=False)
     animal_sprites: dict[str, pygame.Surface] = field(init=False, repr=False)
-    unit_sprites: dict[str, pygame.Surface] = field(init=False, repr=False)
     _scaled_sprite_cache: dict[tuple[str, tuple[int, int]], pygame.Surface] = field(
         init=False,
         repr=False,
@@ -137,7 +127,6 @@ class GameRenderer:
         self.font = pygame.font.Font(None, 24)
         self.small_font = pygame.font.Font(None, 18)
         self.animal_sprites = _load_animal_sprites()
-        self.unit_sprites = _load_named_sprites(UNIT_SPRITE_PATHS)
         self._scaled_sprite_cache = {}
         self._notification_surface_cache = {}
 
@@ -280,9 +269,6 @@ class GameRenderer:
             if isinstance(entity, tuple)
             else tuple(getattr(entity, "tags", ()))
         )
-        sprite_id = _unit_sprite_id_for(entity, tags)
-        if sprite_id is not None and self._draw_unit_sprite(surface, rect, sprite_id):
-            return
         color = (86, 145, 92)
         if getattr(entity, "owner", "frontier") != "frontier":
             color = (169, 76, 68)
@@ -294,27 +280,6 @@ class GameRenderer:
         pygame.draw.ellipse(surface, color, rect)
         pygame.draw.rect(surface, (28, 34, 30), rect, width=2, border_radius=6)
         self._draw_label(surface, _short_label(tags), rect.center)
-
-    def _draw_unit_sprite(
-        self,
-        surface: pygame.Surface,
-        rect: pygame.Rect,
-        sprite_id: str,
-    ) -> bool:
-        """Draw a named unit sprite aligned to the unit's ground position."""
-        sprite = self.unit_sprites.get(sprite_id)
-        if sprite is None:
-            return False
-        target_size = _sprite_target_size(sprite, rect)
-        cache_key = (sprite_id, target_size)
-        scaled = self._scaled_sprite_cache.get(cache_key)
-        if scaled is None:
-            # Unit sprites are already high-resolution cutouts; regular scaling is
-            # fast enough for gameplay and avoids expensive first-frame stalls.
-            scaled = pygame.transform.scale(sprite, target_size)
-            self._scaled_sprite_cache[cache_key] = scaled
-        surface.blit(scaled, scaled.get_rect(midbottom=(rect.centerx, rect.bottom + 2)))
-        return True
 
     def _draw_resource(
         self,
@@ -1364,48 +1329,20 @@ def _is_enemy_entity(entity: object) -> bool:
 
 def _load_animal_sprites() -> dict[str, pygame.Surface]:
     """Load animal sprites."""
-    return _load_named_sprites(ANIMAL_SPRITE_PATHS)
-
-
-def _load_named_sprites(paths: dict[str, Path]) -> dict[str, pygame.Surface]:
-    """Load transparent sprite assets by identifier."""
-    can_convert = pygame.display.get_init() and pygame.display.get_surface() is not None
-    cache_key = (
-        tuple(sorted((sprite_id, str(path)) for sprite_id, path in paths.items())),
-        can_convert,
-    )
-    cached = _SPRITE_LOAD_CACHE.get(cache_key)
-    if cached is not None:
-        return dict(cached)
-
     sprites: dict[str, pygame.Surface] = {}
-    for sprite_id, path in paths.items():
+    for sprite_id, path in ANIMAL_SPRITE_PATHS.items():
         if not path.exists():
             continue
         try:
             sprite = pygame.image.load(str(path))
-            sprites[sprite_id] = sprite.convert_alpha() if can_convert else sprite
+            sprites[sprite_id] = (
+                sprite.convert_alpha()
+                if pygame.display.get_init() and pygame.display.get_surface() is not None
+                else sprite
+            )
         except pygame.error:
             continue
-    _SPRITE_LOAD_CACHE[cache_key] = dict(sprites)
     return sprites
-
-
-def _unit_sprite_id_for(entity: object, tags: tuple[str, ...]) -> str | None:
-    """Return the sprite key for the current playable unit roster."""
-    if getattr(entity, "owner", "frontier") != "frontier":
-        if "enemy_archer" in tags:
-            return "enemy_archer"
-        if "enemy_swordsman" in tags or "raider_swordsman" in tags:
-            return "enemy_swordsman"
-        return None
-    if "archer" in tags:
-        return "friendly_archer"
-    if "spearman" in tags:
-        return "friendly_spearman"
-    if "settler" in tags:
-        return "friendly_settler"
-    return None
 
 
 def _sprite_target_size(sprite: pygame.Surface, rect: pygame.Rect) -> tuple[int, int]:

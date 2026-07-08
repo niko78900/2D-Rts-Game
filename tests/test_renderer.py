@@ -13,7 +13,6 @@ from house_of_wolves.core.renderer import (
     HUT_STAGE_COMPLETE,
     HUT_STAGE_PARTIAL,
     HUT_STAGE_SCAFFOLDING,
-    UNIT_SPRITE_PATHS,
     BuildingPlacementPreview,
     GameRenderer,
     dotted_line_points,
@@ -243,21 +242,6 @@ def test_renderer_loads_chicken_and_pig_sprites() -> None:
     renderer = GameRenderer(AppSettings())
 
     assert set(renderer.animal_sprites) >= {"chicken", "pig"}
-
-
-def test_named_unit_sprite_assets_exist_with_transparent_backgrounds() -> None:
-    """Verify that current roster unit sprites are sliced and transparent."""
-    for path in UNIT_SPRITE_PATHS.values():
-        assert path.exists()
-        sprite = pygame.image.load(str(path))
-        assert sprite.get_at((0, 0)).a == 0
-
-
-def test_renderer_loads_current_roster_unit_sprites() -> None:
-    """Verify that renderer loads sprites for playable and wave units."""
-    renderer = GameRenderer(AppSettings())
-
-    assert set(renderer.unit_sprites) >= set(UNIT_SPRITE_PATHS)
 
 
 def test_selected_panel_for_enemy_unit_shows_stats_without_commands() -> None:
