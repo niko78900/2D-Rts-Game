@@ -19,7 +19,13 @@ from house_of_wolves.core.keybindings import (
 from house_of_wolves.core.performance import time_block
 from house_of_wolves.core.settings import UI_PANEL_HEIGHT, AppSettings
 from house_of_wolves.systems.buildings import is_building_destroying
-from house_of_wolves.systems.economy import tree_harvest_area_bounds, tree_harvest_slot_candidates
+from house_of_wolves.systems.economy import (
+    is_mine_resource,
+    mine_harvest_area_bounds,
+    mine_harvest_slot_candidates,
+    tree_harvest_area_bounds,
+    tree_harvest_slot_candidates,
+)
 from house_of_wolves.systems.selection import SelectionState
 from house_of_wolves.ui.selected_panel import SelectedPanel, selected_panel_for
 from house_of_wolves.world.collision import blocking_bounds_for_entity
@@ -428,6 +434,12 @@ class GameRenderer:
         """Draw resource hitbox."""
         rect = _screen_rect(world, blocking_bounds_for_entity(entity))
         pygame.draw.rect(surface, (238, 218, 111), rect, width=2, border_radius=8)
+        if is_mine_resource(entity):
+            harvest_rect = _screen_rect(world, mine_harvest_area_bounds(entity))
+            pygame.draw.rect(surface, (238, 78, 78), harvest_rect, width=1)
+            for slot in mine_harvest_slot_candidates(world, entity):
+                pygame.draw.circle(surface, (238, 78, 78), world.camera.world_to_screen(slot), 3)
+            return
         if "wood_tree" not in getattr(entity, "tags", ()):
             return
         harvest_rect = _screen_rect(world, tree_harvest_area_bounds(entity))

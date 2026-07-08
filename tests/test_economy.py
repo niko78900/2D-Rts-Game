@@ -19,6 +19,8 @@ from house_of_wolves.systems.economy import (
     MAX_ACTIVE_GOLD_NODES,
     MAX_ACTIVE_TREES,
     MAX_RESOURCE_CANDIDATES_TO_PATHCHECK,
+    MINE_HARVEST_MAX_SLOTS,
+    MINE_HARVEST_MIN_SLOTS,
     RESPAWN_AVOID_RADIUS,
     RESPAWN_RETRY_MS,
     TREE_HARVEST_MAX_SLOTS,
@@ -32,6 +34,8 @@ from house_of_wolves.systems.economy import (
     completed_deposit_huts,
     hut_deposit_position,
     is_unit_in_gather_range,
+    mine_harvest_area_bounds,
+    mine_harvest_slot_candidates,
     resource_edge_distance,
     resource_interaction_position,
     tree_harvest_area_bounds,
@@ -194,6 +198,76 @@ def test_tree_interaction_position_falls_back_when_first_slot_is_blocked() -> No
 
     assert _distance(interaction, blocked_slot) > 0
     assert _point_in_bounds(interaction, tree_harvest_area_bounds(tree))
+    assert not position_blocked_by_hard_obstacle(world, interaction, ignore_id=settler.id)
+
+
+def test_mine_harvest_slots_are_distinct_inside_mining_area() -> None:
+    """Verify that mine slots are stable, distinct, and outside the blocker."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+
+    slots = mine_harvest_slot_candidates(world, mine, settler.id)
+    first_four = slots[:MINE_HARVEST_MIN_SLOTS]
+
+    assert MINE_HARVEST_MIN_SLOTS <= len(slots) <= MINE_HARVEST_MAX_SLOTS
+    assert len({(round(slot.x), round(slot.y)) for slot in first_four}) == 4
+    assert all(_point_in_bounds(slot, mine_harvest_area_bounds(mine)) for slot in first_four)
+    assert all(
+        not position_blocked_by_hard_obstacle(world, slot, ignore_id=settler.id)
+        for slot in first_four
+    )
+
+
+def test_mine_gather_range_uses_large_mining_area() -> None:
+    """Verify that mine gathering starts anywhere inside the mining area."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    slot = mine_harvest_slot_candidates(world, mine, settler.id)[0]
+    world.update_entity_position(settler.id, slot)
+
+    assert is_unit_in_gather_range(settler, mine)
+
+
+def test_mine_interaction_position_falls_back_when_first_slot_is_blocked() -> None:
+    """Verify that blocked mine slots fall back to another slot in the mining area."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+    blocked_slot = mine_harvest_slot_candidates(world, mine, settler.id)[0]
+    _add_settler_like(world, blocked_slot)
+
+    interaction = resource_interaction_position(world, mine, settler.id, candidate_index=0)
+
+    assert _distance(interaction, blocked_slot) > 0
+    assert _point_in_bounds(interaction, mine_harvest_area_bounds(mine))
+    assert not position_blocked_by_hard_obstacle(world, interaction, ignore_id=settler.id)
+
+
+def test_generic_resource_interaction_keeps_edge_distance_behavior() -> None:
+    """Verify that non-tree and non-mine resources keep simple edge interaction."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    resource = ResourceNode(
+        id=world.allocate_entity_id(),
+        owner="neutral",
+        position=WorldPosition(940, 510),
+        footprint=Footprint(50, 34),
+        hp=25,
+        max_hp=25,
+        tags=("resource", "food_carcass", "selectable"),
+        resource_type="food",
+        amount_remaining=25,
+        max_amount_remaining=25,
+        gather_time_ms=600,
+        blocking_footprint=Footprint(32, 24),
+    )
+    world.add_entity(resource)
+
+    interaction = resource_interaction_position(world, resource, settler.id)
+
+    assert resource_edge_distance(interaction, resource) <= EconomySystem().gather_interaction_range
     assert not position_blocked_by_hard_obstacle(world, interaction, ignore_id=settler.id)
 
 

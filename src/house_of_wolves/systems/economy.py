@@ -40,6 +40,12 @@ TREE_HARVEST_MAX_SLOTS = 8
 TREE_HARVEST_AREA_WIDTH = 136.0
 TREE_HARVEST_AREA_HEIGHT = 104.0
 TREE_HARVEST_AREA_TOP_OFFSET_FROM_BLOCKER_BOTTOM = -24.0
+MINE_HARVEST_MIN_SLOTS = 4
+MINE_HARVEST_MAX_SLOTS = 8
+MINE_HARVEST_AREA_MIN_WIDTH = 190.0
+MINE_HARVEST_AREA_MIN_HEIGHT = 125.0
+MINE_HARVEST_AREA_HORIZONTAL_PADDING = 48.0
+MINE_HARVEST_AREA_VERTICAL_PADDING = 34.0
 RESOURCE_DESTRUCTION_MS = 1500
 TREE_RESPAWN_DELAY_SECONDS = 60
 STONE_RESPAWN_DELAY_SECONDS = 60
@@ -1205,6 +1211,8 @@ def resource_interaction_candidates(
     """Return valid approach points near the resource blocker edge."""
     if is_tree_resource(resource):
         return tree_harvest_slot_candidates(world, resource, gatherer_id)
+    if is_mine_resource(resource):
+        return mine_harvest_slot_candidates(world, resource, gatherer_id)
 
     left, top, width, height = blocking_bounds_for_entity(resource)
     right = left + width
@@ -1262,7 +1270,7 @@ def resource_interaction_position(
     """Return a reachable edge position for gathering a resource."""
     candidates = resource_interaction_candidates(world, resource, gatherer_id)
     if candidates:
-        if is_tree_resource(resource):
+        if gather_slot_count_for_resource(resource) > 0:
             return candidates[int(candidate_index) % len(candidates)]
         return candidates[min(max(0, int(candidate_index)), len(candidates) - 1)]
     return nearest_free_position(
@@ -1318,6 +1326,8 @@ def is_unit_in_gather_range(
     """Return whether a worker can interact with a resource now."""
     if is_tree_resource(resource):
         return _point_in_bounds(unit.position, tree_harvest_area_bounds(resource))
+    if is_mine_resource(resource):
+        return _point_in_bounds(unit.position, mine_harvest_area_bounds(resource))
     return resource_edge_distance(unit.position, resource) <= gather_range
 
 
@@ -1334,6 +1344,20 @@ def resource_edge_distance(position: WorldPosition, resource: ResourceNode) -> f
 def is_tree_resource(resource: ResourceNode) -> bool:
     """Return whether a resource node should use tree-only harvest slots."""
     return resource.resource_type == "wood" and "wood_tree" in getattr(resource, "tags", ())
+
+
+def is_mine_resource(resource: ResourceNode) -> bool:
+    """Return whether a resource node should use mine harvest slots."""
+    return resource.resource_type in MINE_RESOURCE_TYPES
+
+
+def gather_slot_count_for_resource(resource: ResourceNode) -> int:
+    """Return unique gather slots supported by a resource node."""
+    if is_tree_resource(resource):
+        return TREE_HARVEST_MAX_SLOTS
+    if is_mine_resource(resource):
+        return MINE_HARVEST_MAX_SLOTS
+    return 0
 
 
 def tree_harvest_area_bounds(tree: ResourceNode) -> tuple[float, float, float, float]:
@@ -1418,6 +1442,122 @@ def _tree_slot_free_position(
         if not _point_in_bounds(candidate, area):
             continue
         if position_blocked_by_hard_obstacle(world, candidate, ignore_id=gatherer_id):
+            continue
+        if occupied_by_unit(
+            world,
+            candidate,
+            ignore_id=gatherer_id,
+            min_distance=UNIT_COLLISION_RADIUS,
+        ):
+            continue
+        return candidate
+    return None
+
+
+def mine_harvest_area_bounds(mine: ResourceNode) -> tuple[float, float, float, float]:
+    """Return the rectangle where settlers may mine a node."""
+    left, top, width, height = blocking_bounds_for_entity(mine)
+    center_x = left + (width / 2)
+    center_y = top + (height / 2)
+    area_width = max(MINE_HARVEST_AREA_MIN_WIDTH, width + MINE_HARVEST_AREA_HORIZONTAL_PADDING * 2)
+    area_height = max(MINE_HARVEST_AREA_MIN_HEIGHT, height + MINE_HARVEST_AREA_VERTICAL_PADDING * 2)
+    return (
+        center_x - (area_width / 2),
+        center_y - (area_height / 2),
+        area_width,
+        area_height,
+    )
+
+
+def mine_harvest_slot_candidates(
+    world: WorldState,
+    mine: ResourceNode,
+    gatherer_id: EntityId | None = None,
+) -> list[WorldPosition]:
+    """Return stable mining slots around a mine resource."""
+    if not is_mine_resource(mine):
+        return []
+
+    candidates: list[WorldPosition] = []
+    seen: set[tuple[int, int]] = set()
+    for raw in _raw_mine_harvest_slots(mine):
+        candidate = _mine_slot_free_position(world, mine, raw, gatherer_id)
+        if candidate is None:
+            continue
+        key = (round(candidate.x), round(candidate.y))
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+        if len(candidates) >= MINE_HARVEST_MAX_SLOTS:
+            break
+    return candidates
+
+
+def _raw_mine_harvest_slots(mine: ResourceNode) -> tuple[WorldPosition, ...]:
+    """Return preferred mining slot centers inside the mine harvest area."""
+    left, top, width, height = mine_harvest_area_bounds(mine)
+    slots = (
+        (0.18, 0.28),
+        (0.18, 0.50),
+        (0.18, 0.72),
+        (0.82, 0.28),
+        (0.82, 0.50),
+        (0.82, 0.72),
+        (0.38, 0.82),
+        (0.62, 0.82),
+    )
+    return tuple(WorldPosition(left + width * x, top + height * y) for x, y in slots)
+
+
+def _mine_slot_free_position(
+    world: WorldState,
+    mine: ResourceNode,
+    desired: WorldPosition,
+    gatherer_id: EntityId | None,
+) -> WorldPosition | None:
+    """Return a nearby free mine slot without leaving the mine harvest rectangle."""
+    return _resource_slot_free_position(
+        world,
+        mine,
+        desired,
+        mine_harvest_area_bounds(mine),
+        gatherer_id,
+    )
+
+
+def _resource_slot_free_position(
+    world: WorldState,
+    resource: ResourceNode,
+    desired: WorldPosition,
+    area: tuple[float, float, float, float],
+    gatherer_id: EntityId | None,
+) -> WorldPosition | None:
+    """Return a nearby free slot inside a resource harvest area."""
+    offsets = (
+        (0.0, 0.0),
+        (-10.0, 0.0),
+        (10.0, 0.0),
+        (0.0, -10.0),
+        (0.0, 10.0),
+        (-14.0, -8.0),
+        (14.0, -8.0),
+        (-14.0, 8.0),
+        (14.0, 8.0),
+        (-22.0, 0.0),
+        (22.0, 0.0),
+    )
+    for dx, dy in offsets:
+        raw = WorldPosition(desired.x + dx, desired.y + dy)
+        candidate = clamp_unit_position_to_walkable_lane_for_height(
+            raw,
+            world.settings.world_height,
+        )
+        if not _point_in_bounds(candidate, area):
+            continue
+        if position_blocked_by_hard_obstacle(world, candidate, ignore_id=gatherer_id):
+            continue
+        if resource_edge_distance(candidate, resource) > GATHER_INTERACTION_RANGE:
             continue
         if occupied_by_unit(
             world,
@@ -1677,10 +1817,11 @@ def _next_gather_slot_index(world: WorldState, resource: ResourceNode) -> int:
 
 
 def _slot_index_for_load(load_by_resource: dict[EntityId, int], resource: ResourceNode) -> int:
-    """Return a tree slot index from resource load, or zero for non-tree resources."""
-    if not is_tree_resource(resource):
+    """Return a slotted-resource index from gather load, or zero for simple resources."""
+    slot_count = gather_slot_count_for_resource(resource)
+    if slot_count <= 0:
         return 0
-    return load_by_resource.get(resource.id, 0) % TREE_HARVEST_MAX_SLOTS
+    return load_by_resource.get(resource.id, 0) % slot_count
 
 
 def _cheap_distance_sq(first: WorldPosition, second: WorldPosition) -> float:
