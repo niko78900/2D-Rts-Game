@@ -54,6 +54,7 @@ class MovementSystem:
     friendly_ghost_check_interval_ms: int = 48
     shove_interval_ms: int = 48
     separation_interval_ms: int = 48
+    max_path_replans: int = 3
     _progress_by_entity: dict[EntityId, MovementProgress] = field(default_factory=dict)
     _last_shove_ms_by_entity: dict[EntityId, int] = field(default_factory=dict)
     _separation_elapsed_ms: int = 10_000
@@ -148,7 +149,7 @@ class MovementSystem:
         speed = max(0.0, float(getattr(entity, "speed", 0.0)))
         step = speed * (dt_ms / 1000)
         if step <= 0:
-            self._stop_if_unreachable(world, entity_id, queue, target, progress, dt_ms)
+            self._stop_if_unreachable(world, entity_id, queue, command, target, progress, dt_ms)
             return
         finish_after_move = False
         if step >= distance:
@@ -197,7 +198,15 @@ class MovementSystem:
                 dt_ms,
             )
             if not chasing_attack_target:
-                self._stop_if_unreachable(world, entity_id, queue, target, progress, dt_ms)
+                self._stop_if_unreachable(
+                    world,
+                    entity_id,
+                    queue,
+                    command,
+                    target,
+                    progress,
+                    dt_ms,
+                )
 
     def _arrived_near_shared_destination(
         self,
@@ -231,22 +240,23 @@ class MovementSystem:
         """Create detour waypoints for a move command when needed."""
         if command.payload.get("path_planned") is True:
             return command
-        if _payload_entity_id(command, "attack_move_chase_target_id") is not None:
+        path_target = _path_planning_target_for_command(world, command)
+        if path_target is None:
             return command
         entity = world.entities.get(entity_id)
-        if entity is None or command.target_pos is None:
+        if entity is None:
             return command
 
         waypoints = move_waypoints_around_blockers(
             world,
             entity_id,
             entity.position,
-            command.target_pos,
+            path_target,
         )
         if not waypoints:
             command.payload["path_planned"] = True
             return command
-        if len(waypoints) == 1 and _distance(waypoints[0], command.target_pos) < 0.001:
+        if len(waypoints) == 1 and _distance(waypoints[0], path_target) < 0.001:
             command.payload["path_planned"] = True
             return command
 
@@ -256,10 +266,11 @@ class MovementSystem:
                 waypoint,
                 queued=command.queued if index == 0 else True,
                 path_detour=index < len(waypoints) - 1,
+                final_target=path_target,
             )
             for index, waypoint in enumerate(waypoints)
         ]
-        queue.commands[0:1] = replacement
+        _replace_current_path_commands(queue, replacement, path_target)
         self._clear_progress(entity_id)
         return queue.peek()
 
@@ -365,6 +376,7 @@ class MovementSystem:
         world: WorldState,
         entity_id: EntityId,
         queue: CommandQueue,
+        command: Command,
         target: WorldPosition,
         progress: MovementProgress,
         dt_ms: int,
@@ -384,9 +396,56 @@ class MovementSystem:
         if progress.stagnant_ms < self.unreachable_timeout_ms:
             return False
 
+        if self._replan_unreachable_move(world, entity_id, queue, command):
+            return False
+
         self._finish_move(entity_id, queue)
         if hasattr(entity, "state"):
             entity.state = "idle"
+        return True
+
+    def _replan_unreachable_move(
+        self,
+        world: WorldState,
+        entity_id: EntityId,
+        queue: CommandQueue,
+        command: Command,
+    ) -> bool:
+        """Try a fresh blocker route before giving up on a stuck move."""
+        entity = world.entities.get(entity_id)
+        if entity is None or command.target_pos is None:
+            return False
+        replan_count = int(command.payload.get("path_replan_count", 0) or 0)
+        if replan_count >= self.max_path_replans:
+            return False
+
+        final_target = _path_planning_target_for_command(world, command) or _path_final_target(
+            command
+        )
+        waypoints = move_waypoints_around_blockers(
+            world,
+            entity_id,
+            entity.position,
+            final_target,
+        )
+        if not waypoints:
+            return False
+        if len(waypoints) == 1 and _distance(waypoints[0], command.target_pos) < 0.001:
+            return False
+
+        replacement = [
+            _copy_move_command_with_target(
+                command,
+                waypoint,
+                queued=command.queued if index == 0 else True,
+                path_detour=index < len(waypoints) - 1,
+                final_target=final_target,
+                replan_count=replan_count + 1,
+            )
+            for index, waypoint in enumerate(waypoints)
+        ]
+        _replace_current_path_commands(queue, replacement, final_target)
+        self._clear_progress(entity_id)
         return True
 
     def _finish_move(self, entity_id: EntityId, queue: CommandQueue) -> None:
@@ -414,10 +473,17 @@ def _copy_move_command_with_target(
     *,
     queued: bool,
     path_detour: bool,
+    final_target: WorldPosition | None = None,
+    replan_count: int | None = None,
 ) -> Command:
     """Return the position used for copy move command with target."""
     payload = dict(command.payload)
     payload["path_planned"] = True
+    final = final_target or _path_final_target(command)
+    payload["path_final_x"] = final.x
+    payload["path_final_y"] = final.y
+    if replan_count is not None:
+        payload["path_replan_count"] = replan_count
     if path_detour:
         payload["path_detour"] = True
     else:
@@ -448,6 +514,14 @@ def _movement_target_for_command(
 ) -> tuple[WorldPosition, bool]:
     """Return the position used for movement target for command."""
     assert command.target_pos is not None
+    if command.payload.get("path_detour") is True:
+        return (
+            clamp_unit_position_to_walkable_lane_for_height(
+                command.target_pos,
+                world.settings.world_height,
+            ),
+            False,
+        )
     chase_target_id = _payload_entity_id(command, "attack_move_chase_target_id")
     if command.payload.get("attack_move") is True and chase_target_id is not None:
         chase_target = world.entities.get(chase_target_id)
@@ -474,6 +548,58 @@ def _payload_entity_id(command: Command, key: str) -> EntityId | None:
     if value is None:
         return None
     return EntityId(int(value))
+
+
+def _path_final_target(command: Command) -> WorldPosition:
+    """Return the final destination represented by a path-planned move chain."""
+    x = command.payload.get("path_final_x")
+    y = command.payload.get("path_final_y")
+    if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+        return WorldPosition(float(x), float(y))
+    assert command.target_pos is not None
+    return command.target_pos
+
+
+def _path_planning_target_for_command(
+    world: WorldState,
+    command: Command,
+) -> WorldPosition | None:
+    """Return the hard-obstacle path target for a command, or None for direct chase."""
+    if command.target_pos is None:
+        return None
+    chase_target_id = _payload_entity_id(command, "attack_move_chase_target_id")
+    if chase_target_id is None:
+        return command.target_pos
+    chase_target = world.entities.get(chase_target_id)
+    if chase_target is None or not getattr(chase_target, "alive", False):
+        return command.target_pos
+    if "building" in getattr(chase_target, "tags", ()):
+        return chase_target.position
+    # Moving unit targets shift every frame, so keep those as direct pursuit.
+    return None
+
+
+def _same_path_final(command: Command, final_target: WorldPosition) -> bool:
+    """Return whether a queued path segment belongs to the same planned route."""
+    if command.type != "move" or command.payload.get("path_planned") is not True:
+        return False
+    command_final = _path_final_target(command)
+    return _distance(command_final, final_target) < 0.001
+
+
+def _replace_current_path_commands(
+    queue: CommandQueue,
+    replacement: list[Command],
+    final_target: WorldPosition,
+) -> None:
+    """Replace the current stale path and its queued continuation commands."""
+    drop_count = 1
+    while drop_count < len(queue.commands) and _same_path_final(
+        queue.commands[drop_count],
+        final_target,
+    ):
+        drop_count += 1
+    queue.commands[0:drop_count] = replacement
 
 
 def _attack_range_for(entity: object) -> float:

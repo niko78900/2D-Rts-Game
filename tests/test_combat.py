@@ -163,6 +163,23 @@ def test_enemy_raider_chases_player_unit_inside_guard_sphere() -> None:
     assert raider.state == "moving"
 
 
+def test_idle_enemy_base_pressure_uses_blocker_aware_move_command() -> None:
+    """Verify that idle enemy pressure routes through movement path planning."""
+    world = create_demo_world()
+    raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+
+    CombatSystem().update(world, 16)
+
+    command = world.command_queues[raider.id].peek()
+    assert command is not None
+    assert command.type == "move"
+    assert command.target_pos == hut.position
+    assert command.payload["attack_move"] is True
+    assert command.payload["wave_attack"] is True
+    assert raider.state == "moving"
+
+
 def test_idle_friendly_ranged_unit_attacks_enemy_inside_guard_sphere() -> None:
     """Verify that idle friendly ranged unit attacks enemy inside guard sphere."""
     world = create_demo_world()

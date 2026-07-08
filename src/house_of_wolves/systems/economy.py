@@ -33,6 +33,8 @@ GATHER_SWING_MS = 650
 GATHER_INTERACTION_RANGE = 76.0
 RESOURCE_INTERACTION_PADDING = UNIT_HITBOX_RADIUS + 8.0
 RESOURCE_INTERACTION_MAX_RETRIES = 3
+HUT_DEPOSIT_MAX_RETRIES = 3
+HUT_DEPOSIT_REFRESH_MS = 1500
 TREE_HARVEST_MIN_SLOTS = 4
 TREE_HARVEST_MAX_SLOTS = 8
 TREE_HARVEST_AREA_WIDTH = 136.0
@@ -175,6 +177,7 @@ class EconomySystem:
     max_path_jobs_per_frame: int = MAX_PATH_JOBS_PER_FRAME
     max_resource_candidates_to_pathcheck: int = MAX_RESOURCE_CANDIDATES_TO_PATHCHECK
     safety_cache_refresh_ms: int = SAFETY_CACHE_REFRESH_MS
+    deposit_target_refresh_ms: int = HUT_DEPOSIT_REFRESH_MS
     debug_gather_performance: bool = False
     max_active_trees: int = MAX_ACTIVE_TREES
     max_nodes_by_type: dict[str, int] = field(
@@ -452,7 +455,10 @@ class EconomySystem:
         if not _is_settler(worker):
             return
         command = queue.peek()
-        if command is None or command.type != "gather":
+        if command is None:
+            return
+        if command.type != "gather":
+            self._refresh_active_deposit_move(world, worker, queue, command)
             return
 
         if _enemy_can_hit_position(world, worker.position, worker.owner):
@@ -600,13 +606,21 @@ class EconomySystem:
         resource_type: str,
     ) -> None:
         """Move a loaded worker to a hut and deposit resources."""
-        hut, deposit_point = _cached_deposit_target(world, command, worker)
+        hut, deposit_point = _cached_deposit_target(
+            world,
+            command,
+            worker,
+            force_refresh=command.payload.get("pending_move_key") is None,
+        )
         if hut is None:
             world.notify("Needs hut to deposit.")
             _clear_gather_job(worker, queue)
             return
         if not _within(worker.position, deposit_point, self.deposit_interaction_range):
             if _pending_move_failed(command, _move_key("hut", hut.id)):
+                if self._retry_hut_deposit_move(world, worker, queue, command):
+                    _set_state(worker, GATHER_STATE_MOVING_TO_HUT)
+                    return
                 world.notify("Cannot reach hut.")
                 _clear_gather_job(worker, queue)
                 return
@@ -649,6 +663,88 @@ class EconomySystem:
             _move_key("resource", resource.id),
         )
         _set_state(worker, GATHER_STATE_RETURNING_TO_RESOURCE)
+
+    def _refresh_active_deposit_move(
+        self,
+        world: WorldState,
+        worker: object,
+        queue: CommandQueue,
+        move_command: Command,
+    ) -> None:
+        """Retarget an in-progress deposit move to the currently closest hut."""
+        if move_command.type != "move" or int(getattr(worker, "carry_amount", 0)) <= 0:
+            return
+        if len(queue.commands) < 2:
+            return
+        gather_command = queue.commands[1]
+        if gather_command.type != "gather":
+            return
+        pending_key = gather_command.payload.get("pending_move_key")
+        if not isinstance(pending_key, str) or not pending_key.startswith("hut:"):
+            return
+        last_checked_ms = int(
+            gather_command.payload.get(
+                "deposit_target_checked_ms",
+                -self.deposit_target_refresh_ms,
+            )
+        )
+        if world.elapsed_ms - last_checked_ms < self.deposit_target_refresh_ms:
+            return
+
+        old_hut_id = _payload_entity_id(gather_command, "deposit_hut_id")
+        hut, deposit_point = _cached_deposit_target(
+            world,
+            gather_command,
+            worker,
+            force_refresh=True,
+        )
+        gather_command.payload["deposit_target_checked_ms"] = world.elapsed_ms
+        if hut is None:
+            return
+        if (
+            old_hut_id == hut.id
+            and move_command.target_pos is not None
+            and _distance(move_command.target_pos, deposit_point) < 1.0
+        ):
+            return
+
+        gather_command.payload["pending_move_key"] = _move_key("hut", hut.id)
+        queue.commands[0] = make_command(
+            "move",
+            [worker.id],
+            target_pos=deposit_point,
+            gather_move=True,
+        )
+        _set_state(worker, GATHER_STATE_MOVING_TO_HUT)
+
+    def _retry_hut_deposit_move(
+        self,
+        world: WorldState,
+        worker: object,
+        queue: CommandQueue,
+        command: Command,
+    ) -> bool:
+        """Retry a hut deposit route before reporting the deposit as unreachable."""
+        retry_count = int(command.payload.get("hut_deposit_retry_count", 0) or 0)
+        if retry_count >= HUT_DEPOSIT_MAX_RETRIES:
+            return False
+
+        command.payload["hut_deposit_retry_count"] = retry_count + 1
+        command.payload.pop("pending_move_key", None)
+        command.payload.pop("deposit_hut_id", None)
+        command.payload.pop("deposit_hut_x", None)
+        command.payload.pop("deposit_hut_y", None)
+        hut, deposit_point = _cached_deposit_target(world, command, worker)
+        if hut is None:
+            return False
+        _insert_move_before_gather(
+            queue,
+            worker.id,
+            deposit_point,
+            command,
+            _move_key("hut", hut.id),
+        )
+        return True
 
     def _request_reassignment_or_idle(
         self,
@@ -1354,12 +1450,14 @@ def _cached_deposit_target(
     world: WorldState,
     command: Command,
     worker: object,
+    *,
+    force_refresh: bool = False,
 ) -> tuple[Building | None, WorldPosition]:
     """Return cached deposit target."""
     cached_id = _payload_entity_id(command, "deposit_hut_id")
     cached_x = command.payload.get("deposit_hut_x")
     cached_y = command.payload.get("deposit_hut_y")
-    if cached_id is not None:
+    if cached_id is not None and not force_refresh:
         cached_hut = world.entities.get(cached_id)
         if (
             isinstance(cached_hut, Building)
@@ -1382,6 +1480,7 @@ def _cached_deposit_target(
     command.payload["deposit_hut_id"] = hut.id.to_json()
     command.payload["deposit_hut_x"] = position.x
     command.payload["deposit_hut_y"] = position.y
+    command.payload["deposit_target_checked_ms"] = world.elapsed_ms
     return hut, position
 
 

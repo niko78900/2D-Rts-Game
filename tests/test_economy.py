@@ -225,6 +225,109 @@ def test_gather_command_requires_completed_deposit_hut() -> None:
     ]
 
 
+def test_loaded_gatherer_retries_hut_deposit_route_before_failing() -> None:
+    """Verify that a stale hut move failure retries before notifying failure."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    settler.carry_type = "wood"
+    settler.carry_amount = GATHER_CARRY_AMOUNT
+    command = make_command(
+        "gather",
+        [settler.id],
+        target_entity_id=tree.id,
+        target_pos=tree.position,
+        resource_type="wood",
+        current_resource_id=tree.id.to_json(),
+        pending_move_key=f"hut:{int(hut.id)}",
+    )
+    world.enqueue_command(settler.id, command)
+
+    EconomySystem().update(world, 16)
+
+    commands = world.command_queues[settler.id].commands
+    assert [queued.type for queued in commands[:2]] == ["move", "gather"]
+    assert commands[1] == command
+    assert command.payload["hut_deposit_retry_count"] == 1
+    assert world.notifications == []
+
+
+def test_loaded_gatherer_chooses_nearest_hut_over_cached_hut() -> None:
+    """Verify that each loaded resource trip refreshes the nearest deposit hut."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    old_hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    new_hut = _add_completed_hut(world, WorldPosition(1000, old_hut.position.y))
+    old_position = hut_deposit_position(world, old_hut, settler.id)
+    world.update_entity_position(settler.id, WorldPosition(800, old_position.y))
+    settler.carry_type = "wood"
+    settler.carry_amount = GATHER_CARRY_AMOUNT
+    command = make_command(
+        "gather",
+        [settler.id],
+        target_entity_id=tree.id,
+        target_pos=tree.position,
+        resource_type="wood",
+        current_resource_id=tree.id.to_json(),
+        deposit_hut_id=old_hut.id.to_json(),
+        deposit_hut_x=old_position.x,
+        deposit_hut_y=old_position.y,
+    )
+    world.enqueue_command(settler.id, command)
+
+    EconomySystem().update(world, 16)
+
+    commands = world.command_queues[settler.id].commands
+    assert [queued.type for queued in commands[:2]] == ["move", "gather"]
+    assert commands[0].target_pos == hut_deposit_position(world, new_hut, settler.id)
+    assert command.payload["deposit_hut_id"] == new_hut.id.to_json()
+
+
+def test_active_deposit_move_periodically_retargets_to_closest_hut() -> None:
+    """Verify that walking deposit trips can switch to a closer completed hut."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    old_hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    new_hut = _add_completed_hut(world, WorldPosition(1000, old_hut.position.y))
+    old_position = hut_deposit_position(world, old_hut, settler.id)
+    world.update_entity_position(settler.id, WorldPosition(800, old_position.y))
+    settler.carry_type = "wood"
+    settler.carry_amount = GATHER_CARRY_AMOUNT
+    gather_command = make_command(
+        "gather",
+        [settler.id],
+        target_entity_id=tree.id,
+        target_pos=tree.position,
+        resource_type="wood",
+        current_resource_id=tree.id.to_json(),
+        pending_move_key=f"hut:{int(old_hut.id)}",
+        deposit_hut_id=old_hut.id.to_json(),
+        deposit_hut_x=old_position.x,
+        deposit_hut_y=old_position.y,
+        deposit_target_checked_ms=0,
+    )
+    move_command = make_command(
+        "move",
+        [settler.id],
+        target_pos=old_position,
+        gather_move=True,
+    )
+    queue = world.command_queues[settler.id]
+    queue.commands = [move_command, gather_command]
+    world.elapsed_ms = 2000
+
+    EconomySystem(deposit_target_refresh_ms=1000).update(world, 16)
+
+    commands = world.command_queues[settler.id].commands
+    assert commands[0].type == "move"
+    assert commands[0].target_pos == hut_deposit_position(world, new_hut, settler.id)
+    assert gather_command.payload["pending_move_key"] == f"hut:{int(new_hut.id)}"
+    assert gather_command.payload["deposit_hut_id"] == new_hut.id.to_json()
+
+
 def test_completed_player_huts_are_the_only_deposit_hubs() -> None:
     """Verify that completed player huts are the only deposit hubs."""
     world = create_demo_world()
@@ -544,6 +647,25 @@ def _add_settler_like(world, position: WorldPosition):
     )
     world.add_entity(entity)
     return entity
+
+
+def _add_completed_hut(world, position: WorldPosition) -> Building:
+    """Add a completed drop-off hut test fixture."""
+    template = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    hut = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=position,
+        footprint=template.footprint,
+        hp=template.max_hp,
+        max_hp=template.max_hp,
+        tags=template.tags,
+        complete=True,
+        functions=Building.production_functions(dropoff=True, population_cap_bonus=10),
+        dropoff_point=template.dropoff_point,
+    )
+    world.add_entity(hut)
+    return hut
 
 
 def _add_extra_resource_node(

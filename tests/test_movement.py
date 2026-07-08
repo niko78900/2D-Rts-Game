@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from house_of_wolves.core.contracts import Footprint, WorldPosition
+from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.unit import Unit
+from house_of_wolves.systems.combat import CombatSystem
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.movement import MovementSystem
 from house_of_wolves.systems.pathing import DETOUR_MARGIN
@@ -176,6 +178,55 @@ def test_move_command_inserts_detour_waypoints_around_resource_blocker() -> None
             unit.position,
             commands[0].target_pos,
             ignore_id=unit.id,
+        )
+        is None
+    )
+
+
+def test_attack_move_to_building_preserves_tree_detour_waypoints() -> None:
+    """Verify that building chase targets do not override resource detour segments."""
+    world = create_demo_world()
+    raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    _remove_other_resource_nodes(world, tree.id)
+    world.update_entity_position(raider.id, WorldPosition(860, 360))
+    building = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(680, 360),
+        footprint=Footprint(70, 80),
+        hp=200,
+        max_hp=200,
+        tags=("building", "hut", "selectable"),
+        complete=True,
+    )
+    world.add_entity(building)
+    world.enqueue_command(
+        raider.id,
+        make_command(
+            "move",
+            [raider.id],
+            target_pos=building.position,
+            attack_move=True,
+            wave_attack=True,
+        ),
+    )
+
+    CombatSystem().update(world, 16)
+    MovementSystem(unreachable_timeout_ms=10_000).update(world, 16)
+
+    commands = world.command_queues[raider.id].commands
+    assert len(commands) >= 2
+    assert commands[0].payload["path_detour"] is True
+    assert commands[0].payload["attack_move_chase_target_id"] == building.id.to_json()
+    assert commands[0].target_pos is not None
+    assert commands[0].target_pos != building.position
+    assert (
+        first_hard_obstacle_on_segment(
+            world,
+            raider.position,
+            commands[0].target_pos,
+            ignore_id=raider.id,
         )
         is None
     )

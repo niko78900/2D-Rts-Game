@@ -8,6 +8,7 @@ from math import hypot
 from house_of_wolves.core.contracts import Command, EntityId, WorldPosition
 from house_of_wolves.entities.building import Building
 from house_of_wolves.systems.buildings import start_building_destruction
+from house_of_wolves.systems.commands import make_command
 from house_of_wolves.world.collision import (
     MAX_COLLISION_ADJUSTMENT,
     MAX_SHOVE_PUSH,
@@ -116,7 +117,7 @@ class CombatSystem:
             if getattr(entity, "owner", NEUTRAL_OWNER) != "frontier":
                 objective = _primary_enemy_objective(world)
                 if objective is not None:
-                    _move_entity_toward(world, entity, objective.position, dt_ms)
+                    _queue_enemy_objective_move(world, entity, objective)
                     return
             _clear_attack_target_state(entity)
             return
@@ -398,6 +399,22 @@ def _move_entity_toward(
             desired,
             current=entity.position,
             max_adjustment=MAX_COLLISION_ADJUSTMENT,
+        ),
+    )
+    entity.state = "moving"
+
+
+def _queue_enemy_objective_move(world: WorldState, entity: object, objective: object) -> None:
+    """Queue idle enemy base pressure through the blocker-aware movement system."""
+    world.enqueue_command(
+        entity.id,
+        make_command(
+            "move",
+            [entity.id],
+            target_pos=objective.position,
+            attack_move=True,
+            group_move=True,
+            wave_attack=True,
         ),
     )
     entity.state = "moving"
