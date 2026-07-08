@@ -126,13 +126,6 @@ python -m house_of_wolves --validate
 
 The scaffold is based on `sources/House of Wolves 2013 Flash RTS Analytical Porting Report.pdf`.
 
-## Next Implementation Steps
-
-1. Add tree sprites and any remaining unit/building art replacements.
-2. Expand combat balance, upgrades, objectives, and wave tuning.
-3. Add save/load and broader UI feedback.
-4. Add audio hooks and final asset attribution.
-
 ## Asset Policy
 
 Use original assets wherever practical. If external assets are added later, prefer CC0 first,
