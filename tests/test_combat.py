@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from house_of_wolves.core.contracts import Footprint, WorldPosition
 from house_of_wolves.entities.building import Building
+from house_of_wolves.systems.buildings import (
+    BUILDING_DESTRUCTION_MS,
+    BuildingLifecycleSystem,
+    start_building_destruction,
+)
 from house_of_wolves.systems.combat import ATTACK_MOVE_CHASE_TIMEOUT_MS, CombatSystem
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.group_movement import issue_group_move_command
@@ -270,7 +275,7 @@ def test_enemy_raider_deals_melee_damage_when_player_unit_is_in_range() -> None:
 
 
 def test_enemy_unit_can_damage_player_building() -> None:
-    """Verify that enemy combat units can attack and destroy player buildings."""
+    """Verify that enemy combat units start building destruction."""
     world = create_demo_world()
     raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
     building = Building(
@@ -287,7 +292,47 @@ def test_enemy_unit_can_damage_player_building() -> None:
 
     CombatSystem().update(world, 16)
 
+    assert building.id in world.entities
+    assert building.alive is False
+    assert building.complete is False
+    assert building.destruction_remaining_ms == BUILDING_DESTRUCTION_MS
+    assert building.id not in world.hard_obstacle_ids
+
+
+def test_destroying_building_is_removed_after_visual_timer() -> None:
+    """Verify that building rubble is removed after its destruction timer."""
+    world = create_demo_world()
+    raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
+    building = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(raider.position.x + 30, raider.position.y),
+        footprint=Footprint(80, 80),
+        hp=1,
+        max_hp=100,
+        tags=("building", "test_target", "selectable"),
+        complete=True,
+    )
+    world.add_entity(building)
+
+    CombatSystem().update(world, 16)
+    BuildingLifecycleSystem().update(world, BUILDING_DESTRUCTION_MS)
+
     assert building.id not in world.entities
+
+
+def test_destroyed_hut_stops_granting_deposit_and_population() -> None:
+    """Verify that a visually destroying hut is already non-functional."""
+    world = create_demo_world()
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    assert world.max_population > 0
+    assert hut.id in world.completed_deposit_huts_by_owner["frontier"]
+
+    start_building_destruction(world, hut)
+
+    assert hut.alive is False
+    assert world.max_population == 0
+    assert world.completed_deposit_huts_by_owner.get("frontier", []) == []
 
 
 def test_attack_move_enemy_damages_building_from_footprint_edge() -> None:
@@ -318,5 +363,7 @@ def test_attack_move_enemy_damages_building_from_footprint_edge() -> None:
 
     CombatSystem().update(world, 16)
 
-    assert building.id not in world.entities
+    assert building.id in world.entities
+    assert building.alive is False
+    assert building.destruction_remaining_ms == BUILDING_DESTRUCTION_MS
     assert raider.state == "attacking"

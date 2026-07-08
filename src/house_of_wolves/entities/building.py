@@ -40,6 +40,7 @@ class Building(Entity):
     build_progress_ms: int = 0
     build_time_ms: int = 0
     complete: bool = False
+    destruction_remaining_ms: int = 0
     production_queue: list[ProductionQueueItem] = field(default_factory=list)
     functions: dict[str, object] = field(default_factory=dict)
     dropoff_point: WorldPosition | None = None

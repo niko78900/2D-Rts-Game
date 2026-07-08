@@ -142,6 +142,8 @@ def produce_unit(world: WorldState, producer_id: EntityId, unit_id: str) -> Unit
     producer = world.entities.get(producer_id)
     if not isinstance(producer, Building):
         raise ProductionError("producer must be a building")
+    if not producer.alive:
+        raise ProductionError("producer building is destroyed")
     if not producer.complete:
         raise ProductionError("producer building is not complete")
     production_config = producer.production_config

@@ -18,6 +18,7 @@ from house_of_wolves.core.keybindings import (
 )
 from house_of_wolves.core.performance import time_block
 from house_of_wolves.core.settings import UI_PANEL_HEIGHT, AppSettings
+from house_of_wolves.systems.buildings import is_building_destroying
 from house_of_wolves.systems.economy import tree_harvest_area_bounds, tree_harvest_slot_candidates
 from house_of_wolves.systems.selection import SelectionState
 from house_of_wolves.ui.selected_panel import SelectedPanel, selected_panel_for
@@ -53,15 +54,37 @@ HEALTH_FILL = (54, 174, 86)
 HEALTH_EMPTY = (139, 47, 43)
 RESOURCE_FILL = (230, 193, 77)
 RESOURCE_EMPTY = (118, 87, 35)
-HUT_STAGE_SCAFFOLDING = "scaffolding"
-HUT_STAGE_PARTIAL = "partial"
+HUT_STAGE_SCAFFOLDING = "construction_0_50"
+HUT_STAGE_PARTIAL = "construction_50_90"
 HUT_STAGE_COMPLETE = "complete"
-HUT_CONSTRUCTION_SPRITES = {
-    HUT_STAGE_SCAFFOLDING: "assets/art/buildings/hut_scaffolding.png",
-    HUT_STAGE_PARTIAL: "assets/art/buildings/hut_partial.png",
-    HUT_STAGE_COMPLETE: "assets/art/buildings/hut_complete.png",
-}
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+BUILDING_SPRITE_ROOT = PROJECT_ROOT / "assets" / "art" / "buildings" / "processed"
+BUILDING_STAGE_DAMAGE_75_50 = "damage_75_50"
+BUILDING_STAGE_DAMAGE_50_25 = "damage_50_25"
+BUILDING_STAGE_DAMAGE_25_10 = "damage_25_10"
+BUILDING_STAGE_DESTROYED_10_0 = "destroyed_10_0"
+BUILDING_SPRITE_BUILDING_IDS = ("hut", "barracks", "archery", "chicken_farm", "pig_farm")
+BUILDING_SPRITE_STAGES = (
+    HUT_STAGE_SCAFFOLDING,
+    HUT_STAGE_PARTIAL,
+    HUT_STAGE_COMPLETE,
+    BUILDING_STAGE_DAMAGE_75_50,
+    BUILDING_STAGE_DAMAGE_50_25,
+    BUILDING_STAGE_DAMAGE_25_10,
+    BUILDING_STAGE_DESTROYED_10_0,
+)
+BUILDING_SPRITE_PATHS = {
+    building_id: {
+        stage: BUILDING_SPRITE_ROOT / building_id / f"{stage}.png"
+        for stage in BUILDING_SPRITE_STAGES
+    }
+    for building_id in BUILDING_SPRITE_BUILDING_IDS
+}
+_BUILDING_SPRITE_CACHE: dict[tuple[str, str, str, bool], pygame.Surface | None] = {}
+HUT_CONSTRUCTION_SPRITES = {
+    stage: str(BUILDING_SPRITE_PATHS["hut"][stage])
+    for stage in (HUT_STAGE_SCAFFOLDING, HUT_STAGE_PARTIAL, HUT_STAGE_COMPLETE)
+}
 ANIMAL_SPRITE_PATHS = {
     "chicken": PROJECT_ROOT / "assets" / "art" / "resources" / "chicken.png",
     "pig": PROJECT_ROOT / "assets" / "art" / "resources" / "pig.png",
@@ -237,7 +260,7 @@ class GameRenderer:
             (
                 world.entities[entity_id]
                 for entity_id in visible_ids
-                if entity_id in world.entities and world.entities[entity_id].alive
+                if entity_id in world.entities and _renderable_entity(world.entities[entity_id])
             ),
             key=lambda entity: (entity.position.y, entity.position.x, int(entity.id)),
         )
@@ -386,6 +409,8 @@ class GameRenderer:
         entity: object,
     ) -> None:
         """Draw building."""
+        if self._draw_building_sprite(surface, rect, entity):
+            return
         tags = tuple(getattr(entity, "tags", ()))
         if "chicken_farm" in tags:
             self._draw_chicken_farm(surface, rect, complete=bool(getattr(entity, "complete", True)))
@@ -411,6 +436,29 @@ class GameRenderer:
         else:
             self._draw_hut_complete(surface, rect)
         self._draw_label(surface, _short_label(tags), rect.center)
+
+    def _draw_building_sprite(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        entity: object,
+    ) -> bool:
+        """Draw a processed building sprite when one exists for the entity stage."""
+        building_id = building_sprite_id_for(entity)
+        if building_id is None:
+            return False
+        stage = building_sprite_stage_for(entity)
+        sprite = _load_building_sprite(building_id, stage)
+        if sprite is None:
+            return False
+        target_size = _fit_sprite_inside_rect(sprite, rect)
+        cache_key = (f"building:{building_id}:{stage}", target_size)
+        scaled = self._scaled_sprite_cache.get(cache_key)
+        if scaled is None:
+            scaled = pygame.transform.smoothscale(sprite, target_size)
+            self._scaled_sprite_cache[cache_key] = scaled
+        surface.blit(scaled, scaled.get_rect(midbottom=rect.midbottom))
+        return True
 
     def _draw_hut_scaffolding(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
         """Draw hut scaffolding."""
@@ -1327,6 +1375,83 @@ def _is_enemy_entity(entity: object) -> bool:
     return getattr(entity, "owner", "neutral") not in {"frontier", "neutral"}
 
 
+def _renderable_entity(entity: object) -> bool:
+    """Return whether an entity should be drawn this frame."""
+    return getattr(entity, "alive", False) or is_building_destroying(entity)
+
+
+def building_sprite_id_for(entity: object) -> str | None:
+    """Return the normalized building sprite id for an entity."""
+    tags = set(getattr(entity, "tags", ()))
+    if "hut" in tags:
+        return "hut"
+    if "barracks" in tags:
+        return "barracks"
+    if "archery" in tags or "archery_range" in tags:
+        return "archery"
+    if "chicken_farm" in tags:
+        return "chicken_farm"
+    if "pig_farm" in tags:
+        return "pig_farm"
+    return None
+
+
+def building_sprite_stage_for(entity: object) -> str:
+    """Return the building sprite lifecycle stage for the current entity state."""
+    if is_building_destroying(entity):
+        return BUILDING_STAGE_DESTROYED_10_0
+    if not bool(getattr(entity, "complete", True)):
+        progress = _building_progress_ratio(entity)
+        if progress < 0.50:
+            return HUT_STAGE_SCAFFOLDING
+        if progress < 0.90:
+            return HUT_STAGE_PARTIAL
+        return HUT_STAGE_COMPLETE
+
+    max_hp = max(0, int(getattr(entity, "max_hp", 0) or getattr(entity, "hp", 0)))
+    if max_hp <= 0:
+        return HUT_STAGE_COMPLETE
+    hp_ratio = max(0.0, min(1.0, int(getattr(entity, "hp", 0)) / max_hp))
+    if hp_ratio <= 0.10:
+        return BUILDING_STAGE_DESTROYED_10_0
+    if hp_ratio <= 0.25:
+        return BUILDING_STAGE_DAMAGE_25_10
+    if hp_ratio <= 0.50:
+        return BUILDING_STAGE_DAMAGE_50_25
+    if hp_ratio <= 0.75:
+        return BUILDING_STAGE_DAMAGE_75_50
+    return HUT_STAGE_COMPLETE
+
+
+def building_sprite_reference_for(entity: object) -> str | None:
+    """Return the processed sprite path expected for a building entity."""
+    building_id = building_sprite_id_for(entity)
+    if building_id is None:
+        return None
+    return str(BUILDING_SPRITE_PATHS[building_id][building_sprite_stage_for(entity)])
+
+
+def _load_building_sprite(building_id: str, stage: str) -> pygame.Surface | None:
+    """Load and cache one processed building sprite."""
+    path = BUILDING_SPRITE_PATHS.get(building_id, {}).get(stage)
+    if path is None:
+        return None
+    can_convert = pygame.display.get_init() and pygame.display.get_surface() is not None
+    cache_key = (building_id, stage, str(path), can_convert)
+    if cache_key in _BUILDING_SPRITE_CACHE:
+        return _BUILDING_SPRITE_CACHE[cache_key]
+    if not path.exists():
+        _BUILDING_SPRITE_CACHE[cache_key] = None
+        return None
+    try:
+        sprite = pygame.image.load(str(path))
+        loaded = sprite.convert_alpha() if can_convert else sprite
+    except pygame.error:
+        loaded = None
+    _BUILDING_SPRITE_CACHE[cache_key] = loaded
+    return loaded
+
+
 def _load_animal_sprites() -> dict[str, pygame.Surface]:
     """Load animal sprites."""
     sprites: dict[str, pygame.Surface] = {}
@@ -1349,9 +1474,30 @@ def _sprite_target_size(sprite: pygame.Surface, rect: pygame.Rect) -> tuple[int,
     """Return the position used for sprite target size."""
     box_width = max(1, rect.width * 2)
     box_height = max(1, rect.height * 2)
+    return _fit_sprite_size(sprite, box_width, box_height, fallback=rect.size)
+
+
+def _fit_sprite_inside_rect(sprite: pygame.Surface, rect: pygame.Rect) -> tuple[int, int]:
+    """Return a size that fits a sprite inside a building footprint rectangle."""
+    return _fit_sprite_size(
+        sprite,
+        max(1, rect.width),
+        max(1, rect.height),
+        fallback=rect.size,
+    )
+
+
+def _fit_sprite_size(
+    sprite: pygame.Surface,
+    box_width: int,
+    box_height: int,
+    *,
+    fallback: tuple[int, int],
+) -> tuple[int, int]:
+    """Scale a sprite into a box while preserving its source aspect ratio."""
     width, height = sprite.get_size()
     if width <= 0 or height <= 0:
-        return (max(1, rect.width), max(1, rect.height))
+        return (max(1, fallback[0]), max(1, fallback[1]))
     aspect = width / height
     if box_width / box_height > aspect:
         target_height = box_height
@@ -1368,18 +1514,13 @@ def hut_construction_stage_for(entity: object) -> str:
     tags = set(getattr(entity, "tags", ()))
     if "hut" not in tags or bool(getattr(entity, "complete", True)):
         return HUT_STAGE_COMPLETE
-    progress = _building_progress_ratio(entity)
-    if progress < 0.34:
-        return HUT_STAGE_SCAFFOLDING
-    if progress < 1.0:
-        return HUT_STAGE_PARTIAL
-    return HUT_STAGE_COMPLETE
+    return building_sprite_stage_for(entity)
 
 
 def hut_sprite_reference_for(entity: object) -> str:
     """Return the expected future sprite path for the current Hut stage."""
 
-    return HUT_CONSTRUCTION_SPRITES[hut_construction_stage_for(entity)]
+    return str(BUILDING_SPRITE_PATHS["hut"][hut_construction_stage_for(entity)])
 
 
 def status_bar_for_entity(entity: object) -> StatusBarSpec | None:

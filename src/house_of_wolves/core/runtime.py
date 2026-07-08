@@ -30,6 +30,7 @@ from house_of_wolves.core.renderer import BuildingPlacementPreview, GameRenderer
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.resource_node import ResourceNode
+from house_of_wolves.systems.buildings import BuildingLifecycleSystem
 from house_of_wolves.systems.combat import CombatSystem
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.construction import ConstructionSystem, starting_construction_hp
@@ -104,6 +105,9 @@ class GameRuntime:
     selection_system: SelectionSystem = field(default_factory=SelectionSystem)
     movement_system: MovementSystem = field(default_factory=MovementSystem)
     combat_system: CombatSystem = field(default_factory=CombatSystem)
+    building_lifecycle_system: BuildingLifecycleSystem = field(
+        default_factory=BuildingLifecycleSystem,
+    )
     construction_system: ConstructionSystem = field(default_factory=ConstructionSystem)
     economy_system: EconomySystem = field(default_factory=EconomySystem)
     farm_system: FarmSystem = field(default_factory=FarmSystem)
@@ -716,6 +720,8 @@ class GameRuntime:
             self._update_camera(dt_ms)
         with time_block(stats, "combat"):
             self.combat_system.update(self.world, dt_ms)
+        with time_block(stats, "buildings"):
+            self.building_lifecycle_system.update(self.world, dt_ms)
         with time_block(stats, "movement"):
             self.movement_system.update(self.world, dt_ms)
         with time_block(stats, "construction"):
@@ -739,6 +745,7 @@ class GameRuntime:
             entity_id
             for entity_id in self.selection_system.state.selected_ids
             if entity_id in self.world.entities
+            and getattr(self.world.entities[entity_id], "alive", False)
         ]
         stats.snapshot_world_counts(self.world)
 

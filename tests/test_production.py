@@ -53,6 +53,17 @@ def test_produce_unit_rejects_units_not_trained_by_building() -> None:
         produce_unit(world, hut.id, "archer")
 
 
+def test_produce_unit_rejects_destroyed_building() -> None:
+    """Verify that rubble cannot continue producing units."""
+    world = create_demo_world()
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    hut.alive = False
+    hut.destruction_remaining_ms = 1000
+
+    with pytest.raises(ProductionError, match="destroyed"):
+        produce_unit(world, hut.id, "settler")
+
+
 def test_barracks_trains_cheaper_spearmen_than_hut() -> None:
     """Verify that Barracks train Spearmen with their cheaper first-pass cost."""
     world = create_demo_world()

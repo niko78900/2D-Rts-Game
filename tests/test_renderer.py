@@ -9,12 +9,20 @@ import pygame
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
 from house_of_wolves.core.renderer import (
     ANIMAL_SPRITE_PATHS,
+    BUILDING_SPRITE_BUILDING_IDS,
+    BUILDING_SPRITE_PATHS,
+    BUILDING_STAGE_DAMAGE_25_10,
+    BUILDING_STAGE_DAMAGE_50_25,
+    BUILDING_STAGE_DAMAGE_75_50,
+    BUILDING_STAGE_DESTROYED_10_0,
     HUT_CONSTRUCTION_SPRITES,
     HUT_STAGE_COMPLETE,
     HUT_STAGE_PARTIAL,
     HUT_STAGE_SCAFFOLDING,
     BuildingPlacementPreview,
     GameRenderer,
+    building_sprite_reference_for,
+    building_sprite_stage_for,
     dotted_line_points,
     gameplay_waypoint_links,
     gameplay_waypoint_markers,
@@ -244,6 +252,28 @@ def test_renderer_loads_chicken_and_pig_sprites() -> None:
     assert set(renderer.animal_sprites) >= {"chicken", "pig"}
 
 
+def test_processed_building_sprite_assets_exist_with_transparent_backgrounds() -> None:
+    """Verify that processed building sprites are normalized RGBA assets."""
+    expected_stages = {
+        HUT_STAGE_SCAFFOLDING,
+        HUT_STAGE_PARTIAL,
+        HUT_STAGE_COMPLETE,
+        BUILDING_STAGE_DAMAGE_75_50,
+        BUILDING_STAGE_DAMAGE_50_25,
+        BUILDING_STAGE_DAMAGE_25_10,
+        BUILDING_STAGE_DESTROYED_10_0,
+    }
+
+    assert set(BUILDING_SPRITE_PATHS) == set(BUILDING_SPRITE_BUILDING_IDS)
+    for paths_by_stage in BUILDING_SPRITE_PATHS.values():
+        assert set(paths_by_stage) == expected_stages
+        for path in paths_by_stage.values():
+            assert path.exists()
+            sprite = pygame.image.load(str(path))
+            assert sprite.get_flags() & pygame.SRCALPHA
+            assert sprite.get_at((0, 0)).a == 0
+
+
 def test_selected_panel_for_enemy_unit_shows_stats_without_commands() -> None:
     """Verify that selected panel for enemy unit shows stats without commands."""
     world = create_demo_world()
@@ -318,18 +348,47 @@ def test_hut_construction_stage_thresholds() -> None:
     hut.build_progress_ms = 0
     assert hut_construction_stage_for(hut) == HUT_STAGE_SCAFFOLDING
 
-    hut.build_progress_ms = 330
+    hut.build_progress_ms = 499
     assert hut_construction_stage_for(hut) == HUT_STAGE_SCAFFOLDING
 
-    hut.build_progress_ms = 340
+    hut.build_progress_ms = 500
     assert hut_construction_stage_for(hut) == HUT_STAGE_PARTIAL
 
-    hut.build_progress_ms = 1000
+    hut.build_progress_ms = 899
+    assert hut_construction_stage_for(hut) == HUT_STAGE_PARTIAL
+
+    hut.build_progress_ms = 900
     assert hut_construction_stage_for(hut) == HUT_STAGE_COMPLETE
 
 
-def test_hut_construction_sprite_references_are_named_for_future_assets() -> None:
-    """Verify that hut construction sprite references are named for future assets."""
+def test_building_sprite_stage_uses_damage_and_destruction_thresholds() -> None:
+    """Verify that completed building damage ratios select the expected sprites."""
+    world = create_demo_world()
+    hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+    hut.complete = True
+    hut.max_hp = 100
+
+    hut.hp = 76
+    assert building_sprite_stage_for(hut) == HUT_STAGE_COMPLETE
+
+    hut.hp = 75
+    assert building_sprite_stage_for(hut) == BUILDING_STAGE_DAMAGE_75_50
+
+    hut.hp = 50
+    assert building_sprite_stage_for(hut) == BUILDING_STAGE_DAMAGE_50_25
+
+    hut.hp = 25
+    assert building_sprite_stage_for(hut) == BUILDING_STAGE_DAMAGE_25_10
+
+    hut.hp = 10
+    assert building_sprite_stage_for(hut) == BUILDING_STAGE_DESTROYED_10_0
+
+    hut.destruction_remaining_ms = 1000
+    assert building_sprite_stage_for(hut) == BUILDING_STAGE_DESTROYED_10_0
+
+
+def test_hut_construction_sprite_references_are_processed_asset_paths() -> None:
+    """Verify that hut construction sprite references point at processed assets."""
     world = create_demo_world()
     hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
     hut.complete = False
@@ -341,7 +400,31 @@ def test_hut_construction_sprite_references_are_named_for_future_assets() -> Non
         HUT_STAGE_PARTIAL,
         HUT_STAGE_COMPLETE,
     }
-    assert hut_sprite_reference_for(hut).endswith("hut_scaffolding.png")
+    reference = hut_sprite_reference_for(hut).replace("\\", "/")
+    assert reference.endswith("processed/hut/construction_0_50.png")
+    assert building_sprite_reference_for(hut) == hut_sprite_reference_for(hut)
+
+
+def test_building_sprite_missing_asset_falls_back_to_placeholder() -> None:
+    """Verify that a missing building sprite does not block fallback drawing."""
+    pygame.init()
+    try:
+        world = create_demo_world()
+        hut = next(entity for entity in world.entities.values() if "hut" in entity.tags)
+        renderer = GameRenderer(AppSettings())
+        renderer._scaled_sprite_cache.clear()
+        surface = pygame.Surface((220, 160))
+        rect = pygame.Rect(40, 30, 150, 116)
+        original = BUILDING_SPRITE_PATHS["hut"][HUT_STAGE_COMPLETE]
+        BUILDING_SPRITE_PATHS["hut"][HUT_STAGE_COMPLETE] = original.with_name("missing.png")
+        try:
+            renderer._draw_building(surface, rect, hut)
+        finally:
+            BUILDING_SPRITE_PATHS["hut"][HUT_STAGE_COMPLETE] = original
+
+        assert surface.get_at(rect.center)[:3] != (0, 0, 0)
+    finally:
+        pygame.quit()
 
 
 def test_resource_hitbox_outline_is_hidden_by_default() -> None:

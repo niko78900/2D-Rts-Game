@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from math import hypot
 
 from house_of_wolves.core.contracts import Command, EntityId, WorldPosition
+from house_of_wolves.entities.building import Building
+from house_of_wolves.systems.buildings import start_building_destruction
 from house_of_wolves.world.collision import (
     MAX_COLLISION_ADJUSTMENT,
     MAX_SHOVE_PUSH,
@@ -346,6 +348,9 @@ def _attack_target(world: WorldState, attacker: object, target: object) -> bool:
     target.hp = max(0, int(getattr(target, "hp", 0)) - int(getattr(attacker, "damage", 0)))
     attacker.cooldown_remaining_ms = int(getattr(attacker, "attack_cooldown_ms", 0))
     if target.hp <= 0:
+        if isinstance(target, Building):
+            start_building_destruction(world, target)
+            return True
         target.alive = False
         world.remove_entity(target.id)
         return True
