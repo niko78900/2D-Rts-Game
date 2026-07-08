@@ -20,6 +20,10 @@ class PerformanceCounters:
     notifications_created: int = 0
     notifications_suppressed: int = 0
     notifications_active: int = 0
+    active_projectiles: int = 0
+    active_combat_effects: int = 0
+    attacks_started: int = 0
+    projectile_hits: int = 0
 
     def reset(self) -> None:
         """Reset accumulated counters to their initial values."""
@@ -30,6 +34,8 @@ class PerformanceCounters:
         self.collision_checks = 0
         self.notifications_created = 0
         self.notifications_suppressed = 0
+        self.attacks_started = 0
+        self.projectile_hits = 0
 
 
 @dataclass(slots=True)

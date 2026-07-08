@@ -16,9 +16,12 @@ from house_of_wolves.world.terrain import DEFAULT_TERRAIN_BANDS, TerrainBand
 
 if TYPE_CHECKING:
     from house_of_wolves.entities.base import Entity
+    from house_of_wolves.entities.combat_effect import CombatEffect
+    from house_of_wolves.entities.projectile import Projectile
 
 
 MAX_ACTIVE_NOTIFICATIONS = 8
+MAX_ACTIVE_COMBAT_EFFECTS = 256
 
 
 @dataclass(slots=True)
@@ -58,6 +61,8 @@ class WorldState:
     wave_number: int = 0
     next_wave_due_ms: int = 0
     notifications: list[Notification] = field(default_factory=list)
+    projectiles: list[Projectile] = field(default_factory=list)
+    combat_effects: list[CombatEffect] = field(default_factory=list)
     camera: Camera = field(default_factory=Camera)
     spatial_hash: SpatialHash = field(default_factory=SpatialHash)
     terrain_bands: tuple[TerrainBand, ...] = DEFAULT_TERRAIN_BANDS
@@ -103,6 +108,13 @@ class WorldState:
 
     def _remove_entity_references(self, entity_id: EntityId) -> None:
         """Remove queued commands and target payloads that reference a dead entity."""
+        for entity in self.entities.values():
+            if getattr(entity, "pending_attack_target_id", None) != entity_id:
+                continue
+            entity.pending_attack_target_id = None
+            entity.attack_windup_remaining_ms = 0
+            if getattr(entity, "state", None) == "attack_windup":
+                entity.state = "idle"
         for queue in self.command_queues.values():
             # Only combat-style target commands are removed here. Gather jobs keep
             # their own stale-node recovery path for resource depletion.
@@ -179,6 +191,12 @@ class WorldState:
             self.notifications = self.notifications[-MAX_ACTIVE_NOTIFICATIONS:]
         self.performance_stats.counters.notifications_created += 1
         self.performance_stats.counters.notifications_active = len(self.notifications)
+
+    def add_combat_effect(self, effect: CombatEffect) -> None:
+        """Append a bounded transient combat visual."""
+        self.combat_effects.append(effect)
+        if len(self.combat_effects) > MAX_ACTIVE_COMBAT_EFFECTS:
+            self.combat_effects = self.combat_effects[-MAX_ACTIVE_COMBAT_EFFECTS:]
 
     def update_notifications(self, dt_ms: int) -> None:
         """Expire old notifications and update message timers."""

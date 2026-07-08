@@ -170,6 +170,10 @@ class GameRenderer:
         init=False,
         repr=False,
     )
+    _damage_surface_cache: dict[tuple[int, tuple[int, int, int]], pygame.Surface] = field(
+        init=False,
+        repr=False,
+    )
 
     def __post_init__(self) -> None:
         """Normalize derived state after dataclass initialization."""
@@ -180,6 +184,7 @@ class GameRenderer:
         self.animal_sprites = _load_animal_sprites()
         self._scaled_sprite_cache = {}
         self._notification_surface_cache = {}
+        self._damage_surface_cache = {}
 
     def render(
         self,
@@ -201,6 +206,9 @@ class GameRenderer:
             self._draw_background(surface, world)
         with time_block(stats, "render_entities"):
             self._draw_entities(surface, world, selection.selected_ids)
+            self._draw_projectiles(surface, world)
+            self._draw_combat_effects(surface, world)
+            self._draw_attack_target_indicators(surface, world, selection.selected_ids)
         with time_block(stats, "render_waypoints"):
             self._draw_dropoff_markers(surface, world, selection.selected_ids)
             self._draw_destinations(surface, world, selection.selected_ids)
@@ -277,6 +285,11 @@ class GameRenderer:
     ) -> None:
         """Draw entities."""
         selected = set(selected_ids)
+        recent_hit_ids = {
+            effect.target_entity_id
+            for effect in world.combat_effects
+            if effect.kind == "hit_flash" and effect.target_entity_id is not None
+        }
         view_bounds = (
             world.camera.x - 160,
             -160,
@@ -309,28 +322,320 @@ class GameRenderer:
                 self._draw_unit(surface, rect, entity)
                 if self.settings.show_unit_hitboxes:
                     self._draw_entity_hitbox(surface, rect, "unit")
-            self._draw_status_bar(surface, rect, entity)
+            if _status_bar_visible(entity, entity.id in selected, entity.id in recent_hit_ids):
+                self._draw_status_bar(surface, rect, entity)
             if entity.id in selected:
                 self._draw_selection(surface, rect, enemy=_is_enemy_entity(entity))
 
+    def _draw_projectiles(self, surface: pygame.Surface, world: WorldState) -> None:
+        """Draw lightweight arrows with a shaft and directional arrowhead."""
+        for projectile in world.projectiles:
+            screen = world.camera.world_to_screen(projectile.position)
+            if not surface.get_rect().inflate(32, 32).collidepoint(screen):
+                continue
+            target_pos = projectile.target_pos or projectile.position
+            direction_x = target_pos.x - projectile.position.x
+            direction_y = target_pos.y - projectile.position.y
+            length = hypot(direction_x, direction_y)
+            if length <= 0.0001:
+                direction_x, direction_y = 1.0, 0.0
+            else:
+                direction_x /= length
+                direction_y /= length
+            perpendicular = (-direction_y, direction_x)
+            back = (
+                screen[0] - direction_x * 9,
+                screen[1] - direction_y * 9,
+            )
+            front = (
+                screen[0] + direction_x * 9,
+                screen[1] + direction_y * 9,
+            )
+            enemy = projectile.owner != "frontier"
+            shaft = (205, 92, 82) if enemy else (226, 207, 113)
+            outline = (75, 38, 42) if enemy else (77, 61, 35)
+            pygame.draw.line(surface, outline, back, front, 4)
+            pygame.draw.line(surface, shaft, back, front, 2)
+            head_back = (
+                front[0] - direction_x * 6,
+                front[1] - direction_y * 6,
+            )
+            pygame.draw.polygon(
+                surface,
+                shaft,
+                [
+                    (front[0] + direction_x * 3, front[1] + direction_y * 3),
+                    (
+                        head_back[0] + perpendicular[0] * 4,
+                        head_back[1] + perpendicular[1] * 4,
+                    ),
+                    (
+                        head_back[0] - perpendicular[0] * 4,
+                        head_back[1] - perpendicular[1] * 4,
+                    ),
+                ],
+            )
+
+    def _draw_combat_effects(self, surface: pygame.Surface, world: WorldState) -> None:
+        """Draw bounded hit, strike, death, damage, and wave visuals."""
+        for effect in world.combat_effects:
+            duration = max(1, int(effect.duration_ms))
+            progress = 1.0 - max(0.0, min(1.0, effect.remaining_ms / duration))
+            position = effect.position
+            target = (
+                world.entities.get(effect.target_entity_id)
+                if effect.target_entity_id is not None
+                else None
+            )
+            if target is not None:
+                position = _entity_visual_center(target)
+            screen = world.camera.world_to_screen(position)
+            if not surface.get_rect().inflate(100, 100).collidepoint(screen):
+                continue
+
+            if effect.kind == "hit_flash":
+                if target is not None:
+                    target_rect = _screen_rect(world, target.bounds).inflate(6, 6)
+                    if "building" in getattr(target, "tags", ()):
+                        pygame.draw.rect(
+                            surface,
+                            (255, 244, 209),
+                            target_rect,
+                            width=3,
+                            border_radius=4,
+                        )
+                    else:
+                        pygame.draw.ellipse(surface, (255, 244, 209), target_rect, width=3)
+                else:
+                    pygame.draw.circle(surface, (255, 244, 209), screen, 16, width=3)
+                continue
+
+            if effect.kind == "damage_number" and effect.value is not None:
+                color = (246, 103, 92) if effect.owner != "frontier" else (247, 219, 108)
+                key = (int(effect.value), color)
+                text = self._damage_surface_cache.get(key)
+                if text is None:
+                    text = self.small_font.render(f"-{effect.value}", True, color)
+                    if len(self._damage_surface_cache) > 48:
+                        self._damage_surface_cache.clear()
+                    self._damage_surface_cache[key] = text
+                draw_pos = (
+                    round(screen[0] - text.get_width() / 2),
+                    round(screen[1] - 20 - progress * 24),
+                )
+                surface.blit(text, draw_pos)
+                continue
+
+            if effect.kind == "death_burst":
+                radius = max(3, round(24 * (1.0 - progress)))
+                color = (126, 42, 48) if effect.owner != "frontier" else (66, 92, 65)
+                pygame.draw.circle(surface, color, screen, radius, width=3)
+                for direction_x, direction_y in (
+                    (1.0, 0.0),
+                    (-1.0, 0.0),
+                    (0.0, 1.0),
+                    (0.0, -1.0),
+                    (0.7, 0.7),
+                    (-0.7, 0.7),
+                ):
+                    end = (
+                        screen[0] + direction_x * radius,
+                        screen[1] + direction_y * radius,
+                    )
+                    pygame.draw.line(surface, color, screen, end, 2)
+                continue
+
+            if effect.kind == "melee_strike":
+                reach = 18 + round(progress * 12)
+                direction = (effect.direction_x, effect.direction_y)
+                perpendicular = (-direction[1], direction[0])
+                start = (
+                    screen[0] + direction[0] * 5,
+                    screen[1] + direction[1] * 5,
+                )
+                end = (
+                    screen[0] + direction[0] * reach,
+                    screen[1] + direction[1] * reach,
+                )
+                color = (235, 102, 91) if effect.owner != "frontier" else (244, 224, 143)
+                pygame.draw.line(surface, color, start, end, 4)
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (
+                        end[0] - direction[0] * 5 + perpendicular[0] * 7,
+                        end[1] - direction[1] * 5 + perpendicular[1] * 7,
+                    ),
+                    (
+                        end[0] - direction[0] * 5 - perpendicular[0] * 7,
+                        end[1] - direction[1] * 5 - perpendicular[1] * 7,
+                    ),
+                    2,
+                )
+                continue
+
+            if effect.kind == "spawn_marker":
+                radius = 34 + round(progress * 28)
+                color = (184, 60, 64)
+                pygame.draw.circle(surface, color, screen, radius, width=3)
+                pygame.draw.line(
+                    surface,
+                    color,
+                    (screen[0], screen[1] - radius - 18),
+                    (screen[0], screen[1] - radius + 2),
+                    4,
+                )
+
+    def _draw_attack_target_indicators(
+        self,
+        surface: pygame.Surface,
+        world: WorldState,
+        selected_ids: list[EntityId],
+    ) -> None:
+        """Mark targets currently attacked by selected player units."""
+        for target_id in _selected_attack_target_ids(world, selected_ids):
+            target = world.entities.get(target_id)
+            if target is None or not getattr(target, "alive", False):
+                continue
+            rect = _screen_rect(world, target.bounds)
+            marker = pygame.Rect(
+                rect.left - 7,
+                rect.bottom - 14,
+                rect.width + 14,
+                20,
+            )
+            pygame.draw.ellipse(surface, (225, 72, 67), marker, width=3)
+
     def _draw_unit(self, surface: pygame.Surface, rect: pygame.Rect, entity: object) -> None:
-        """Draw unit."""
-        tags = (
-            tuple(entity)
-            if isinstance(entity, tuple)
-            else tuple(getattr(entity, "tags", ()))
+        """Draw a readable primitive placeholder for one unit type."""
+        tags = tuple(getattr(entity, "tags", ()))
+        enemy = _is_enemy_entity(entity)
+        color = _unit_body_color(tags, enemy)
+        outline = (42, 27, 31) if enemy else (27, 38, 31)
+        state = str(getattr(entity, "state", "idle"))
+        if state == "attack_windup":
+            outline = (246, 211, 105)
+        elif state == "attacking":
+            outline = (248, 238, 205)
+
+        shadow = pygame.Rect(rect.left - 2, rect.bottom - 13, rect.width + 4, 13)
+        pygame.draw.ellipse(surface, (33, 42, 34), shadow)
+        body = pygame.Rect(
+            rect.left + 5,
+            rect.top + 13,
+            max(8, rect.width - 10),
+            max(12, rect.height - 15),
         )
-        color = (86, 145, 92)
-        if getattr(entity, "owner", "frontier") != "frontier":
-            color = (169, 76, 68)
-        elif "spearman" in tags:
-            color = (92, 123, 171)
-        elif "archer" in tags:
-            color = (171, 123, 68)
-        pygame.draw.ellipse(surface, (33, 42, 34), rect.move(0, 6).inflate(8, -18))
-        pygame.draw.ellipse(surface, color, rect)
-        pygame.draw.rect(surface, (28, 34, 30), rect, width=2, border_radius=6)
-        self._draw_label(surface, _short_label(tags), rect.center)
+        pygame.draw.rect(surface, color, body, border_radius=7)
+        pygame.draw.rect(surface, outline, body, width=2, border_radius=7)
+        head_radius = max(4, min(8, rect.width // 5))
+        head_center = (rect.centerx, rect.top + 12)
+        pygame.draw.circle(surface, _unit_head_color(enemy), head_center, head_radius)
+        pygame.draw.circle(surface, outline, head_center, head_radius, width=1)
+
+        facing_x = float(getattr(entity, "facing_x", 1.0))
+        facing_y = float(getattr(entity, "facing_y", 0.0))
+        facing_length = hypot(facing_x, facing_y)
+        if facing_length <= 0.0001:
+            facing_x, facing_y = 1.0, 0.0
+        else:
+            facing_x /= facing_length
+            facing_y /= facing_length
+        self._draw_unit_equipment(
+            surface,
+            rect,
+            tags,
+            enemy,
+            facing_x,
+            facing_y,
+        )
+        self._draw_facing_marker(surface, rect, enemy, facing_x, facing_y)
+        self._draw_label(surface, _short_label(tags), body.center)
+
+    def _draw_unit_equipment(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        tags: tuple[str, ...],
+        enemy: bool,
+        facing_x: float,
+        facing_y: float,
+    ) -> None:
+        """Draw a tool, spear, sword, or bow in the unit's facing direction."""
+        center = (float(rect.centerx), float(rect.centery + 3))
+        perpendicular = (-facing_y, facing_x)
+        weapon_color = (70, 48, 34) if not enemy else (55, 39, 46)
+        metal_color = (213, 213, 194) if not enemy else (226, 176, 177)
+
+        if _tags_include_role(tags, "archer"):
+            grip = _offset_point(center, facing_x, facing_y, 9)
+            bow_center = _offset_point(center, facing_x, facing_y, 17)
+            upper = (
+                bow_center[0] + perpendicular[0] * 11 - facing_x * 4,
+                bow_center[1] + perpendicular[1] * 11 - facing_y * 4,
+            )
+            lower = (
+                bow_center[0] - perpendicular[0] * 11 - facing_x * 4,
+                bow_center[1] - perpendicular[1] * 11 - facing_y * 4,
+            )
+            pygame.draw.lines(surface, weapon_color, False, [upper, bow_center, lower], 3)
+            pygame.draw.lines(surface, (204, 194, 157), False, [upper, grip, lower], 1)
+            return
+
+        if "spearman" in tags:
+            start = _offset_point(center, facing_x, facing_y, -8)
+            tip = _offset_point(center, facing_x, facing_y, 31)
+            pygame.draw.line(surface, weapon_color, start, tip, 3)
+            _draw_weapon_tip(surface, tip, facing_x, facing_y, metal_color)
+            return
+
+        if "settler" in tags:
+            start = _offset_point(center, facing_x, facing_y, -3)
+            tip = _offset_point(center, facing_x, facing_y, 22)
+            pygame.draw.line(surface, weapon_color, start, tip, 3)
+            axe_left = (
+                tip[0] + perpendicular[0] * 6,
+                tip[1] + perpendicular[1] * 6,
+            )
+            axe_right = (
+                tip[0] - perpendicular[0] * 6,
+                tip[1] - perpendicular[1] * 6,
+            )
+            pygame.draw.line(surface, metal_color, axe_left, axe_right, 4)
+            return
+
+        start = _offset_point(center, facing_x, facing_y, -3)
+        tip = _offset_point(center, facing_x, facing_y, 23)
+        pygame.draw.line(surface, metal_color, start, tip, 4)
+        guard_left = (
+            start[0] + perpendicular[0] * 6,
+            start[1] + perpendicular[1] * 6,
+        )
+        guard_right = (
+            start[0] - perpendicular[0] * 6,
+            start[1] - perpendicular[1] * 6,
+        )
+        pygame.draw.line(surface, weapon_color, guard_left, guard_right, 3)
+
+    def _draw_facing_marker(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        enemy: bool,
+        facing_x: float,
+        facing_y: float,
+    ) -> None:
+        """Draw a tiny triangle that makes movement and attack facing visible."""
+        center = (float(rect.centerx), float(rect.bottom - 5))
+        tip = _offset_point(center, facing_x, facing_y, 9)
+        perpendicular = (-facing_y, facing_x)
+        back = _offset_point(center, facing_x, facing_y, 3)
+        points = [
+            tip,
+            (back[0] + perpendicular[0] * 3, back[1] + perpendicular[1] * 3),
+            (back[0] - perpendicular[0] * 3, back[1] - perpendicular[1] * 3),
+        ]
+        pygame.draw.polygon(surface, (225, 90, 82) if enemy else (229, 214, 112), points)
 
     def _draw_resource(
         self,
@@ -1388,6 +1693,12 @@ class GameRenderer:
                 f"Candidates {counters.resource_candidates_checked}  "
                 f"Collision checks {counters.collision_checks}"
             ),
+            (
+                f"Projectiles {counters.active_projectiles}  "
+                f"Effects {counters.active_combat_effects}  "
+                f"Attacks {counters.attacks_started}  "
+                f"Hits {counters.projectile_hits}"
+            ),
         ]
         width = 390
         height = 18 + len(lines) * 19
@@ -1404,6 +1715,115 @@ class GameRenderer:
                 self.small_font,
                 color=(244, 238, 213),
             )
+
+
+def _unit_body_color(tags: tuple[str, ...], enemy: bool) -> tuple[int, int, int]:
+    """Return a distinct placeholder body color for each current unit role."""
+    if enemy:
+        if _tags_include_role(tags, "archer"):
+            return (125, 67, 119)
+        return (151, 61, 67)
+    if "spearman" in tags:
+        return (80, 120, 174)
+    if _tags_include_role(tags, "archer"):
+        return (177, 127, 62)
+    return (78, 145, 87)
+
+
+def _unit_head_color(enemy: bool) -> tuple[int, int, int]:
+    """Return the simple head color shared by placeholder combat units."""
+    return (180, 112, 108) if enemy else (206, 176, 132)
+
+
+def _tags_include_role(tags: tuple[str, ...], role: str) -> bool:
+    """Return whether plain or owner-prefixed tags identify a unit role."""
+    return any(tag == role or tag.endswith(f"_{role}") for tag in tags)
+
+
+def _offset_point(
+    origin: tuple[float, float],
+    direction_x: float,
+    direction_y: float,
+    distance: float,
+) -> tuple[float, float]:
+    """Offset a screen point along a normalized direction."""
+    return (
+        origin[0] + direction_x * distance,
+        origin[1] + direction_y * distance,
+    )
+
+
+def _draw_weapon_tip(
+    surface: pygame.Surface,
+    tip: tuple[float, float],
+    direction_x: float,
+    direction_y: float,
+    color: tuple[int, int, int],
+) -> None:
+    """Draw a small triangular spearhead at a weapon endpoint."""
+    perpendicular = (-direction_y, direction_x)
+    base = (
+        tip[0] - direction_x * 7,
+        tip[1] - direction_y * 7,
+    )
+    pygame.draw.polygon(
+        surface,
+        color,
+        [
+            (tip[0] + direction_x * 4, tip[1] + direction_y * 4),
+            (base[0] + perpendicular[0] * 4, base[1] + perpendicular[1] * 4),
+            (base[0] - perpendicular[0] * 4, base[1] - perpendicular[1] * 4),
+        ],
+    )
+
+
+def _entity_visual_center(entity: object) -> WorldPosition:
+    """Return the visual center of an anchored entity footprint."""
+    left, top, width, height = entity.bounds
+    return WorldPosition(left + width / 2, top + height / 2)
+
+
+def _selected_attack_target_ids(
+    world: WorldState,
+    selected_ids: list[EntityId],
+) -> set[EntityId]:
+    """Return live target IDs referenced by selected units' combat state."""
+    target_ids: set[EntityId] = set()
+    for entity_id in selected_ids:
+        entity = world.entities.get(entity_id)
+        if entity is None or getattr(entity, "owner", None) != "frontier":
+            continue
+        pending = getattr(entity, "pending_attack_target_id", None)
+        if pending is not None:
+            target_ids.add(pending)
+        queue = world.command_queues.get(entity_id)
+        command = queue.peek() if queue is not None else None
+        if command is None:
+            continue
+        if command.target_entity_id is not None and command.type == "attack":
+            target_ids.add(command.target_entity_id)
+        for key in ("attack_move_target_id", "attack_move_chase_target_id"):
+            value = command.payload.get(key)
+            if value is not None:
+                target_ids.add(EntityId(int(value)))
+    return target_ids
+
+
+def _status_bar_visible(entity: object, selected: bool, recently_hit: bool) -> bool:
+    """Return whether combat readability currently requires an entity bar."""
+    tags = set(getattr(entity, "tags", ()))
+    if "resource" in tags:
+        return True
+    if selected or recently_hit:
+        return True
+    if "building" in tags:
+        max_hp = max(0, int(getattr(entity, "max_hp", 0) or 0))
+        return max_hp > 0 and int(getattr(entity, "hp", 0)) < max_hp
+    return str(getattr(entity, "state", "idle")) in {
+        "attack_windup",
+        "attacking",
+        "attack_cooldown",
+    }
 
 
 def _screen_rect(world: WorldState, bounds: tuple[float, float, float, float]) -> pygame.Rect:

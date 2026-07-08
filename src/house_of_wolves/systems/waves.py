@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from house_of_wolves.core.contracts import EntityId, WorldPosition
+from house_of_wolves.entities.combat_effect import CombatEffect
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.production import create_combat_unit
 from house_of_wolves.world.collision import nearest_free_position
@@ -13,6 +14,7 @@ from house_of_wolves.world.world import WorldState
 
 WAVE_TARGET_FALLBACK_X = 520.0
 WAVE_SPAWN_RIGHT_MARGIN = 72.0
+WAVE_SPAWN_MARKER_MS = 1600
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +78,18 @@ class WaveSystem:
                     wave_attack=True,
                 ),
             )
+        if spawn_ids:
+            first_spawn = world.entities.get(spawn_ids[0])
+            if first_spawn is not None:
+                world.add_combat_effect(
+                    CombatEffect(
+                        kind="spawn_marker",
+                        position=first_spawn.position,
+                        duration_ms=WAVE_SPAWN_MARKER_MS,
+                        remaining_ms=WAVE_SPAWN_MARKER_MS,
+                        owner="wolves",
+                    )
+                )
         world.next_wave_due_ms = world.elapsed_ms + max(1, world.settings.wave_timer_seconds) * 1000
         world.notify("Enemy wave incoming!")
         return spawn_ids

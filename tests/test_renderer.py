@@ -40,12 +40,78 @@ from house_of_wolves.core.renderer import (
     status_bar_for_entity,
 )
 from house_of_wolves.core.settings import AppSettings
+from house_of_wolves.entities.combat_effect import CombatEffect
+from house_of_wolves.entities.projectile import Projectile
 from house_of_wolves.entities.resource_node import ResourceNode
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.ui.selected_panel import mutual_abilities, selected_panel_for
 from house_of_wolves.world.collision import blocking_bounds_for_entity
 from house_of_wolves.world.demo import create_demo_world
+
+
+def test_renderer_draws_arrow_projectile_with_primitives() -> None:
+    """Verify arrows render without unit sprites or spatial-hash entities."""
+    pygame.init()
+    try:
+        world = create_demo_world()
+        projectile = Projectile(
+            id=world.allocate_entity_id(),
+            owner="frontier",
+            position=WorldPosition(300, 300),
+            footprint=Footprint(1, 1),
+            hp=1,
+            max_hp=1,
+            tags=("projectile", "arrow"),
+            target_pos=WorldPosition(400, 300),
+            damage=4,
+            speed=620,
+            remaining_lifetime_ms=1000,
+        )
+        world.projectiles.append(projectile)
+        renderer = GameRenderer(AppSettings())
+        surface = pygame.Surface(AppSettings().virtual_size)
+        surface.fill((0, 0, 0))
+
+        renderer._draw_projectiles(surface, world)
+
+        screen = world.camera.world_to_screen(projectile.position)
+        region = pygame.Rect(screen[0] - 14, screen[1] - 14, 28, 28)
+        assert any(
+            surface.get_at((x, y))[:3] != (0, 0, 0)
+            for x in range(region.left, region.right)
+            for y in range(region.top, region.bottom)
+        )
+    finally:
+        pygame.quit()
+
+
+def test_damage_number_rendering_reuses_cached_text_surface() -> None:
+    """Verify floating combat text is rendered once per value and color."""
+    pygame.init()
+    try:
+        world = create_demo_world()
+        unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+        world.add_combat_effect(
+            CombatEffect(
+                kind="damage_number",
+                position=unit.position,
+                duration_ms=700,
+                remaining_ms=700,
+                owner="wolves",
+                value=6,
+            )
+        )
+        renderer = GameRenderer(AppSettings())
+        surface = pygame.Surface(AppSettings().virtual_size)
+
+        renderer._draw_combat_effects(surface, world)
+        first_surface = renderer._damage_surface_cache[(6, (246, 103, 92))]
+        renderer._draw_combat_effects(surface, world)
+
+        assert renderer._damage_surface_cache[(6, (246, 103, 92))] is first_surface
+    finally:
+        pygame.quit()
 
 
 def test_queued_move_targets_returns_all_move_commands_for_selected_units_only() -> None:

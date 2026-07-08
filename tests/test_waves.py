@@ -58,6 +58,7 @@ def test_start_wave_now_spawns_archers_on_later_waves() -> None:
     spawned = [world.entities[entity_id] for entity_id in spawned_ids]
     assert wave_composition_for(3).archers == 1
     assert any("enemy_archer" in entity.tags for entity in spawned)
+    assert any(effect.kind == "spawn_marker" for effect in world.combat_effects)
 
 
 def test_wave_system_spawns_enemies_from_right_side_only() -> None:

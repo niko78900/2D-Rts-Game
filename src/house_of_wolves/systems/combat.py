@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import hypot
 
-from house_of_wolves.core.contracts import Command, EntityId, WorldPosition
+from house_of_wolves.core.contracts import Command, EntityId, Footprint, WorldPosition
 from house_of_wolves.entities.building import Building
+from house_of_wolves.entities.combat_effect import CombatEffect
+from house_of_wolves.entities.projectile import Projectile
 from house_of_wolves.systems.buildings import start_building_destruction
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.world.collision import (
@@ -23,6 +25,15 @@ DEFAULT_ATTACK_MOVE_RADIUS = 180.0
 DEFAULT_GUARD_RADIUS = 230.0
 ATTACK_MOVE_HOLD_MS = 250
 ATTACK_MOVE_CHASE_TIMEOUT_MS = 7000
+RANGED_ATTACK_WINDUP_MS = 250
+MELEE_ATTACK_WINDUP_MS = 120
+ARROW_PROJECTILE_SPEED = 620.0
+ARROW_PROJECTILE_LIFETIME_MS = 1800
+ARROW_PROJECTILE_HIT_RADIUS = 12.0
+MELEE_STRIKE_EFFECT_MS = 170
+HIT_FLASH_EFFECT_MS = 180
+DAMAGE_NUMBER_EFFECT_MS = 700
+DEATH_EFFECT_MS = 700
 NEUTRAL_OWNER = "neutral"
 # Limit combat targets to units/buildings so resource nodes and farm animals are
 # ignored by wave pressure and idle guard scans.
@@ -35,13 +46,19 @@ class CombatSystem:
     guard_radius: float = DEFAULT_GUARD_RADIUS
     attack_hold_ms: int = ATTACK_MOVE_HOLD_MS
     chase_timeout_ms: int = ATTACK_MOVE_CHASE_TIMEOUT_MS
+    ranged_windup_ms: int = RANGED_ATTACK_WINDUP_MS
+    melee_windup_ms: int = MELEE_ATTACK_WINDUP_MS
+    projectile_speed: float = ARROW_PROJECTILE_SPEED
+    projectile_lifetime_ms: int = ARROW_PROJECTILE_LIFETIME_MS
 
     def update(self, world: WorldState, dt_ms: int) -> None:
         """Advance this system for one simulation tick."""
+        self._update_projectiles(world, dt_ms)
+        self._update_effects(world, dt_ms)
         for entity in list(world.entities.values()):
             if not _can_attack(entity):
                 continue
-            entity.cooldown_remaining_ms = max(0, entity.cooldown_remaining_ms - dt_ms)
+            _advance_attack_timers(entity, dt_ms)
             command = _current_command(world, entity.id)
             if command is None:
                 self._update_guard_unit(world, entity, dt_ms)
@@ -52,8 +69,10 @@ class CombatSystem:
             if _is_gather_related_command(command):
                 if self._update_gather_defense(world, entity, dt_ms):
                     continue
+                _clear_attack_target_state(entity)
                 continue
             if not _is_attack_move_command(command):
+                _clear_attack_target_state(entity)
                 continue
             target = _locked_or_nearest_enemy_target(
                 world,
@@ -63,11 +82,13 @@ class CombatSystem:
             )
             if target is None:
                 _clear_attack_target(command)
+                _clear_attack_target_state(entity)
                 continue
             command.payload["attack_move_target_id"] = target.id.to_json()
             command.payload["attack_move_chase_target_id"] = target.id.to_json()
 
             if _attack_distance(entity, target) > _attack_range_for(entity):
+                _cancel_attack_windup(entity)
                 last_contact_ms = _last_contact_ms(command, world.elapsed_ms)
                 if world.elapsed_ms - last_contact_ms >= self.chase_timeout_ms:
                     command.payload["attack_move_ignored_target_id"] = target.id.to_json()
@@ -78,9 +99,11 @@ class CombatSystem:
 
             command.payload["attack_move_last_contact_ms"] = world.elapsed_ms
             command.payload["pause_movement_until_ms"] = world.elapsed_ms + self.attack_hold_ms
-            if _attack_target(world, entity, target):
+            if self._attack_target(world, entity, target):
                 command.payload["last_attack_target_id"] = target.id.to_json()
                 _clear_attack_target(command)
+        world.performance_stats.counters.active_projectiles = len(world.projectiles)
+        world.performance_stats.counters.active_combat_effects = len(world.combat_effects)
 
     def _update_attack_command(
         self,
@@ -99,10 +122,11 @@ class CombatSystem:
             return
 
         if _attack_distance(entity, target) > _attack_range_for(entity):
+            _cancel_attack_windup(entity)
             _move_entity_toward(world, entity, target.position, dt_ms)
             return
 
-        if _attack_target(world, entity, target) and queue is not None:
+        if self._attack_target(world, entity, target) and queue is not None:
             queue.pop_next()
 
     def _update_guard_unit(self, world: WorldState, entity: object, dt_ms: int) -> None:
@@ -123,8 +147,9 @@ class CombatSystem:
             return
 
         if _attack_distance(entity, target) <= _attack_range_for(entity):
-            _attack_target(world, entity, target)
+            self._attack_target(world, entity, target)
             return
+        _cancel_attack_windup(entity)
         _move_entity_toward(world, entity, target.position, dt_ms)
 
     def _update_gather_defense(
@@ -141,9 +166,209 @@ class CombatSystem:
         if queue is not None:
             queue.clear()
         if _distance(entity.position, target.position) > _attack_range_for(entity):
+            _cancel_attack_windup(entity)
             _move_entity_toward(world, entity, target.position, dt_ms)
             return True
-        _attack_target(world, entity, target)
+        self._attack_target(world, entity, target)
+        return True
+
+    def _attack_target(
+        self,
+        world: WorldState,
+        attacker: object,
+        target: object,
+    ) -> bool:
+        """Advance one wind-up and release an attack when ready."""
+        _face_toward(attacker, target.position)
+        pending_target_id = getattr(attacker, "pending_attack_target_id", None)
+        if pending_target_id is not None and pending_target_id != target.id:
+            _cancel_attack_windup(attacker)
+            pending_target_id = None
+
+        if pending_target_id == target.id:
+            attacker.state = "attack_windup"
+            if int(getattr(attacker, "attack_windup_remaining_ms", 0)) > 0:
+                return False
+            attacker.pending_attack_target_id = None
+            if _is_ranged_attacker(attacker):
+                self._spawn_projectile(world, attacker, target)
+                target_killed = False
+            else:
+                self._spawn_melee_strike(world, attacker, target)
+                target_killed = self._apply_damage(
+                    world,
+                    target,
+                    int(getattr(attacker, "damage", 0)),
+                    attacker.owner,
+                )
+            attacker.cooldown_remaining_ms = int(
+                getattr(attacker, "attack_cooldown_ms", 0)
+            )
+            attacker.state = "attacking"
+            return target_killed
+
+        if int(getattr(attacker, "cooldown_remaining_ms", 0)) > 0:
+            attacker.state = "attack_cooldown"
+            return False
+
+        attacker.pending_attack_target_id = target.id
+        attacker.attack_windup_remaining_ms = (
+            self.ranged_windup_ms
+            if _is_ranged_attacker(attacker)
+            else self.melee_windup_ms
+        )
+        attacker.state = "attack_windup"
+        world.performance_stats.counters.attacks_started += 1
+        return False
+
+    def _spawn_projectile(
+        self,
+        world: WorldState,
+        attacker: object,
+        target: object,
+    ) -> None:
+        """Launch one arrow toward a target without spatial-hash registration."""
+        target_pos = _visual_center(target)
+        origin = _attack_origin(attacker, target_pos)
+        projectile = Projectile(
+            id=world.allocate_entity_id(),
+            owner=str(getattr(attacker, "owner", NEUTRAL_OWNER)),
+            position=origin,
+            footprint=Footprint(1, 1),
+            hp=1,
+            max_hp=1,
+            alive=True,
+            tags=("projectile", "arrow"),
+            target_entity_id=target.id,
+            target_pos=target_pos,
+            source_entity_id=attacker.id,
+            damage=int(getattr(attacker, "damage", 0)),
+            speed=self.projectile_speed,
+            remaining_lifetime_ms=self.projectile_lifetime_ms,
+            hit_radius=ARROW_PROJECTILE_HIT_RADIUS,
+        )
+        world.projectiles.append(projectile)
+
+    def _spawn_melee_strike(
+        self,
+        world: WorldState,
+        attacker: object,
+        target: object,
+    ) -> None:
+        """Create a short directional slash or thrust at melee impact."""
+        direction_x, direction_y = _direction_to(attacker.position, target.position)
+        world.add_combat_effect(
+            CombatEffect(
+                kind="melee_strike",
+                position=_visual_center(attacker),
+                duration_ms=MELEE_STRIKE_EFFECT_MS,
+                remaining_ms=MELEE_STRIKE_EFFECT_MS,
+                owner=str(getattr(attacker, "owner", NEUTRAL_OWNER)),
+                direction_x=direction_x,
+                direction_y=direction_y,
+            )
+        )
+
+    def _update_projectiles(self, world: WorldState, dt_ms: int) -> None:
+        """Move arrows directly toward their target or last known position."""
+        survivors: list[Projectile] = []
+        dt_seconds = max(0, int(dt_ms)) / 1000.0
+        for projectile in world.projectiles:
+            projectile.remaining_lifetime_ms -= max(0, int(dt_ms))
+            if projectile.remaining_lifetime_ms <= 0 or projectile.target_pos is None:
+                continue
+            target = world.entities.get(projectile.target_entity_id)
+            target_is_valid = (
+                target is not None
+                and _is_projectile_target(projectile, target)
+            )
+            if target_is_valid:
+                projectile.target_pos = _visual_center(target)
+
+            dx = projectile.target_pos.x - projectile.position.x
+            dy = projectile.target_pos.y - projectile.position.y
+            distance = hypot(dx, dy)
+            step = max(0.0, projectile.speed) * dt_seconds
+            if distance <= projectile.hit_radius + step:
+                projectile.position = projectile.target_pos
+                if target_is_valid:
+                    self._apply_damage(
+                        world,
+                        target,
+                        projectile.damage,
+                        projectile.owner,
+                    )
+                    world.performance_stats.counters.projectile_hits += 1
+                continue
+            if distance > 0 and step > 0:
+                ratio = min(1.0, step / distance)
+                projectile.position = WorldPosition(
+                    projectile.position.x + dx * ratio,
+                    projectile.position.y + dy * ratio,
+                )
+            survivors.append(projectile)
+        world.projectiles = survivors
+
+    def _update_effects(self, world: WorldState, dt_ms: int) -> None:
+        """Expire transient combat visuals without touching world entities."""
+        elapsed = max(0, int(dt_ms))
+        for effect in world.combat_effects:
+            effect.remaining_ms -= elapsed
+        world.combat_effects = [
+            effect for effect in world.combat_effects if effect.remaining_ms > 0
+        ]
+
+    def _apply_damage(
+        self,
+        world: WorldState,
+        target: object,
+        damage: int,
+        attacker_owner: str,
+    ) -> bool:
+        """Apply combat damage and emit bounded hit/death feedback."""
+        if not getattr(target, "alive", False):
+            return True
+        amount = max(0, int(damage))
+        target.hp = max(0, int(getattr(target, "hp", 0)) - amount)
+        position = _visual_center(target)
+        world.add_combat_effect(
+            CombatEffect(
+                kind="hit_flash",
+                position=position,
+                duration_ms=HIT_FLASH_EFFECT_MS,
+                remaining_ms=HIT_FLASH_EFFECT_MS,
+                owner=str(getattr(target, "owner", NEUTRAL_OWNER)),
+                target_entity_id=target.id,
+            )
+        )
+        if amount > 0:
+            world.add_combat_effect(
+                CombatEffect(
+                    kind="damage_number",
+                    position=position,
+                    duration_ms=DAMAGE_NUMBER_EFFECT_MS,
+                    remaining_ms=DAMAGE_NUMBER_EFFECT_MS,
+                    owner=attacker_owner,
+                    value=amount,
+                )
+            )
+        if target.hp > 0:
+            return False
+
+        world.add_combat_effect(
+            CombatEffect(
+                kind="death_burst",
+                position=position,
+                duration_ms=DEATH_EFFECT_MS,
+                remaining_ms=DEATH_EFFECT_MS,
+                owner=str(getattr(target, "owner", NEUTRAL_OWNER)),
+            )
+        )
+        if isinstance(target, Building):
+            start_building_destruction(world, target)
+            return True
+        target.alive = False
+        world.remove_entity(target.id)
         return True
 
 
@@ -337,25 +562,96 @@ def _clear_attack_target(command: Command) -> None:
 
 def _clear_attack_target_state(entity: object) -> None:
     """Clear attack target state."""
-    if getattr(entity, "state", None) in {"attacking", "moving"}:
+    _cancel_attack_windup(entity)
+    if getattr(entity, "state", None) in {
+        "attacking",
+        "attack_windup",
+        "attack_cooldown",
+        "moving",
+    }:
         entity.state = "idle"
 
 
-def _attack_target(world: WorldState, attacker: object, target: object) -> bool:
-    """Apply one attack if the attacker's cooldown is ready."""
-    attacker.state = "attacking"
-    if int(getattr(attacker, "cooldown_remaining_ms", 0)) > 0:
-        return False
-    target.hp = max(0, int(getattr(target, "hp", 0)) - int(getattr(attacker, "damage", 0)))
-    attacker.cooldown_remaining_ms = int(getattr(attacker, "attack_cooldown_ms", 0))
-    if target.hp <= 0:
-        if isinstance(target, Building):
-            start_building_destruction(world, target)
-            return True
-        target.alive = False
-        world.remove_entity(target.id)
-        return True
-    return False
+def _advance_attack_timers(entity: object, dt_ms: int) -> None:
+    """Advance cooldown and wind-up clocks once per combat frame."""
+    elapsed = max(0, int(dt_ms))
+    entity.cooldown_remaining_ms = max(
+        0,
+        int(getattr(entity, "cooldown_remaining_ms", 0)) - elapsed,
+    )
+    entity.attack_windup_remaining_ms = max(
+        0,
+        int(getattr(entity, "attack_windup_remaining_ms", 0)) - elapsed,
+    )
+    if (
+        entity.cooldown_remaining_ms > 0
+        and getattr(entity, "state", None) == "attacking"
+    ):
+        entity.state = "attack_cooldown"
+
+
+def _cancel_attack_windup(entity: object) -> None:
+    """Cancel an unreleased attack without resetting its normal cooldown."""
+    if hasattr(entity, "pending_attack_target_id"):
+        entity.pending_attack_target_id = None
+    if hasattr(entity, "attack_windup_remaining_ms"):
+        entity.attack_windup_remaining_ms = 0
+    if getattr(entity, "state", None) == "attack_windup":
+        entity.state = "idle"
+
+
+def _is_ranged_attacker(entity: object) -> bool:
+    """Return whether a unit should release an arrow projectile."""
+    return any(
+        tag == "archer" or tag.endswith("_archer")
+        for tag in getattr(entity, "tags", ())
+    )
+
+
+def _is_projectile_target(projectile: Projectile, target: object) -> bool:
+    """Validate only the arrow's assigned target without nearby scans."""
+    return (
+        getattr(target, "alive", False)
+        and bool(TARGET_TAGS & set(getattr(target, "tags", ())))
+        and getattr(target, "owner", NEUTRAL_OWNER) != NEUTRAL_OWNER
+        and getattr(target, "owner", None) != projectile.owner
+    )
+
+
+def _visual_center(entity: object) -> WorldPosition:
+    """Return the visual center of an entity's anchored footprint."""
+    left, top, width, height = entity.bounds
+    return WorldPosition(left + width / 2, top + height / 2)
+
+
+def _attack_origin(attacker: object, target_pos: WorldPosition) -> WorldPosition:
+    """Return a projectile launch point slightly ahead of its attacker."""
+    center = _visual_center(attacker)
+    direction_x, direction_y = _direction_to(center, target_pos)
+    return WorldPosition(
+        center.x + direction_x * 14.0,
+        center.y + direction_y * 14.0,
+    )
+
+
+def _direction_to(
+    origin: WorldPosition,
+    target: WorldPosition,
+) -> tuple[float, float]:
+    """Return a normalized direction with a deterministic right-facing fallback."""
+    dx = target.x - origin.x
+    dy = target.y - origin.y
+    distance = hypot(dx, dy)
+    if distance <= 0.0001:
+        return (1.0, 0.0)
+    return (dx / distance, dy / distance)
+
+
+def _face_toward(entity: object, target: WorldPosition) -> None:
+    """Update a combat unit's lightweight facing direction."""
+    if not hasattr(entity, "facing_x"):
+        return
+    entity.facing_x, entity.facing_y = _direction_to(entity.position, target)
 
 
 def _move_entity_toward(
@@ -368,6 +664,7 @@ def _move_entity_toward(
     dx = target.x - entity.position.x
     dy = target.y - entity.position.y
     distance = hypot(dx, dy)
+    _face_toward(entity, target)
     if distance <= _attack_range_for(entity):
         entity.state = "attacking"
         return

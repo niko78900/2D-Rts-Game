@@ -7,10 +7,16 @@ from house_of_wolves.systems.buildings import (
     BuildingLifecycleSystem,
     start_building_destruction,
 )
-from house_of_wolves.systems.combat import ATTACK_MOVE_CHASE_TIMEOUT_MS, CombatSystem
+from house_of_wolves.systems.combat import (
+    ATTACK_MOVE_CHASE_TIMEOUT_MS,
+    MELEE_ATTACK_WINDUP_MS,
+    RANGED_ATTACK_WINDUP_MS,
+    CombatSystem,
+)
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.systems.movement import MovementSystem
+from house_of_wolves.systems.production import create_combat_unit
 from house_of_wolves.world.demo import create_demo_world
 
 
@@ -38,12 +44,20 @@ def test_attack_move_holds_position_and_fires_while_enemy_is_in_range() -> None:
     movement.update(world, 16)
 
     command = world.command_queues[attacker.id].peek()
-    assert enemy.hp == starting_hp - attacker.damage
+    assert enemy.hp == starting_hp
     assert attacker.position == starting_position
-    assert attacker.state == "attacking"
+    assert attacker.state == "attack_windup"
     assert command is not None
     assert command.payload["attack_move"] is True
     assert command.payload["pause_movement_until_ms"] > world.elapsed_ms
+
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+    assert enemy.hp == starting_hp
+    assert len(world.projectiles) == 1
+
+    combat.update(world, 250)
+    assert enemy.hp == starting_hp - attacker.damage
+    assert not world.projectiles
 
 
 def test_direct_attack_command_fires_at_target_and_finishes_when_killed() -> None:
@@ -61,11 +75,19 @@ def test_direct_attack_command_fires_at_target_and_finishes_when_killed() -> Non
         attacker.id,
         make_command("attack", [attacker.id], target_entity_id=enemy.id),
     )
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+
+    assert enemy.id in world.entities
+    assert enemy.hp == 1
+    assert len(world.projectiles) == 1
+
+    combat.update(world, 250)
 
     assert enemy.id not in world.entities
     assert world.command_queues[attacker.id].peek() is None
-    assert attacker.state == "attacking"
+    assert any(effect.kind == "death_burst" for effect in world.combat_effects)
 
 
 def test_attack_move_chases_locked_target_when_enemy_is_out_of_range() -> None:
@@ -85,7 +107,9 @@ def test_attack_move_chases_locked_target_when_enemy_is_out_of_range() -> None:
         WorldPosition(attacker.position.x - 500, attacker.position.y),
         attack_move=True,
     )
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
     MovementSystem().update(world, 300)
 
     command = world.command_queues[attacker.id].peek()
@@ -138,7 +162,9 @@ def test_attack_move_resumes_after_killing_enemy() -> None:
         WorldPosition(attacker.position.x + 500, attacker.position.y),
         attack_move=True,
     )
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
     MovementSystem().update(world, 300)
 
     assert enemy.id not in world.entities
@@ -191,10 +217,17 @@ def test_idle_friendly_ranged_unit_attacks_enemy_inside_guard_sphere() -> None:
     )
     starting_hp = enemy.hp
 
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+
+    assert enemy.hp == starting_hp
+    assert len(world.projectiles) == 1
+
+    combat.update(world, 250)
 
     assert enemy.hp == starting_hp - archer.damage
-    assert archer.state == "attacking"
+    assert archer.state == "attack_cooldown"
 
 
 def test_idle_friendly_melee_unit_chases_enemy_inside_guard_sphere() -> None:
@@ -267,9 +300,14 @@ def test_gather_move_is_abandoned_when_enemy_can_attack_worker() -> None:
         ),
     )
 
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
 
     assert world.command_queues[settler.id].peek() is None
+    assert enemy.hp == starting_hp
+
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
+
     assert enemy.hp == starting_hp - settler.damage
     assert settler.state == "attacking"
 
@@ -285,7 +323,11 @@ def test_enemy_raider_deals_melee_damage_when_player_unit_is_in_range() -> None:
     )
     starting_hp = settler.hp
 
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    assert settler.hp == starting_hp
+
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
 
     assert settler.hp == starting_hp - raider.damage
     assert raider.state == "attacking"
@@ -307,7 +349,9 @@ def test_enemy_unit_can_damage_player_building() -> None:
     )
     world.add_entity(building)
 
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
 
     assert building.id in world.entities
     assert building.alive is False
@@ -332,7 +376,9 @@ def test_destroying_building_is_removed_after_visual_timer() -> None:
     )
     world.add_entity(building)
 
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
     BuildingLifecycleSystem().update(world, BUILDING_DESTRUCTION_MS)
 
     assert building.id not in world.entities
@@ -378,9 +424,128 @@ def test_attack_move_enemy_damages_building_from_footprint_edge() -> None:
         ),
     )
 
-    CombatSystem().update(world, 16)
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
 
     assert building.id in world.entities
     assert building.alive is False
     assert building.destruction_remaining_ms == BUILDING_DESTRUCTION_MS
     assert raider.state == "attacking"
+
+
+def test_enemy_archer_uses_projectile_damage_on_impact() -> None:
+    """Verify enemy ranged damage waits for an arrow to reach its target."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    enemy_archer = create_combat_unit(
+        world,
+        "enemy_archer",
+        "wolves",
+        WorldPosition(settler.position.x + 120, settler.position.y),
+    )
+    world.add_entity(enemy_archer)
+    world.enqueue_command(
+        enemy_archer.id,
+        make_command("attack", [enemy_archer.id], target_entity_id=settler.id),
+    )
+    starting_hp = settler.hp
+    combat = CombatSystem()
+
+    combat.update(world, 16)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+
+    assert settler.hp == starting_hp
+    enemy_arrows = [
+        projectile for projectile in world.projectiles if projectile.owner == "wolves"
+    ]
+    assert len(enemy_arrows) == 1
+
+    combat.update(world, 250)
+
+    assert settler.hp == starting_hp - enemy_archer.damage
+    assert not world.projectiles
+
+
+def test_arrow_flies_to_last_known_position_when_target_disappears() -> None:
+    """Verify a stale projectile expires safely without retargeting or damage."""
+    world = create_demo_world()
+    archer = next(entity for entity in world.entities.values() if "archer" in entity.tags)
+    enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
+    world.update_entity_position(
+        enemy.id,
+        WorldPosition(archer.position.x + 180, archer.position.y),
+    )
+    world.enqueue_command(
+        archer.id,
+        make_command("attack", [archer.id], target_entity_id=enemy.id),
+    )
+    combat = CombatSystem()
+    combat.update(world, 16)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+    assert len(world.projectiles) == 1
+
+    world.remove_entity(enemy.id)
+    combat.update(world, 1000)
+
+    assert not world.projectiles
+    assert world.performance_stats.counters.projectile_hits == 0
+
+
+def test_archer_windup_spawns_only_one_arrow_per_attack_cycle() -> None:
+    """Verify repeated combat updates cannot duplicate a pending ranged shot."""
+    world = create_demo_world()
+    archer = next(entity for entity in world.entities.values() if "archer" in entity.tags)
+    enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
+    world.update_entity_position(
+        enemy.id,
+        WorldPosition(archer.position.x + 120, archer.position.y),
+    )
+    world.enqueue_command(
+        archer.id,
+        make_command("attack", [archer.id], target_entity_id=enemy.id),
+    )
+    combat = CombatSystem()
+
+    combat.update(world, 16)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS - 1)
+    assert not world.projectiles
+
+    combat.update(world, 1)
+    assert len(world.projectiles) == 1
+
+    combat.update(world, 16)
+    assert len(world.projectiles) == 1
+
+
+def test_player_unit_death_cleans_population_indexes_and_adds_effect() -> None:
+    """Verify dead units leave gameplay immediately while their visual remains."""
+    world = create_demo_world()
+    raider = next(entity for entity in world.entities.values() if "raider_swordsman" in entity.tags)
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    for entity in world.entities.values():
+        if (
+            "unit" in entity.tags
+            and entity.owner == "frontier"
+            and entity.id != settler.id
+        ):
+            world.update_entity_position(
+                entity.id,
+                WorldPosition(settler.position.x - 400, settler.position.y),
+            )
+    world.update_entity_position(
+        settler.id,
+        WorldPosition(raider.position.x - 30, raider.position.y),
+    )
+    settler.hp = 1
+    starting_population = world.current_population
+    combat = CombatSystem()
+
+    combat.update(world, 16)
+    combat.update(world, MELEE_ATTACK_WINDUP_MS)
+
+    assert settler.id not in world.entities
+    assert settler.id not in world.unit_ids
+    assert settler.id not in world.command_queues
+    assert world.current_population == starting_population - settler.population_cost
+    assert any(effect.kind == "death_burst" for effect in world.combat_effects)

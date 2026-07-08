@@ -103,7 +103,10 @@ class MovementSystem:
         if command is None or command.target_pos is None:
             return
         if _movement_paused_for_attack(command, world.elapsed_ms):
-            if hasattr(entity, "state"):
+            if hasattr(entity, "state") and entity.state not in {
+                "attack_windup",
+                "attack_cooldown",
+            }:
                 entity.state = "attacking"
             return
 
@@ -112,6 +115,9 @@ class MovementSystem:
         dx = target.x - entity.position.x
         dy = target.y - entity.position.y
         distance = hypot(dx, dy)
+        if distance > 0.0001 and hasattr(entity, "facing_x"):
+            entity.facing_x = dx / distance
+            entity.facing_y = dy / distance
         if chasing_attack_target and distance <= _attack_range_for(entity):
             if hasattr(entity, "state"):
                 entity.state = "attacking"
