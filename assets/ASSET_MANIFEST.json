@@ -1,4 +1,38 @@
 {
   "policy": "Use original art/audio first. Prefer CC0 for third-party assets; record CC BY attribution here when used.",
-  "assets": []
+  "assets": [
+    {
+      "id": "building_lifecycle_sprites",
+      "type": "building art",
+      "paths": [
+        "assets/art/buildings",
+        "assets/art/buildings/processed"
+      ],
+      "source": "project-provided local files",
+      "license": "pending confirmation",
+      "notes": "Processed PNGs are transparent runtime copies generated from the original source folders."
+    },
+    {
+      "id": "mine_resource_sprites",
+      "type": "resource art",
+      "paths": [
+        "assets/art/resources/Ores",
+        "assets/art/resources/processed"
+      ],
+      "source": "project-provided local files",
+      "license": "pending confirmation",
+      "notes": "Processed PNGs are transparent runtime copies for Gold Mine, Iron Deposit, and Stone Outcrop depletion stages."
+    },
+    {
+      "id": "farm_animal_sprites",
+      "type": "resource art",
+      "paths": [
+        "assets/art/resources/chicken.png",
+        "assets/art/resources/pig.png"
+      ],
+      "source": "project-provided local files",
+      "license": "pending confirmation",
+      "notes": "Transparent runtime sprites for Chicken and Pig farm animals."
+    }
+  ]
 }

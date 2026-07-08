@@ -1,9 +1,9 @@
 # House of Wolves Remastered
 
-Playable scaffold for a faithful-first Pygame remaster of the 2013 side-scrolling RTS.
+Playable Pygame remaster scaffold for the 2013 side-scrolling RTS.
 
 This repository defines the package layout, data contracts, starter JSON content, schema
-validation, placeholder asset generation, tests, and the current minimal playable slice.
+validation, asset-processing tools, tests, and the current playable RTS slice.
 
 ## Setup
 
@@ -45,19 +45,41 @@ The in-game `Settings` button in the top-right HUD can toggle between borderless
 windowed mode and fullscreen.
 
 The same settings menu can toggle resource hitbox debug outlines. They are off by
-default; resource nodes still block movement while the outlines are hidden.
+default; resource nodes still block movement while the outlines are hidden. The settings
+menu also includes debug resource grants and enemy-wave controls.
 
 You can also double-click `launch_game.cmd` from the project folder.
 
-This opens the current minimal Pygame slice: placeholder map, camera panning, unit selection,
-loose group movement, basic production, drop-off flags, shoving, and right-click movement. It
-is not a full RTS prototype yet.
+This opens the current playable RTS slice: side-scrolling map, camera panning, unit
+selection, loose group movement, combat, enemy waves, resource gathering, building
+construction, production, food farms, population cap, rally points, and debug settings.
 
-Select the hut and click `Produce Settler` or `Produce Spearman` to spawn a unit. New units
-walk to the hut's blue drop-off flag.
+## Current Gameplay
 
-Click `Dropoff`, then click the map to move the hut flag. Click `Dropoff` again to cancel
-flag placement.
+- Select units with left click or drag-select. Shift adds to selection. Double-click selects visible units of the same type.
+- Right-click terrain with units selected to move; Shift + right-click queues waypoints.
+- Use Move, Attack, Attack Move, and Stop from the command panel or their configured hotkeys.
+- Settlers can gather Wood, Food, Stone, Iron, and Gold. Iron is the in-game name for the former Ore label.
+- Settlers can build Huts, Barracks, Archery, Chicken Farms, and Pig Farms on the building lane.
+- Completed Huts accept deposits, train basic units, set rally/drop-off points, and increase population cap.
+- Barracks train Spearmen and Archery buildings train Archers.
+- Chicken and Pig farms spawn animals, support one assigned worker, and produce Food through carcass harvesting.
+- Enemy waves are enabled by default and spawn enemy swordsmen/archers from the right side of the map.
+- Buildings and mine resources use processed sprite stages for construction, damage, destruction, or depletion.
+
+## Controls
+
+- `A` / `D` or arrow keys: pan camera.
+- Left click: select one object.
+- Left drag: box-select units.
+- Shift + select: add to current selection.
+- Ctrl + `1`-`9`: assign control group.
+- `1`-`9`: recall control group.
+- Right click terrain: move units or set selected production-building rally point.
+- Right click enemy: attack target.
+- Right click resource with settler selected: gather that node.
+- `Esc`: cancel build placement, targeting mode, sub-menu, or selection depending on current UI state.
+- Command-panel hotkeys use slot keys `Q`, `W`, `E`, `R`, `Z`, `S`, `X`, `F`, plus configurable direct action hotkeys in Settings.
 
 ## Architecture
 
@@ -67,8 +89,38 @@ flag placement.
 - `src/house_of_wolves/systems`: command, selection, economy, production, combat, upgrades, AI, waves, objectives.
 - `src/house_of_wolves/ui`: HUD, command panel, tooltips, cursors, notifications.
 - `data`: faithful-first starter content and JSON schemas.
-- `assets`: placeholder-ready art/audio/font directories plus licensing manifest.
+- `assets`: source art, processed runtime sprites, placeholder-ready audio/font directories, and licensing manifest.
 - `sources`: project reference documents, including the porting analysis PDF.
+
+## Asset Pipeline
+
+Source art stays untouched. Runtime sprites are generated into normalized `processed`
+folders and loaded with placeholder fallback when a sprite is missing.
+
+```powershell
+python tools/process_building_sprites.py
+python tools/process_resource_sprites.py
+```
+
+Building source sprites live under `assets/art/buildings/` and process into
+`assets/art/buildings/processed/` for Hut, Barracks, Archery, Chicken Farm, and Pig Farm.
+
+Mine resource source sprites live under `assets/art/resources/Ores/` and process into
+`assets/art/resources/processed/` for Gold Mine, Iron Deposit, and Stone Outcrop.
+
+Current runtime sprite stage rules:
+
+- Buildings: construction progress selects construction stages; completed HP selects damage stages; destroyed buildings show rubble briefly before removal.
+- Mine resources: HP ratio selects `amount_100_75`, `amount_75_25`, or `amount_25_0`.
+- Trees still use generated placeholder art until tree sprites are added.
+
+## Test Commands
+
+```powershell
+python -m ruff check src tests tools
+python -m pytest -q
+python -m house_of_wolves --validate
+```
 
 ## Sources
 
@@ -76,10 +128,10 @@ The scaffold is based on `sources/House of Wolves 2013 Flash RTS Analytical Port
 
 ## Next Implementation Steps
 
-1. Fill in worker gather/deposit behavior using the resource definitions.
-2. Add building placement validation and production queues.
-3. Add combat resolution and defensive structure targeting.
-4. Add waves, objectives, save/load, and richer UI feedback.
+1. Add tree sprites and any remaining unit/building art replacements.
+2. Expand combat balance, upgrades, objectives, and wave tuning.
+3. Add save/load and broader UI feedback.
+4. Add audio hooks and final asset attribution.
 
 ## Asset Policy
 
