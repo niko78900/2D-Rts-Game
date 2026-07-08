@@ -1,9 +1,9 @@
 # House of Wolves Remastered
 
-Playable Pygame remaster scaffold for the 2013 side-scrolling RTS.
+Playable alpha-stage Pygame remaster of the 2013 side-scrolling RTS.
 
-This repository defines the package layout, data contracts, starter JSON content, schema
-validation, asset-processing tools, tests, and the current playable RTS slice.
+This repository contains the current RTS implementation: gameplay systems, data
+definitions, validation, asset-processing tools, tests, and runtime assets.
 
 ## Setup
 
@@ -22,7 +22,7 @@ python -m house_of_wolves --validate
 
 The validation mode loads and validates the JSON definitions, then prints a content summary.
 
-## Playable Slice
+## Playable Alpha
 
 ```powershell
 python -m house_of_wolves
@@ -90,7 +90,6 @@ construction, production, food farms, population cap, rally points, and debug se
 - `src/house_of_wolves/ui`: HUD, command panel, tooltips, cursors, notifications.
 - `data`: faithful-first starter content and JSON schemas.
 - `assets`: source art, processed runtime sprites, placeholder-ready audio/font directories, and licensing manifest.
-- `sources`: project reference documents, including the porting analysis PDF.
 
 ## Asset Pipeline
 
@@ -121,12 +120,3 @@ python -m ruff check src tests tools
 python -m pytest -q
 python -m house_of_wolves --validate
 ```
-
-## Sources
-
-The scaffold is based on `sources/House of Wolves 2013 Flash RTS Analytical Porting Report.pdf`.
-
-## Asset Policy
-
-Use original assets wherever practical. If external assets are added later, prefer CC0 first,
-then CC BY with attribution recorded in `assets/ASSET_MANIFEST.json`.
