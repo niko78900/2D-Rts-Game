@@ -19,11 +19,15 @@ from house_of_wolves.systems.farming import (
     PIG_RESPAWN_DELAY_MS,
     FarmSystem,
     animal_area_bounds,
+    animal_harvest_area_bounds,
+    animal_harvest_slot_candidates,
+    animal_interaction_position,
     assigned_worker_id,
     farm_animal,
     farm_carcass,
     farm_resource,
     farm_state,
+    is_worker_in_animal_harvest_range,
 )
 from house_of_wolves.world.demo import create_demo_world
 from house_of_wolves.world.terrain import terrain_layout_for_height
@@ -245,6 +249,132 @@ def test_live_farm_animal_wanders_inside_its_farm_area() -> None:
 
     moved = abs(animal.position.x - starting.x) + abs(animal.position.y - starting.y)
     assert moved > 1.0
+
+
+def test_chicken_and_pig_have_distinct_side_harvest_slots() -> None:
+    """Verify farm animals expose clear left and right worker positions."""
+    for building_id in (CHICKEN_FARM_ID, PIG_FARM_ID):
+        world = create_demo_world()
+        system = FarmSystem()
+        farm = _add_completed_farm(world, building_id)
+        system.update(world, 16)
+        animal = farm_animal(world, farm)
+
+        assert animal is not None
+        slots = animal_harvest_slot_candidates(world, animal)
+        assert len(slots) == 2
+        assert slots[0].x < animal.bounds[0]
+        assert slots[1].x > animal.bounds[0] + animal.bounds[2]
+        assert all(
+            _position_in_bounds(slot, animal_harvest_area_bounds(animal))
+            for slot in slots
+        )
+
+
+def test_animal_interaction_retains_nearest_side() -> None:
+    """Verify crossing the animal does not flip an active worker's side slot."""
+    world = create_demo_world()
+    system = FarmSystem()
+    farm = _add_completed_farm(world)
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    system.assign_worker(world, farm, settler.id)
+    system.update(world, 16)
+    animal = farm_animal(world, farm)
+
+    assert animal is not None
+    world.update_entity_position(
+        settler.id,
+        WorldPosition(animal.position.x - 140, animal.position.y),
+    )
+    left_slot = animal_interaction_position(world, farm, animal, settler.id)
+    world.update_entity_position(
+        settler.id,
+        WorldPosition(animal.position.x + 140, animal.position.y),
+    )
+    retained_slot = animal_interaction_position(world, farm, animal, settler.id)
+
+    assert left_slot.x < animal.position.x
+    assert retained_slot.x < animal.position.x
+
+
+def test_blocked_animal_side_falls_back_to_opposite_side() -> None:
+    """Verify a hard blocker redirects a farm worker to the other animal side."""
+    world = create_demo_world()
+    system = FarmSystem()
+    farm = _add_completed_farm(world)
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    system.assign_worker(world, farm, settler.id)
+    system.update(world, 16)
+    animal = farm_animal(world, farm)
+
+    assert animal is not None
+    slots = animal_harvest_slot_candidates(world, animal, settler.id)
+    assert len(slots) == 2
+    blocker = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=slots[0],
+        footprint=Footprint(72, 72),
+        hp=100,
+        max_hp=100,
+        tags=("building", "test_blocker"),
+        complete=True,
+    )
+    world.add_entity(blocker)
+    world.update_entity_position(
+        settler.id,
+        WorldPosition(animal.position.x - 140, animal.position.y),
+    )
+
+    interaction = animal_interaction_position(world, farm, animal, settler.id)
+
+    assert interaction.x > animal.position.x
+
+
+def test_worker_harvest_range_uses_animal_rectangle() -> None:
+    """Verify a settler at a farm-animal side slot may work the target."""
+    world = create_demo_world()
+    system = FarmSystem()
+    farm = _add_completed_farm(world, PIG_FARM_ID)
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    system.update(world, 16)
+    animal = farm_animal(world, farm)
+
+    assert animal is not None
+    side_slot = animal_harvest_slot_candidates(world, animal, settler.id)[0]
+    world.update_entity_position(settler.id, side_slot)
+
+    assert is_worker_in_animal_harvest_range(settler, animal)
+    assert not (
+        animal.bounds[0] <= settler.position.x <= animal.bounds[0] + animal.bounds[2]
+    )
+
+
+def test_live_animal_side_remains_valid_after_carcass_conversion() -> None:
+    """Verify the worker uses the retained side after an animal becomes a carcass."""
+    world = create_demo_world()
+    system = FarmSystem()
+    farm = _add_completed_farm(world)
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    system.assign_worker(world, farm, settler.id)
+    system.update(world, 16)
+    animal = farm_animal(world, farm)
+
+    assert animal is not None
+    world.update_entity_position(
+        settler.id,
+        WorldPosition(animal.position.x - 140, animal.position.y),
+    )
+    side_slot = animal_interaction_position(world, farm, animal, settler.id)
+    world.update_entity_position(settler.id, side_slot)
+    world.command_queues[settler.id].clear()
+    system.update(world, FARM_ANIMAL_SWING_MS * animal.max_hp)
+    carcass = farm_carcass(world, farm)
+
+    assert carcass is animal
+    retained_slot = animal_interaction_position(world, farm, carcass, settler.id)
+    assert retained_slot.x < carcass.position.x
+    assert is_worker_in_animal_harvest_range(settler, carcass)
 
 
 def test_farm_without_completed_hut_pauses_and_notifies() -> None:

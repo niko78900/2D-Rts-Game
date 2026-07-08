@@ -15,7 +15,12 @@ from house_of_wolves.systems.economy import (
     completed_deposit_huts,
     hut_deposit_position,
 )
-from house_of_wolves.world.collision import nearest_free_position
+from house_of_wolves.world.collision import (
+    UNIT_COLLISION_RADIUS,
+    nearest_free_position,
+    occupied_by_unit,
+    position_blocked_by_hard_obstacle,
+)
 from house_of_wolves.world.terrain import (
     clamp_unit_position_to_walkable_lane_for_height,
     terrain_layout_for_height,
@@ -55,6 +60,13 @@ FARM_ANIMAL_AREA_MIN_WIDTH = 170.0
 FARM_ANIMAL_IDLE_MIN_MS = 700
 FARM_ANIMAL_IDLE_MAX_MS = 1800
 FARM_ANIMAL_TARGET_RADIUS = 4.0
+FARM_ANIMAL_HARVEST_AREA_MIN_WIDTH = 100.0
+FARM_ANIMAL_HARVEST_AREA_MIN_HEIGHT = 64.0
+FARM_ANIMAL_HARVEST_HORIZONTAL_PADDING = 38.0
+FARM_ANIMAL_HARVEST_VERTICAL_PADDING = 20.0
+FARM_ANIMAL_HARVEST_SLOT_INSET = 8.0
+FARM_INTERACTION_RESOURCE_KEY = "farm_interaction_resource_id"
+FARM_INTERACTION_SIDE_KEY = "farm_interaction_side_index"
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +166,7 @@ class FarmSystem:
         self.unassign_worker_from_other_farms(world, worker_id)
         farm.functions["assigned_worker_id"] = worker_id.to_json()
         farm.functions.pop("farm_no_hut_notified", None)
+        _clear_farm_interaction_slot(farm)
         queue = world.command_queues.get(worker_id)
         if queue is not None:
             queue.clear()
@@ -179,6 +192,7 @@ class FarmSystem:
                 queue.clear()
         farm.functions.pop("assigned_worker_id", None)
         farm.functions.pop(FARM_MOVE_KEY, None)
+        _clear_farm_interaction_slot(farm)
         if getattr(farm, "alive", False):
             farm.functions["farm_state"] = FARM_STATE_IDLE_NO_WORKER
 
@@ -267,6 +281,7 @@ class FarmSystem:
             _set_farm_state(farm, FARM_STATE_WAITING_FOR_ANIMAL)
             return
         animal = self._spawn_animal(world, farm)
+        _clear_farm_interaction_slot(farm)
         farm.functions["farm_animal_id"] = animal.id.to_json()
         farm.functions.pop("farm_carcass_id", None)
         farm.functions["farm_spawn_due_ms"] = 0
@@ -369,8 +384,8 @@ class FarmSystem:
         dt_ms: int,
     ) -> None:
         """Advance animal kill for the current frame."""
-        interaction = _interaction_position(world, animal, worker.id)
-        if not _within(worker.position, interaction, self.interaction_range):
+        interaction = animal_interaction_position(world, farm, animal, worker.id)
+        if not is_worker_in_animal_harvest_range(worker, animal):
             self._issue_farm_move(
                 world,
                 farm,
@@ -431,8 +446,8 @@ class FarmSystem:
             _set_farm_state(farm, FARM_STATE_WAITING_FOR_WORKER_RETURN)
             self._finish_carcass_if_empty(world, farm, worker)
             return
-        interaction = _interaction_position(world, carcass, worker.id)
-        if not _within(worker.position, interaction, self.interaction_range):
+        interaction = animal_interaction_position(world, farm, carcass, worker.id)
+        if not is_worker_in_animal_harvest_range(worker, carcass):
             self._issue_farm_move(
                 world,
                 farm,
@@ -514,6 +529,7 @@ class FarmSystem:
             farm.functions["farm_food_remaining"] = 0
             farm.functions["farm_harvest_progress_ms"] = 0
             _clear_animal_wander_state(farm)
+            _clear_farm_interaction_slot(farm)
         _set_state(worker, WORKER_STATE_ASSIGNED_TO_FARM)
         self._spawn_or_wait(world, farm)
 
@@ -562,6 +578,7 @@ class FarmSystem:
         farm.functions["farm_harvest_progress_ms"] = 0
         farm.functions.pop("farm_spawn_due_ms", None)
         farm.functions.pop("farm_spawn_ready", None)
+        _clear_farm_interaction_slot(farm)
 
     def _cleanup_orphaned_farm_resources(self, world: WorldState) -> None:
         """Clean up orphaned farm resources."""
@@ -632,6 +649,108 @@ def animal_area_bounds(world: WorldState, farm: Building) -> tuple[float, float,
     return (left, top, max(1.0, right - left), max(1.0, bottom - top))
 
 
+def animal_harvest_area_bounds(
+    animal: ResourceNode,
+) -> tuple[float, float, float, float]:
+    """Return the rectangular interaction area surrounding a farm animal."""
+    left, top, width, height = animal.bounds
+    area_width = max(
+        FARM_ANIMAL_HARVEST_AREA_MIN_WIDTH,
+        width + FARM_ANIMAL_HARVEST_HORIZONTAL_PADDING * 2,
+    )
+    area_height = max(
+        FARM_ANIMAL_HARVEST_AREA_MIN_HEIGHT,
+        height + FARM_ANIMAL_HARVEST_VERTICAL_PADDING * 2,
+    )
+    center_x = left + width / 2
+    center_y = top + height / 2
+    return (
+        center_x - area_width / 2,
+        center_y - area_height / 2,
+        area_width,
+        area_height,
+    )
+
+
+def animal_harvest_slot_candidates(
+    world: WorldState,
+    animal: ResourceNode,
+    worker_id: EntityId | None = None,
+) -> list[WorldPosition]:
+    """Return valid left and right interaction slots for a farm animal."""
+    if "farm_food" not in animal.tags:
+        return []
+    candidates: list[WorldPosition] = []
+    for side_index in range(2):
+        candidate = _animal_harvest_slot_for_side(
+            world,
+            animal,
+            side_index,
+            worker_id,
+        )
+        if candidate is not None and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def animal_interaction_position(
+    world: WorldState,
+    farm: Building,
+    animal: ResourceNode,
+    worker_id: EntityId,
+) -> WorldPosition:
+    """Return a stable side interaction position for a farm worker."""
+    stored_resource_id = _payload_entity_id(
+        farm.functions.get(FARM_INTERACTION_RESOURCE_KEY)
+    )
+    stored_side = farm.functions.get(FARM_INTERACTION_SIDE_KEY)
+    if stored_resource_id == animal.id and stored_side in (0, 1):
+        side_order = (int(stored_side), 1 - int(stored_side))
+    else:
+        worker = world.entities.get(worker_id)
+        origin = worker.position if worker is not None else animal.position
+        raw_slots = _raw_animal_harvest_slots(animal)
+        nearest_side = min(
+            range(2),
+            key=lambda index: hypot(
+                origin.x - raw_slots[index].x,
+                origin.y - raw_slots[index].y,
+            ),
+        )
+        side_order = (nearest_side, 1 - nearest_side)
+
+    for side_index in side_order:
+        candidate = _animal_harvest_slot_for_side(
+            world,
+            animal,
+            side_index,
+            worker_id,
+        )
+        if candidate is None:
+            continue
+        farm.functions[FARM_INTERACTION_RESOURCE_KEY] = animal.id.to_json()
+        farm.functions[FARM_INTERACTION_SIDE_KEY] = side_index
+        return candidate
+
+    fallback = nearest_free_position(
+        world,
+        _raw_animal_harvest_slots(animal)[side_order[0]],
+        ignore_id=worker_id,
+        min_distance=UNIT_COLLISION_RADIUS,
+    )
+    farm.functions[FARM_INTERACTION_RESOURCE_KEY] = animal.id.to_json()
+    farm.functions[FARM_INTERACTION_SIDE_KEY] = side_order[0]
+    return fallback
+
+
+def is_worker_in_animal_harvest_range(
+    worker: object,
+    animal: ResourceNode,
+) -> bool:
+    """Return whether a worker stands inside an animal's interaction area."""
+    return _position_in_area(worker.position, animal_harvest_area_bounds(animal))
+
+
 def _farm_buildings(world: WorldState) -> list[Building]:
     """Iterate completed and active farm buildings."""
     return [
@@ -689,15 +808,12 @@ def _assigned_worker_close_to_animal(
     interaction_range: float,
 ) -> bool:
     """Return whether the worker can strike the farm animal."""
+    del interaction_range
     worker_id = assigned_worker_id(farm)
     worker = world.entities.get(worker_id) if worker_id is not None else None
     if not _is_settler(worker):
         return False
-    return _within(
-        worker.position,
-        _interaction_position(world, animal, worker.id),
-        interaction_range * 0.85,
-    )
+    return is_worker_in_animal_harvest_range(worker, animal)
 
 
 def _mark_spawn_ready_if_due(world: WorldState, farm: Building) -> None:
@@ -741,6 +857,12 @@ def _clear_completed_farm_move(farm: Building) -> None:
     farm.functions.pop(FARM_MOVE_KEY, None)
 
 
+def _clear_farm_interaction_slot(farm: Building) -> None:
+    """Forget the side slot retained for the current farm resource."""
+    farm.functions.pop(FARM_INTERACTION_RESOURCE_KEY, None)
+    farm.functions.pop(FARM_INTERACTION_SIDE_KEY, None)
+
+
 def _set_farm_state(farm: Building, state: str) -> None:
     """Set farm state."""
     farm.functions["farm_state"] = state
@@ -752,21 +874,65 @@ def _set_state(entity: object, state: str) -> None:
         entity.state = state
 
 
-def _interaction_position(
-    world: WorldState,
-    resource: ResourceNode,
-    worker_id: EntityId,
-) -> WorldPosition:
-    """Return a worker interaction position near a target."""
-    target = WorldPosition(resource.position.x, resource.position.y + 26)
-    return nearest_free_position(
-        world,
-        clamp_unit_position_to_walkable_lane_for_height(
-            target,
-            world.settings.world_height,
-        ),
-        ignore_id=worker_id,
+def _raw_animal_harvest_slots(
+    animal: ResourceNode,
+) -> tuple[WorldPosition, WorldPosition]:
+    """Return the preferred left and right farm-animal interaction points."""
+    left, top, width, height = animal_harvest_area_bounds(animal)
+    slot_y = min(
+        max(animal.position.y, top + FARM_ANIMAL_HARVEST_SLOT_INSET),
+        top + height - FARM_ANIMAL_HARVEST_SLOT_INSET,
     )
+    return (
+        WorldPosition(left + FARM_ANIMAL_HARVEST_SLOT_INSET, slot_y),
+        WorldPosition(left + width - FARM_ANIMAL_HARVEST_SLOT_INSET, slot_y),
+    )
+
+
+def _animal_harvest_slot_for_side(
+    world: WorldState,
+    animal: ResourceNode,
+    side_index: int,
+    worker_id: EntityId | None,
+) -> WorldPosition | None:
+    """Return a free point near one requested side of a farm animal."""
+    area = animal_harvest_area_bounds(animal)
+    desired = _raw_animal_harvest_slots(animal)[int(side_index) % 2]
+    direction = -1.0 if int(side_index) % 2 == 0 else 1.0
+    offsets = (
+        (0.0, 0.0),
+        (direction * 8.0, 0.0),
+        (-direction * 8.0, 0.0),
+        (0.0, -8.0),
+        (0.0, 8.0),
+        (direction * 12.0, -10.0),
+        (direction * 12.0, 10.0),
+        (-direction * 12.0, -10.0),
+        (-direction * 12.0, 10.0),
+        (direction * 16.0, 0.0),
+    )
+    for dx, dy in offsets:
+        candidate = clamp_unit_position_to_walkable_lane_for_height(
+            WorldPosition(desired.x + dx, desired.y + dy),
+            world.settings.world_height,
+        )
+        if not _position_in_area(candidate, area):
+            continue
+        if position_blocked_by_hard_obstacle(
+            world,
+            candidate,
+            ignore_id=worker_id,
+        ):
+            continue
+        if occupied_by_unit(
+            world,
+            candidate,
+            ignore_id=worker_id,
+            min_distance=UNIT_COLLISION_RADIUS,
+        ):
+            continue
+        return candidate
+    return None
 
 
 def _animal_spawn_position(world: WorldState, farm: Building) -> WorldPosition:
