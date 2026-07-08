@@ -1407,7 +1407,7 @@ def estimated_travel_distance(
 
 def display_resource_name(resource_type: str) -> str:
     """Return the display name for a resource type."""
-    return "ore" if normalize_resource_type(resource_type) == "iron" else resource_type
+    return "iron" if normalize_resource_type(resource_type) == "iron" else resource_type
 
 
 def normalize_resource_type(resource_type: str) -> str:

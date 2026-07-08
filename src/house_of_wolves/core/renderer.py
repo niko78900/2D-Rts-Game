@@ -46,7 +46,7 @@ SETTINGS_RESOURCE_GRANT_RESOURCES = (
     ("wood", "Wood"),
     ("food", "Food"),
     ("stone", "Stone"),
-    ("iron", "Ore"),
+    ("iron", "Iron"),
     ("gold", "Gold"),
 )
 STATUS_BAR_TOP_MARGIN = 9
@@ -58,6 +58,24 @@ HUT_STAGE_SCAFFOLDING = "construction_0_50"
 HUT_STAGE_PARTIAL = "construction_50_90"
 HUT_STAGE_COMPLETE = "complete"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+RESOURCE_SPRITE_ROOT = PROJECT_ROOT / "assets" / "art" / "resources" / "processed"
+RESOURCE_STAGE_AMOUNT_100_75 = "amount_100_75"
+RESOURCE_STAGE_AMOUNT_75_25 = "amount_75_25"
+RESOURCE_STAGE_AMOUNT_25_0 = "amount_25_0"
+RESOURCE_SPRITE_IDS = ("gold_mine", "iron_deposit", "stone_outcrop")
+RESOURCE_SPRITE_STAGES = (
+    RESOURCE_STAGE_AMOUNT_100_75,
+    RESOURCE_STAGE_AMOUNT_75_25,
+    RESOURCE_STAGE_AMOUNT_25_0,
+)
+RESOURCE_SPRITE_PATHS = {
+    resource_id: {
+        stage: RESOURCE_SPRITE_ROOT / resource_id / f"{stage}.png"
+        for stage in RESOURCE_SPRITE_STAGES
+    }
+    for resource_id in RESOURCE_SPRITE_IDS
+}
+_RESOURCE_SPRITE_CACHE: dict[tuple[str, str, str, bool], pygame.Surface | None] = {}
 BUILDING_SPRITE_ROOT = PROJECT_ROOT / "assets" / "art" / "buildings" / "processed"
 BUILDING_STAGE_DAMAGE_75_50 = "damage_75_50"
 BUILDING_STAGE_DAMAGE_50_25 = "damage_50_25"
@@ -349,6 +367,8 @@ class GameRenderer:
             pygame.draw.circle(surface, (46, 117, 65), (rect.centerx, rect.top + 42), 42)
             pygame.draw.circle(surface, (58, 137, 72), (rect.centerx - 24, rect.top + 54), 28)
         else:
+            if self._draw_resource_sprite(surface, rect, entity):
+                return
             inner_color = (197, 168, 78)
             if "iron_deposit" in tags:
                 inner_color = (24, 24, 24)
@@ -374,6 +394,29 @@ class GameRenderer:
             scaled = pygame.transform.smoothscale(sprite, target_size)
             self._scaled_sprite_cache[cache_key] = scaled
         surface.blit(scaled, scaled.get_rect(center=rect.center))
+        return True
+
+    def _draw_resource_sprite(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        entity: object,
+    ) -> bool:
+        """Draw a processed resource sprite when one exists for the depletion stage."""
+        resource_id = resource_sprite_id_for(entity)
+        if resource_id is None:
+            return False
+        stage = resource_sprite_stage_for(entity)
+        sprite = _load_resource_sprite(resource_id, stage)
+        if sprite is None:
+            return False
+        target_size = _fit_sprite_inside_rect(sprite, rect)
+        cache_key = (f"resource:{resource_id}:{stage}", target_size)
+        scaled = self._scaled_sprite_cache.get(cache_key)
+        if scaled is None:
+            scaled = pygame.transform.smoothscale(sprite, target_size)
+            self._scaled_sprite_cache[cache_key] = scaled
+        surface.blit(scaled, scaled.get_rect(midbottom=rect.midbottom))
         return True
 
     def _draw_resource_hitbox(
@@ -1380,6 +1423,59 @@ def _renderable_entity(entity: object) -> bool:
     return getattr(entity, "alive", False) or is_building_destroying(entity)
 
 
+def resource_sprite_id_for(entity: object) -> str | None:
+    """Return the normalized mine resource sprite id for an entity."""
+    tags = set(getattr(entity, "tags", ()))
+    for resource_id in RESOURCE_SPRITE_IDS:
+        if resource_id in tags:
+            return resource_id
+    return None
+
+
+def resource_sprite_stage_for(entity: object) -> str:
+    """Return the resource sprite depletion stage for the current entity state."""
+    if str(getattr(entity, "state", "active")) == "destroying":
+        return RESOURCE_STAGE_AMOUNT_25_0
+    max_hp = max(0, int(getattr(entity, "max_hp", 0) or getattr(entity, "hp", 0)))
+    if max_hp <= 0:
+        return RESOURCE_STAGE_AMOUNT_100_75
+    hp_ratio = max(0.0, min(1.0, int(getattr(entity, "hp", 0)) / max_hp))
+    if hp_ratio > 0.75:
+        return RESOURCE_STAGE_AMOUNT_100_75
+    if hp_ratio > 0.25:
+        return RESOURCE_STAGE_AMOUNT_75_25
+    return RESOURCE_STAGE_AMOUNT_25_0
+
+
+def resource_sprite_reference_for(entity: object) -> str | None:
+    """Return the processed sprite path expected for a mine resource entity."""
+    resource_id = resource_sprite_id_for(entity)
+    if resource_id is None:
+        return None
+    return str(RESOURCE_SPRITE_PATHS[resource_id][resource_sprite_stage_for(entity)])
+
+
+def _load_resource_sprite(resource_id: str, stage: str) -> pygame.Surface | None:
+    """Load and cache one processed mine resource sprite."""
+    path = RESOURCE_SPRITE_PATHS.get(resource_id, {}).get(stage)
+    if path is None:
+        return None
+    can_convert = pygame.display.get_init() and pygame.display.get_surface() is not None
+    cache_key = (resource_id, stage, str(path), can_convert)
+    if cache_key in _RESOURCE_SPRITE_CACHE:
+        return _RESOURCE_SPRITE_CACHE[cache_key]
+    if not path.exists():
+        _RESOURCE_SPRITE_CACHE[cache_key] = None
+        return None
+    try:
+        sprite = pygame.image.load(str(path))
+        loaded = sprite.convert_alpha() if can_convert else sprite
+    except pygame.error:
+        loaded = None
+    _RESOURCE_SPRITE_CACHE[cache_key] = loaded
+    return loaded
+
+
 def building_sprite_id_for(entity: object) -> str | None:
     """Return the normalized building sprite id for an entity."""
     tags = set(getattr(entity, "tags", ()))
@@ -1718,7 +1814,7 @@ def _destination_marker_color(attack_move: bool, index: int) -> tuple[int, int, 
 def _resource_label(resource_type: str) -> str:
     """Return display text for resource label."""
     if resource_type == "iron":
-        return "Ore"
+        return "Iron"
     return resource_type.title()
 
 

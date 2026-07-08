@@ -83,13 +83,13 @@ PLACEMENT_MENU_ABILITIES = ("Cancel",)
 GATHER_RESOURCE_TYPES = {
     "Gather Wood": "wood",
     "Gather Gold": "gold",
-    "Gather Ore": "iron",
+    "Gather Iron": "iron",
     "Gather Stone": "stone",
 }
 KEYBIND_GATHER_ACTIONS = {
     KEYBIND_GATHER_WOOD: "Gather Wood",
     KEYBIND_GATHER_GOLD: "Gather Gold",
-    KEYBIND_GATHER_ORE: "Gather Ore",
+    KEYBIND_GATHER_ORE: "Gather Iron",
     KEYBIND_GATHER_STONE: "Gather Stone",
 }
 DOUBLE_CLICK_MS = 350

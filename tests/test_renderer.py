@@ -19,6 +19,11 @@ from house_of_wolves.core.renderer import (
     HUT_STAGE_COMPLETE,
     HUT_STAGE_PARTIAL,
     HUT_STAGE_SCAFFOLDING,
+    RESOURCE_SPRITE_IDS,
+    RESOURCE_SPRITE_PATHS,
+    RESOURCE_STAGE_AMOUNT_25_0,
+    RESOURCE_STAGE_AMOUNT_75_25,
+    RESOURCE_STAGE_AMOUNT_100_75,
     BuildingPlacementPreview,
     GameRenderer,
     building_sprite_reference_for,
@@ -30,6 +35,8 @@ from house_of_wolves.core.renderer import (
     hut_sprite_reference_for,
     queued_move_markers,
     queued_move_targets,
+    resource_sprite_reference_for,
+    resource_sprite_stage_for,
     status_bar_for_entity,
 )
 from house_of_wolves.core.settings import AppSettings
@@ -176,7 +183,7 @@ def test_selected_panel_for_unit_shows_health_and_core_abilities() -> None:
     assert "Build" in panel.abilities
     assert "Gather Wood" in panel.abilities
     assert "Gather Gold" in panel.abilities
-    assert "Gather Ore" in panel.abilities
+    assert "Gather Iron" in panel.abilities
     assert "Gather Stone" in panel.abilities
     assert "Repair" not in panel.abilities
 
@@ -218,8 +225,8 @@ def test_selected_panel_for_resource_shows_remaining_amount_and_gather_ability()
     assert "Gather Wood" in panel.abilities
 
 
-def test_resource_placeholder_inner_colors_distinguish_ore_and_stone() -> None:
-    """Verify that resource placeholder inner colors distinguish ore and stone."""
+def test_resource_placeholder_inner_colors_distinguish_iron_and_stone() -> None:
+    """Verify that resource placeholder inner colors distinguish iron and stone."""
     renderer = GameRenderer(AppSettings())
     rect = pygame.Rect(20, 20, 90, 54)
     surface = pygame.Surface((140, 100))
@@ -266,6 +273,24 @@ def test_processed_building_sprite_assets_exist_with_transparent_backgrounds() -
 
     assert set(BUILDING_SPRITE_PATHS) == set(BUILDING_SPRITE_BUILDING_IDS)
     for paths_by_stage in BUILDING_SPRITE_PATHS.values():
+        assert set(paths_by_stage) == expected_stages
+        for path in paths_by_stage.values():
+            assert path.exists()
+            sprite = pygame.image.load(str(path))
+            assert sprite.get_flags() & pygame.SRCALPHA
+            assert sprite.get_at((0, 0)).a == 0
+
+
+def test_processed_resource_sprite_assets_exist_with_transparent_backgrounds() -> None:
+    """Verify that processed mine resource sprites are normalized RGBA assets."""
+    expected_stages = {
+        RESOURCE_STAGE_AMOUNT_100_75,
+        RESOURCE_STAGE_AMOUNT_75_25,
+        RESOURCE_STAGE_AMOUNT_25_0,
+    }
+
+    assert set(RESOURCE_SPRITE_PATHS) == set(RESOURCE_SPRITE_IDS)
+    for paths_by_stage in RESOURCE_SPRITE_PATHS.values():
         assert set(paths_by_stage) == expected_stages
         for path in paths_by_stage.values():
             assert path.exists()
@@ -387,6 +412,37 @@ def test_building_sprite_stage_uses_damage_and_destruction_thresholds() -> None:
     assert building_sprite_stage_for(hut) == BUILDING_STAGE_DESTROYED_10_0
 
 
+def test_resource_sprite_stage_uses_health_and_destruction_thresholds() -> None:
+    """Verify that mine resource health ratios select the expected sprites."""
+    resource = ResourceNode(
+        id=EntityId(998),
+        owner="neutral",
+        position=WorldPosition(100, 100),
+        footprint=Footprint(90, 54),
+        hp=100,
+        max_hp=100,
+        tags=("resource", "gold_mine", "selectable"),
+        resource_type="gold",
+        amount_remaining=100,
+        max_amount_remaining=100,
+    )
+
+    resource.hp = 76
+    assert resource_sprite_stage_for(resource) == RESOURCE_STAGE_AMOUNT_100_75
+
+    resource.hp = 75
+    assert resource_sprite_stage_for(resource) == RESOURCE_STAGE_AMOUNT_75_25
+
+    resource.hp = 26
+    assert resource_sprite_stage_for(resource) == RESOURCE_STAGE_AMOUNT_75_25
+
+    resource.hp = 25
+    assert resource_sprite_stage_for(resource) == RESOURCE_STAGE_AMOUNT_25_0
+
+    resource.state = "destroying"
+    assert resource_sprite_stage_for(resource) == RESOURCE_STAGE_AMOUNT_25_0
+
+
 def test_hut_construction_sprite_references_are_processed_asset_paths() -> None:
     """Verify that hut construction sprite references point at processed assets."""
     world = create_demo_world()
@@ -405,6 +461,17 @@ def test_hut_construction_sprite_references_are_processed_asset_paths() -> None:
     assert building_sprite_reference_for(hut) == hut_sprite_reference_for(hut)
 
 
+def test_resource_sprite_references_are_processed_asset_paths() -> None:
+    """Verify that mine resource sprite references point at processed assets."""
+    world = create_demo_world()
+    mine = next(entity for entity in world.entities.values() if "iron_deposit" in entity.tags)
+    mine.hp = mine.max_hp
+
+    reference = resource_sprite_reference_for(mine).replace("\\", "/")
+
+    assert reference.endswith("processed/iron_deposit/amount_100_75.png")
+
+
 def test_building_sprite_missing_asset_falls_back_to_placeholder() -> None:
     """Verify that a missing building sprite does not block fallback drawing."""
     pygame.init()
@@ -421,6 +488,30 @@ def test_building_sprite_missing_asset_falls_back_to_placeholder() -> None:
             renderer._draw_building(surface, rect, hut)
         finally:
             BUILDING_SPRITE_PATHS["hut"][HUT_STAGE_COMPLETE] = original
+
+        assert surface.get_at(rect.center)[:3] != (0, 0, 0)
+    finally:
+        pygame.quit()
+
+
+def test_resource_sprite_missing_asset_falls_back_to_placeholder() -> None:
+    """Verify that a missing mine sprite does not block fallback drawing."""
+    pygame.init()
+    try:
+        world = create_demo_world()
+        mine = next(entity for entity in world.entities.values() if "gold_mine" in entity.tags)
+        renderer = GameRenderer(AppSettings())
+        renderer._scaled_sprite_cache.clear()
+        surface = pygame.Surface((140, 100))
+        rect = pygame.Rect(20, 20, 90, 54)
+        original = RESOURCE_SPRITE_PATHS["gold_mine"][RESOURCE_STAGE_AMOUNT_100_75]
+        RESOURCE_SPRITE_PATHS["gold_mine"][RESOURCE_STAGE_AMOUNT_100_75] = original.with_name(
+            "missing.png"
+        )
+        try:
+            renderer._draw_resource(surface, rect, mine)
+        finally:
+            RESOURCE_SPRITE_PATHS["gold_mine"][RESOURCE_STAGE_AMOUNT_100_75] = original
 
         assert surface.get_at(rect.center)[:3] != (0, 0, 0)
     finally:
@@ -525,7 +616,7 @@ def test_mutual_abilities_keeps_shared_settler_actions_for_same_unit_type() -> N
         "Build",
         "Gather Wood",
         "Gather Gold",
-        "Gather Ore",
+        "Gather Iron",
         "Gather Stone",
     )
 

@@ -276,7 +276,7 @@ def test_auto_gather_avoids_unsafe_resource_nodes() -> None:
     )
 
     assert assignments == {}
-    assert message == "No safe ore source found."
+    assert message == "No safe iron source found."
 
 
 def test_auto_gather_redistributes_settlers_across_safe_nodes() -> None:

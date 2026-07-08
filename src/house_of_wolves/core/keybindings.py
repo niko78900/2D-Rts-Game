@@ -55,7 +55,7 @@ KEYBIND_ACTION_LABELS = {
     KEYBIND_STOP: "Stop",
     KEYBIND_GATHER_WOOD: "Gather Wood",
     KEYBIND_GATHER_GOLD: "Gather Gold",
-    KEYBIND_GATHER_ORE: "Gather Ore",
+    KEYBIND_GATHER_ORE: "Gather Iron",
     KEYBIND_GATHER_STONE: "Gather Stone",
     KEYBIND_COMMAND_SLOT_1: "Command Slot 1",
     KEYBIND_COMMAND_SLOT_2: "Command Slot 2",
@@ -76,7 +76,7 @@ ABILITY_KEYBIND_ACTIONS = {
     "Stop": KEYBIND_STOP,
     "Gather Wood": KEYBIND_GATHER_WOOD,
     "Gather Gold": KEYBIND_GATHER_GOLD,
-    "Gather Ore": KEYBIND_GATHER_ORE,
+    "Gather Iron": KEYBIND_GATHER_ORE,
     "Gather Stone": KEYBIND_GATHER_STONE,
 }
 

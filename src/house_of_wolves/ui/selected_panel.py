@@ -17,7 +17,7 @@ ABILITY_ORDER = (
     "Build",
     "Gather Wood",
     "Gather Gold",
-    "Gather Ore",
+    "Gather Iron",
     "Gather Stone",
     "Train Settler",
     "Train Spearman",
@@ -104,7 +104,7 @@ def entity_display_name(entity: Any) -> str:
         "wood_tree": "Tree",
         "gold_mine": "Gold Mine",
         "stone_outcrop": "Stone Outcrop",
-        "iron_deposit": "Ore Deposit",
+        "iron_deposit": "Iron Deposit",
     }
     for tag in getattr(entity, "tags", ()):
         if tag in names:
@@ -183,7 +183,7 @@ def entity_abilities(entity: Any) -> tuple[str, ...]:
     if "unit" in tags and int(getattr(entity, "damage", 0)) > 0:
         abilities.append("Attack")
     if "settler" in tags:
-        abilities.extend(["Build", "Gather Wood", "Gather Gold", "Gather Ore", "Gather Stone"])
+        abilities.extend(["Build", "Gather Wood", "Gather Gold", "Gather Iron", "Gather Stone"])
     if "building" in tags:
         functions = getattr(entity, "functions", {})
         if not bool(getattr(entity, "complete", True)):
@@ -239,7 +239,7 @@ def entity_display_from_id(entity_id: str) -> str:
 def display_resource_type(resource_type: str) -> str:
     """Return the display resource type for an entity."""
     if resource_type == "iron":
-        return "Ore"
+        return "Iron"
     return resource_type.title()
 
 
