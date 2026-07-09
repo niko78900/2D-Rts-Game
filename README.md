@@ -97,7 +97,9 @@ side of the map.
 
 Settlers can place buildings only on the dedicated building lane. Multiple Settlers
 may work on one construction site, with the construction speed bonus capped at ten
-workers. Additional Settlers can join an existing site by right-clicking it.
+workers. Active builders face the construction site and use a Pygame-drawn hammer
+swing while work is progressing. Additional Settlers can join an existing site by
+right-clicking it.
 
 Current buildings:
 
@@ -432,7 +434,9 @@ to Pygame-drawn placeholders.
 
 Unit sprites are not final. Units, Trees, weapons, arrows, melee strikes, damage
 feedback, wave markers, and directional death animations currently use Pygame
-primitives. This keeps gameplay testable while final art is still in development.
+primitives. Current placeholder equipment includes bows, spears, swords, axes,
+pickaxes, and building hammers. This keeps gameplay testable while final art is still
+in development.
 
 ## Performance Approach
 
