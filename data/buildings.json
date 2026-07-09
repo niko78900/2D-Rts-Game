@@ -20,6 +20,27 @@
     "functions": {"defensive": true, "attack_range": 380, "damage": 20},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
+  "wooden_archer_tower": {
+    "display_name": "Wooden Archer Tower",
+    "stats": {"hp": 450, "footprint_px": [92, 155], "build_time_ms": 10000},
+    "cost": {"wood": 80, "food": 0, "stone": 20, "iron": 0, "gold": 0},
+    "functions": {"defensive": true, "attack_range": 260, "damage": 5, "projectile": "arrow", "shots_per_attack": 1},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "stone_archer_tower": {
+    "display_name": "Stone Archer Tower",
+    "stats": {"hp": 850, "footprint_px": [106, 172], "build_time_ms": 16000},
+    "cost": {"wood": 120, "food": 0, "stone": 90, "iron": 20, "gold": 0},
+    "functions": {"defensive": true, "attack_range": 290, "damage": 5, "projectile": "arrow", "shots_per_attack": 2},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
+  "wizard_tower": {
+    "display_name": "Wizard Tower",
+    "stats": {"hp": 750, "footprint_px": [112, 182], "build_time_ms": 18000},
+    "cost": {"wood": 150, "food": 0, "stone": 120, "iron": 40, "gold": 30},
+    "functions": {"defensive": true, "attack_range": 320, "damage": 18, "projectile": "magic", "shots_per_attack": 1},
+    "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
+  },
   "farm": {
     "display_name": "Farm",
     "stats": {"hp": 420, "footprint_px": [180, 100], "build_time_ms": 10000},

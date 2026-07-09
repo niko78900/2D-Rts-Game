@@ -33,6 +33,11 @@ from house_of_wolves.systems.farming import (
     animal_harvest_slot_candidates,
 )
 from house_of_wolves.systems.selection import SelectionState
+from house_of_wolves.systems.towers import (
+    STONE_ARCHER_TOWER_ID,
+    WIZARD_TOWER_ID,
+    WOODEN_ARCHER_TOWER_ID,
+)
 from house_of_wolves.ui.selected_panel import SelectedPanel, selected_panel_for
 from house_of_wolves.world.collision import blocking_bounds_for_entity
 from house_of_wolves.world.terrain import terrain_layout_for_height
@@ -339,7 +344,7 @@ class GameRenderer:
                 self._draw_selection(surface, rect, enemy=_is_enemy_entity(entity))
 
     def _draw_projectiles(self, surface: pygame.Surface, world: WorldState) -> None:
-        """Draw lightweight arrows with a shaft and directional arrowhead."""
+        """Draw lightweight arrows and magic bolts."""
         for projectile in world.projectiles:
             screen = world.camera.world_to_screen(projectile.position)
             if not surface.get_rect().inflate(32, 32).collidepoint(screen):
@@ -354,6 +359,17 @@ class GameRenderer:
                 direction_x /= length
                 direction_y /= length
             perpendicular = (-direction_y, direction_x)
+            if "magic" in getattr(projectile, "tags", ()):
+                trail_start = (
+                    screen[0] - direction_x * 18,
+                    screen[1] - direction_y * 18,
+                )
+                pygame.draw.line(surface, (88, 57, 145), trail_start, screen, 6)
+                pygame.draw.line(surface, (108, 203, 228), trail_start, screen, 3)
+                pygame.draw.circle(surface, (42, 29, 82), screen, 8)
+                pygame.draw.circle(surface, (131, 224, 238), screen, 6)
+                pygame.draw.circle(surface, (238, 245, 255), screen, 2)
+                continue
             back = (
                 screen[0] - direction_x * 9,
                 screen[1] - direction_y * 9,
@@ -470,6 +486,14 @@ class GameRenderer:
                     ),
                     2,
                 )
+                continue
+
+            if effect.kind in {"magic_cast", "magic_impact"}:
+                radius = 9 + round(progress * 16)
+                color = (128, 218, 236) if effect.kind == "magic_cast" else (168, 116, 235)
+                pygame.draw.circle(surface, (45, 35, 82), screen, radius + 3, width=2)
+                pygame.draw.circle(surface, color, screen, radius, width=2)
+                pygame.draw.circle(surface, (239, 247, 255), screen, max(2, radius // 4))
                 continue
 
             if effect.kind == "spawn_marker":
@@ -910,6 +934,33 @@ class GameRenderer:
         if self._draw_building_sprite(surface, rect, entity):
             return
         tags = tuple(getattr(entity, "tags", ()))
+        if WOODEN_ARCHER_TOWER_ID in tags:
+            self._draw_wooden_archer_tower(
+                surface,
+                rect,
+                complete=bool(getattr(entity, "complete", True)),
+                hp_ratio=_hp_ratio(entity),
+            )
+            self._draw_label(surface, _short_label(tags), rect.center)
+            return
+        if STONE_ARCHER_TOWER_ID in tags:
+            self._draw_stone_archer_tower(
+                surface,
+                rect,
+                complete=bool(getattr(entity, "complete", True)),
+                hp_ratio=_hp_ratio(entity),
+            )
+            self._draw_label(surface, _short_label(tags), rect.center)
+            return
+        if WIZARD_TOWER_ID in tags:
+            self._draw_wizard_tower(
+                surface,
+                rect,
+                complete=bool(getattr(entity, "complete", True)),
+                hp_ratio=_hp_ratio(entity),
+            )
+            self._draw_label(surface, _short_label(tags), rect.center)
+            return
         if "chicken_farm" in tags:
             self._draw_chicken_farm(surface, rect, complete=bool(getattr(entity, "complete", True)))
             self._draw_label(surface, _short_label(tags), rect.center)
@@ -1091,6 +1142,104 @@ class GameRenderer:
             pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
             pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
 
+    def _draw_wooden_archer_tower(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        *,
+        complete: bool,
+        hp_ratio: float,
+    ) -> None:
+        """Draw a primitive wooden tower with one archer on top."""
+        wood = (116, 79, 49) if complete else (84, 84, 70)
+        dark = (50, 36, 29)
+        platform = pygame.Rect(rect.left + 10, rect.top + 22, rect.width - 20, 18)
+        left_post = (rect.left + rect.width * 0.30, rect.bottom - 6)
+        right_post = (rect.right - rect.width * 0.30, rect.bottom - 6)
+        pygame.draw.line(surface, dark, (platform.left + 6, platform.bottom), left_post, 7)
+        pygame.draw.line(surface, dark, (platform.right - 6, platform.bottom), right_post, 7)
+        pygame.draw.line(surface, wood, (platform.left + 12, platform.bottom), right_post, 3)
+        pygame.draw.line(surface, wood, (platform.right - 12, platform.bottom), left_post, 3)
+        pygame.draw.rect(surface, wood, platform, border_radius=3)
+        pygame.draw.rect(surface, dark, platform, width=2, border_radius=3)
+        pygame.draw.rect(surface, (92, 60, 39), rect.inflate(-30, -12), width=3)
+        self._draw_tower_archer(surface, (rect.centerx, platform.top - 5))
+        if not complete:
+            pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
+            pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
+        _draw_damage_cracks(surface, rect, hp_ratio)
+
+    def _draw_stone_archer_tower(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        *,
+        complete: bool,
+        hp_ratio: float,
+    ) -> None:
+        """Draw a primitive stone tower with two archers on top."""
+        base = _tower_body_rect(rect)
+        stone = (126, 130, 121) if complete else (84, 86, 78)
+        outline = (52, 55, 54)
+        pygame.draw.rect(surface, stone, base, border_radius=5)
+        for y in range(base.top + 18, base.bottom - 8, 26):
+            pygame.draw.line(surface, (99, 103, 98), (base.left + 3, y), (base.right - 3, y), 2)
+        battlement_w = max(8, base.width // 5)
+        for x in range(base.left, base.right, battlement_w * 2):
+            pygame.draw.rect(surface, stone, (x, base.top - 14, battlement_w, 18))
+        pygame.draw.rect(surface, outline, base, width=3, border_radius=5)
+        self._draw_tower_archer(surface, (base.centerx - 15, base.top - 19))
+        self._draw_tower_archer(surface, (base.centerx + 15, base.top - 19))
+        if not complete:
+            pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
+            pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
+        _draw_damage_cracks(surface, rect, hp_ratio)
+
+    def _draw_wizard_tower(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        *,
+        complete: bool,
+        hp_ratio: float,
+    ) -> None:
+        """Draw a primitive stone tower with one wizard on top."""
+        base = _tower_body_rect(rect)
+        stone = (116, 119, 128) if complete else (82, 84, 82)
+        outline = (47, 49, 58)
+        pygame.draw.rect(surface, stone, base, border_radius=5)
+        for y in range(base.top + 20, base.bottom - 8, 28):
+            pygame.draw.line(surface, (89, 92, 102), (base.left + 4, y), (base.right - 4, y), 2)
+        battlement_w = max(8, base.width // 5)
+        for x in range(base.left, base.right, battlement_w * 2):
+            pygame.draw.rect(surface, stone, (x, base.top - 14, battlement_w, 18))
+        pygame.draw.rect(surface, outline, base, width=3, border_radius=5)
+        self._draw_tower_wizard(surface, (base.centerx, base.top - 17))
+        if not complete:
+            pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
+            pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
+        _draw_damage_cracks(surface, rect, hp_ratio)
+
+    def _draw_tower_archer(self, surface: pygame.Surface, center: tuple[int, int]) -> None:
+        """Draw a tiny archer stationed on a tower platform."""
+        x, y = center
+        pygame.draw.circle(surface, (218, 190, 134), (x, y - 8), 4)
+        pygame.draw.rect(surface, (93, 132, 85), (x - 5, y - 6, 10, 12), border_radius=4)
+        pygame.draw.arc(surface, (73, 48, 34), (x + 3, y - 11, 12, 20), -1.2, 1.2, 2)
+        pygame.draw.line(surface, (226, 207, 113), (x + 5, y - 1), (x + 16, y - 1), 1)
+
+    def _draw_tower_wizard(self, surface: pygame.Surface, center: tuple[int, int]) -> None:
+        """Draw a tiny wizard stationed on a tower platform."""
+        x, y = center
+        robe = [(x, y - 14), (x - 8, y + 8), (x + 8, y + 8)]
+        pygame.draw.polygon(surface, (86, 61, 132), robe)
+        pygame.draw.polygon(surface, (41, 31, 69), robe, width=2)
+        pygame.draw.circle(surface, (218, 190, 134), (x, y - 16), 4)
+        staff_top = (x + 15, y - 24)
+        pygame.draw.line(surface, (74, 49, 35), (x + 8, y + 6), staff_top, 3)
+        pygame.draw.circle(surface, (128, 218, 236), staff_top, 5)
+        pygame.draw.circle(surface, (238, 245, 255), staff_top, 2)
+
     def _draw_building_placement_preview(
         self,
         surface: pygame.Surface,
@@ -1113,7 +1262,13 @@ class GameRenderer:
                 (rect.right + 10, rect.top + 28),
             ]
             pygame.draw.polygon(surface, color, roof, width=2)
-        elif preview.building_id in {"barracks", "archery"}:
+        elif preview.building_id in {
+            "barracks",
+            "archery",
+            WOODEN_ARCHER_TOWER_ID,
+            STONE_ARCHER_TOWER_ID,
+            WIZARD_TOWER_ID,
+        }:
             pygame.draw.rect(surface, color, rect.inflate(-18, -18), width=2, border_radius=4)
         elif preview.building_id == "pig_farm":
             pygame.draw.rect(surface, color, rect.inflate(-16, -16), width=2, border_radius=4)
@@ -2336,6 +2491,13 @@ def _ratio(current: int, maximum: int) -> float:
     return max(0.0, min(1.0, current / maximum))
 
 
+def _hp_ratio(entity: object) -> float:
+    """Return normalized HP for primitive damage overlays."""
+    hp = max(0, int(getattr(entity, "hp", 0)))
+    max_hp = int(getattr(entity, "max_hp", 0) or hp)
+    return _ratio(hp, max_hp)
+
+
 def _building_progress_ratio(entity: object) -> float:
     """Return construction progress used by building bars."""
     build_time = int(getattr(entity, "build_time_ms", 0) or 0)
@@ -2343,6 +2505,32 @@ def _building_progress_ratio(entity: object) -> float:
         return 1.0
     progress_ms = int(getattr(entity, "build_progress_ms", 0) or 0)
     return max(0.0, min(1.0, progress_ms / build_time))
+
+
+def _tower_body_rect(rect: pygame.Rect) -> pygame.Rect:
+    """Return the main stone tower body inside a building footprint."""
+    return pygame.Rect(
+        rect.left + max(8, rect.width // 7),
+        rect.top + max(20, rect.height // 6),
+        max(20, rect.width - max(16, (rect.width // 7) * 2)),
+        max(30, rect.height - max(24, rect.height // 6)),
+    )
+
+
+def _draw_damage_cracks(surface: pygame.Surface, rect: pygame.Rect, hp_ratio: float) -> None:
+    """Draw simple primitive cracks on damaged placeholder towers."""
+    if hp_ratio > 0.75:
+        return
+    color = (44, 36, 33)
+    start = (rect.centerx - rect.width // 6, rect.top + rect.height // 3)
+    mid = (start[0] + 8, start[1] + 15)
+    end = (mid[0] - 10, mid[1] + 16)
+    pygame.draw.lines(surface, color, False, [start, mid, end], 2)
+    if hp_ratio <= 0.50:
+        start_b = (rect.centerx + rect.width // 7, rect.top + rect.height // 2)
+        mid_b = (start_b[0] - 10, start_b[1] + 14)
+        end_b = (mid_b[0] + 12, mid_b[1] + 12)
+        pygame.draw.lines(surface, color, False, [start_b, mid_b, end_b], 2)
 
 
 def queued_move_targets(

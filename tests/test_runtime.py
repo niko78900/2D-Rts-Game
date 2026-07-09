@@ -26,7 +26,16 @@ from house_of_wolves.world.terrain import (
     terrain_layout_for_height,
 )
 
-BUILD_MENU_EXPECTED = ("Hut", "Barracks", "Archery", "Chicken Farm", "Pig Farm", "Back")
+BUILD_MENU_EXPECTED = (
+    "Hut",
+    "Barracks",
+    "Archery",
+    "Chicken Farm",
+    "Pig Farm",
+    "Wooden Archer Tower",
+    "Stone Archer Tower",
+    "Wizard Tower",
+)
 
 
 def ability_center(runtime: GameRuntime, label: str) -> tuple[int, int]:
@@ -805,7 +814,7 @@ def test_runtime_hut_build_choice_enters_placement_mode() -> None:
         runtime.handle_event(
             pygame.event.Event(
                 pygame.MOUSEBUTTONDOWN,
-                {"button": 1, "pos": override_ability_center(runtime, "Hut", ("Hut", "Back"))},
+                {"button": 1, "pos": override_ability_center(runtime, "Hut", BUILD_MENU_EXPECTED)},
             )
         )
 
@@ -842,6 +851,37 @@ def test_runtime_chicken_farm_build_choice_enters_placement_mode() -> None:
 
         assert runtime.build_menu_open is False
         assert runtime.active_building_placement == "chicken_farm"
+        assert runtime._ability_override() == ("Cancel",)
+    finally:
+        runtime.shutdown()
+
+
+def test_runtime_wizard_tower_build_choice_enters_placement_mode() -> None:
+    """Verify that runtime tower build choices enter placement mode."""
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        settler = selected_settler(runtime)
+        runtime.selection_system.state.replace([settler.id])
+        runtime.build_menu_open = True
+
+        runtime.handle_event(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {
+                    "button": 1,
+                    "pos": override_ability_center(
+                        runtime,
+                        "Wizard Tower",
+                        BUILD_MENU_EXPECTED,
+                    ),
+                },
+            )
+        )
+
+        assert runtime.build_menu_open is False
+        assert runtime.active_building_placement == "wizard_tower"
         assert runtime._ability_override() == ("Cancel",)
     finally:
         runtime.shutdown()

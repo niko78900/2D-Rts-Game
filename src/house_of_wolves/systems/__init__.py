@@ -17,6 +17,7 @@ from house_of_wolves.systems.group_movement import (
 )
 from house_of_wolves.systems.movement import MovementSystem
 from house_of_wolves.systems.production import ProductionError, produce_unit
+from house_of_wolves.systems.towers import TowerCombatSystem
 
 __all__ = [
     "CommandValidationError",
@@ -27,6 +28,7 @@ __all__ = [
     "MovementSystem",
     "ProductionError",
     "ResourceWallet",
+    "TowerCombatSystem",
     "assign_units_to_slots",
     "generate_loose_formation_slots",
     "issue_group_move_command",

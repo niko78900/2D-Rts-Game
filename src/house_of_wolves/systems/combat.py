@@ -272,7 +272,7 @@ class CombatSystem:
         )
 
     def _update_projectiles(self, world: WorldState, dt_ms: int) -> None:
-        """Move arrows directly toward their target or last known position."""
+        """Move projectiles directly toward their target or last known position."""
         survivors: list[Projectile] = []
         dt_seconds = max(0, int(dt_ms)) / 1000.0
         for projectile in world.projectiles:
@@ -306,6 +306,16 @@ class CombatSystem:
                         projectile.owner,
                         impact_direction,
                     )
+                    if "magic" in getattr(projectile, "tags", ()):
+                        world.add_combat_effect(
+                            CombatEffect(
+                                kind="magic_impact",
+                                position=projectile.position,
+                                duration_ms=220,
+                                remaining_ms=220,
+                                owner=projectile.owner,
+                            )
+                        )
                     world.performance_stats.counters.projectile_hits += 1
                 continue
             if distance > 0 and step > 0:

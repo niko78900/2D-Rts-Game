@@ -55,6 +55,12 @@ from house_of_wolves.systems.production import (
     produce_unit,
 )
 from house_of_wolves.systems.selection import SelectionSystem
+from house_of_wolves.systems.towers import (
+    TOWER_IDS,
+    TOWER_SPECS,
+    TowerCombatSystem,
+    tower_functions_for,
+)
 from house_of_wolves.systems.waves import WaveSystem
 from house_of_wolves.ui.selected_panel import selected_panel_for
 from house_of_wolves.world.collision import nearest_free_position, position_blocked_by_hard_obstacle
@@ -71,13 +77,25 @@ HUT_FOOTPRINT = Footprint(150, 116)
 HUT_MAX_HP = 650
 HUT_BUILD_TIME_MS = 12_000
 HUT_BUILD_COST = {"wood": 50}
-BUILD_MENU_ABILITIES = ("Hut", "Barracks", "Archery", "Chicken Farm", "Pig Farm", "Back")
+BUILD_MENU_ABILITIES = (
+    "Hut",
+    "Barracks",
+    "Archery",
+    "Chicken Farm",
+    "Pig Farm",
+    "Wooden Archer Tower",
+    "Stone Archer Tower",
+    "Wizard Tower",
+)
 BUILDING_ID_BY_BUILD_ABILITY = {
     "Hut": HUT_BUILDING_ID,
     "Barracks": "barracks",
     "Archery": "archery",
     "Chicken Farm": CHICKEN_FARM_ID,
     "Pig Farm": PIG_FARM_ID,
+    "Wooden Archer Tower": "wooden_archer_tower",
+    "Stone Archer Tower": "stone_archer_tower",
+    "Wizard Tower": "wizard_tower",
 }
 PLACEMENT_MENU_ABILITIES = ("Cancel",)
 GATHER_RESOURCE_TYPES = {
@@ -105,6 +123,7 @@ class GameRuntime:
     selection_system: SelectionSystem = field(default_factory=SelectionSystem)
     movement_system: MovementSystem = field(default_factory=MovementSystem)
     combat_system: CombatSystem = field(default_factory=CombatSystem)
+    tower_combat_system: TowerCombatSystem = field(default_factory=TowerCombatSystem)
     building_lifecycle_system: BuildingLifecycleSystem = field(
         default_factory=BuildingLifecycleSystem,
     )
@@ -720,6 +739,8 @@ class GameRuntime:
             self._update_camera(dt_ms)
         with time_block(stats, "combat"):
             self.combat_system.update(self.world, dt_ms)
+        with time_block(stats, "towers"):
+            self.tower_combat_system.update(self.world, dt_ms)
         with time_block(stats, "buildings"):
             self.building_lifecycle_system.update(self.world, dt_ms)
         with time_block(stats, "movement"):
@@ -1249,6 +1270,23 @@ class GameRuntime:
             self.world.add_entity(building)
             return building
 
+        if building_id in TOWER_SPECS:
+            spec = TOWER_SPECS[building_id]
+            building = Building(
+                id=self.world.allocate_entity_id(),
+                owner="frontier",
+                position=build_position,
+                footprint=spec.footprint,
+                hp=starting_construction_hp(spec.hp),
+                max_hp=spec.hp,
+                tags=("building", spec.building_id, "tower", "selectable"),
+                build_time_ms=spec.build_time_ms,
+                complete=False,
+                functions=tower_functions_for(spec),
+            )
+            self.world.add_entity(building)
+            return building
+
         spec = FARM_BUILDING_SPECS[building_id]
         farm = Building(
             id=self.world.allocate_entity_id(),
@@ -1275,6 +1313,8 @@ class GameRuntime:
             return HUT_FOOTPRINT
         if building_id in PRODUCTION_BUILDING_SPECS:
             return PRODUCTION_BUILDING_SPECS[building_id].footprint
+        if building_id in TOWER_SPECS:
+            return TOWER_SPECS[building_id].footprint
         return FARM_BUILDING_SPECS[building_id].footprint
 
     def _building_cost(self, building_id: str) -> dict[str, int]:
@@ -1283,6 +1323,8 @@ class GameRuntime:
             return HUT_BUILD_COST
         if building_id in PRODUCTION_BUILDING_SPECS:
             return PRODUCTION_BUILDING_SPECS[building_id].cost
+        if building_id in TOWER_SPECS:
+            return TOWER_SPECS[building_id].cost
         return FARM_BUILDING_SPECS[building_id].cost
 
     def _spend_building_cost(self, building_id: str) -> bool:
@@ -1580,6 +1622,7 @@ def _building_id_for_site(building: Building) -> str:
         "archery",
         CHICKEN_FARM_ID,
         PIG_FARM_ID,
+        *TOWER_IDS,
     ):
         if building_id in building.tags:
             return building_id

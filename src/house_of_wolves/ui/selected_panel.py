@@ -97,6 +97,9 @@ def entity_display_name(entity: Any) -> str:
         "archery_range": "Archery",
         "chicken_farm": "Chicken Farm",
         "pig_farm": "Pig Farm",
+        "wooden_archer_tower": "Wooden Archer Tower",
+        "stone_archer_tower": "Stone Archer Tower",
+        "wizard_tower": "Wizard Tower",
         "chicken": "Chicken",
         "pig": "Pig",
         "chicken_carcass": "Chicken Carcass",
@@ -148,6 +151,20 @@ def entity_details(entity: Any) -> tuple[str, ...]:
         return (f"Speed: {speed}", f"State: {state}")
     if "building" in tags:
         functions = getattr(entity, "functions", {})
+        if not getattr(entity, "complete", False):
+            return ("Status: Under Construction", f"Build Progress: {_build_progress(entity)}%")
+        if functions.get("tower"):
+            state = str(functions.get("tower_state", "idle")).replace("_", " ").title()
+            damage = int(functions.get("damage", 0) or 0)
+            attack_range = round(float(functions.get("attack_range", 0) or 0))
+            cooldown = int(functions.get("attack_cooldown_ms", 0) or 0)
+            shots = int(functions.get("shots_per_attack", 1) or 1)
+            return (
+                f"State: {state}",
+                f"Damage: {damage} x {shots}",
+                f"Range: {attack_range}",
+                f"Cooldown: {cooldown} ms",
+            )
         if functions.get("farm_type"):
             state = str(functions.get("farm_state", "idle_no_worker")).replace("_", " ").title()
             worker = functions.get("assigned_worker_id")
@@ -155,8 +172,6 @@ def entity_details(entity: Any) -> tuple[str, ...]:
             food = int(functions.get("farm_food_remaining", 0) or 0)
             return (f"State: {state}", worker_text, f"Food Remaining: {food}")
         pop_bonus = functions.get("population_cap_bonus", 0)
-        if not getattr(entity, "complete", False):
-            return ("Status: Under Construction", f"Build Progress: {_build_progress(entity)}%")
         complete = "Complete"
         return (f"Status: {complete}", f"Population Bonus: {pop_bonus}")
     if "resource" in tags:

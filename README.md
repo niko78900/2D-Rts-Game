@@ -35,8 +35,9 @@ build supports a complete sandbox loop:
 3. Deposit gathered resources at completed Huts.
 4. Construct economy and military buildings with one or more Settlers.
 5. Train Settlers, Spearmen, and Archers while managing population.
-6. Assign rally points and queue movement, attack, gather, and construction orders.
-7. Defend buildings and units against timer-driven enemy waves.
+6. Build defensive Wooden Archer, Stone Archer, and Wizard Towers.
+7. Assign rally points and queue movement, attack, gather, and construction orders.
+8. Defend buildings and units against timer-driven enemy waves.
 
 The demo world starts with player units, a Hut, 40 Trees, and five nodes each for
 Stone, Iron, and Gold. Enemy waves are enabled by default and enter from the right
@@ -110,6 +111,9 @@ Current buildings:
 | Archery | Dedicated Archer production |
 | Chicken Farm | Lower-output farm loop with Chickens |
 | Pig Farm | Higher-output farm loop with Pigs |
+| Wooden Archer Tower | Early single-arrow defensive tower |
+| Stone Archer Tower | Tougher double-arrow defensive tower |
+| Wizard Tower | Expensive magic-projectile defensive tower |
 
 Construction begins at 10% HP and gains HP with build progress. Processed building
 sprites cover early construction, partial construction, completion, multiple damage
@@ -159,6 +163,9 @@ Current enemy wave units:
 Combat currently includes:
 
 - Idle defensive target acquisition for player and enemy combat units.
+- Completed defensive towers automatically acquire nearby enemy units.
+- Wooden Archer Towers fire one arrow; Stone Archer Towers fire two arrows.
+- Wizard Towers fire slower, stronger Pygame-drawn magic bolts.
 - Direct attacks, Attack Move, local aggro, chase limits, and target cleanup.
 - Building-edge melee distance so attackers do not chase unreachable building centers.
 - Configurable attack wind-up and cooldown states.
@@ -303,6 +310,9 @@ Q  W  E  R
 Z  S  X  F
 ```
 
+The Settler Build menu uses these slot keys for Hut, Barracks, Archery, Chicken Farm,
+Pig Farm, Wooden Archer Tower, Stone Archer Tower, and Wizard Tower.
+
 Default direct action bindings:
 
 | Action | Default |
@@ -401,6 +411,8 @@ values still live in centralized Python constants while the runtime data model e
   timed carcass harvesting, and food deposits.
 - **Combat:** guard behavior, direct attacks, Attack Move, wind-up/cooldown, projectiles,
   melee effects, hit feedback, death effects, and cleanup.
+- **Towers:** completed defensive buildings use local target scans, wind-up/cooldown
+  timers, arrow or magic projectiles, and shared projectile damage resolution.
 - **Waves:** timer-driven right-side enemy waves, basic scaling, HUD countdown, and
   debug controls.
 - **Rendering:** terrain bands, HUD, settings, selected panel, waypoints, processed
@@ -435,8 +447,9 @@ to Pygame-drawn placeholders.
 Unit sprites are not final. Units, Trees, weapons, arrows, melee strikes, damage
 feedback, wave markers, and directional death animations currently use Pygame
 primitives. Current placeholder equipment includes bows, spears, swords, axes,
-pickaxes, and building hammers. This keeps gameplay testable while final art is still
-in development.
+pickaxes, and building hammers. Defensive towers and Wizard Tower magic bolts are also
+currently drawn with Pygame primitives. This keeps gameplay testable while final art is
+still in development.
 
 ## Performance Approach
 
@@ -473,6 +486,9 @@ projectile counts, effect counts, attacks, and projectile hits.
 - Save/load is not implemented.
 - Audio and final sound hooks are not implemented.
 - Balance values and wave scaling are provisional.
+- Tower balance is provisional; there are no tower upgrades, garrisoning, or manual
+  tower targeting controls yet.
+- The Wizard Tower is a defensive building only; there is no mobile Wizard unit yet.
 - Settings and keybind changes are not persisted between launches.
 - There is no multiplayer support.
 - Licensing for project-provided visual assets still requires final confirmation before

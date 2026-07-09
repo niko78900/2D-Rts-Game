@@ -9,7 +9,7 @@ def test_all_data_files_validate_against_schemas() -> None:
 
     assert bundle.summary() == {
         "units": 11,
-        "buildings": 12,
+        "buildings": 15,
         "resources": 6,
         "upgrades": 9,
         "waves": 4,
