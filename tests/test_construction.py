@@ -76,6 +76,36 @@ def test_multiple_builders_speed_up_construction() -> None:
     assert all(builder.state == "building" for builder in builders)
 
 
+def test_active_builder_faces_site_and_tracks_visual_work_time() -> None:
+    """Verify active builders face the site and expose renderer work timing."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    site = _add_hut_site(world, build_time_ms=1000)
+    world.update_entity_position(
+        settler.id,
+        WorldPosition(site.position.x - 60, site.position.y),
+    )
+    world.enqueue_command(
+        settler.id,
+        make_command(
+            "build",
+            [settler.id],
+            target_entity_id=site.id,
+            target_pos=site.position,
+            building_id="hut",
+        ),
+    )
+
+    ConstructionSystem().update(world, 100)
+
+    command = world.command_queues[settler.id].peek()
+    assert settler.state == "building"
+    assert settler.facing_x > 0.99
+    assert abs(settler.facing_y) < 0.001
+    assert command is not None
+    assert command.payload["build_work_elapsed_ms"] == 100
+
+
 def test_construction_speed_boost_caps_at_ten_builders() -> None:
     """Verify that construction speed boost caps at ten builders."""
     world = create_demo_world()

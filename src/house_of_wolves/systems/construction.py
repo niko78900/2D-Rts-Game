@@ -130,6 +130,8 @@ class ConstructionSystem:
         for active_builder in builders:
             builder = world.entities.get(active_builder.builder_id)
             if builder is not None:
+                _face_entity_towards(builder, site.position)
+                _advance_work_visual_timer(active_builder.queue.peek(), dt_ms)
                 _set_state(builder, "building")
 
         speed_boost = min(len(builders), self.max_builder_speed_boost)
@@ -235,3 +237,31 @@ def _set_state(entity: object, state: str) -> None:
     """Set state."""
     if hasattr(entity, "state"):
         entity.state = state
+
+
+def _face_entity_towards(entity: object, position: WorldPosition) -> None:
+    """Turn a worker toward the site it is actively building."""
+    entity_position = getattr(entity, "position", None)
+    if entity_position is None or not hasattr(entity, "facing_x"):
+        return
+    dx = position.x - entity_position.x
+    dy = position.y - entity_position.y
+    distance = hypot(dx, dy)
+    if distance <= 0.0001:
+        return
+    entity.facing_x = dx / distance
+    if hasattr(entity, "facing_y"):
+        entity.facing_y = dy / distance
+
+
+def _advance_work_visual_timer(command: object | None, dt_ms: int) -> None:
+    """Track builder work time for renderer-only tool animation."""
+    if command is None or not hasattr(command, "payload"):
+        return
+    payload = command.payload
+    if not isinstance(payload, dict):
+        return
+    payload["build_work_elapsed_ms"] = int(payload.get("build_work_elapsed_ms", 0) or 0) + max(
+        0,
+        int(dt_ms),
+    )

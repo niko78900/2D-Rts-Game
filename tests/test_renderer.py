@@ -41,6 +41,7 @@ from house_of_wolves.core.renderer import (
     status_bar_for_entity,
 )
 from house_of_wolves.core.settings import AppSettings
+from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.combat_effect import CombatEffect
 from house_of_wolves.entities.projectile import Projectile
 from house_of_wolves.entities.resource_node import ResourceNode
@@ -115,6 +116,41 @@ def test_settler_uses_bow_and_draw_progress_during_combat() -> None:
     equipment = settler_equipment_for(world, settler)
 
     assert equipment.tool == "bow"
+    assert equipment.progress == 0.5
+
+
+def test_settler_uses_hammer_while_building() -> None:
+    """Verify active construction commands render the settler hammer animation."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    site = Building(
+        id=world.allocate_entity_id(),
+        owner="frontier",
+        position=WorldPosition(settler.position.x + 80, settler.position.y),
+        footprint=Footprint(120, 80),
+        hp=100,
+        max_hp=500,
+        tags=("building", "hut", "selectable"),
+        build_time_ms=1000,
+        complete=False,
+    )
+    world.add_entity(site)
+    settler.state = "building"
+    world.enqueue_command(
+        settler.id,
+        make_command(
+            "build",
+            [settler.id],
+            target_entity_id=site.id,
+            target_pos=site.position,
+            building_id="hut",
+            build_work_elapsed_ms=260,
+        ),
+    )
+
+    equipment = settler_equipment_for(world, settler)
+
+    assert equipment.tool == "hammer"
     assert equipment.progress == 0.5
 
 

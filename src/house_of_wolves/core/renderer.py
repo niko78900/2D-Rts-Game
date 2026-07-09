@@ -62,6 +62,7 @@ SETTINGS_RESOURCE_GRANT_RESOURCES = (
     ("gold", "Gold"),
 )
 STATUS_BAR_TOP_MARGIN = 9
+HAMMER_SWING_MS = 520
 HEALTH_FILL = (54, 174, 86)
 HEALTH_EMPTY = (139, 47, 43)
 RESOURCE_FILL = (230, 193, 77)
@@ -630,7 +631,7 @@ class GameRenderer:
         facing_y: float,
         equipment: UnitEquipmentVisual,
     ) -> None:
-        """Draw a tool, spear, sword, or bow in the unit's facing direction."""
+        """Draw a tool, spear, sword, bow, or hammer in the unit's facing direction."""
         center = (float(rect.centerx), float(rect.centery + 3))
         perpendicular = (-facing_y, facing_x)
         weapon_color = (70, 48, 34) if not enemy else (55, 39, 46)
@@ -668,7 +669,7 @@ class GameRenderer:
             _draw_weapon_tip(surface, tip, facing_x, facing_y, metal_color)
             return
 
-        if equipment.tool in {"axe", "pickaxe"}:
+        if equipment.tool in {"axe", "pickaxe", "hammer"}:
             tool_x, tool_y = _tool_swing_direction(
                 facing_x,
                 facing_y,
@@ -688,6 +689,25 @@ class GameRenderer:
                     tip[1] - tool_perpendicular[1] * 8,
                 )
                 pygame.draw.line(surface, metal_color, pick_left, pick_right, 4)
+            elif equipment.tool == "hammer":
+                head_left = (
+                    tip[0] + tool_perpendicular[0] * 6,
+                    tip[1] + tool_perpendicular[1] * 6,
+                )
+                head_right = (
+                    tip[0] - tool_perpendicular[0] * 6,
+                    tip[1] - tool_perpendicular[1] * 6,
+                )
+                face_a = (
+                    head_left[0] + tool_x * 3,
+                    head_left[1] + tool_y * 3,
+                )
+                face_b = (
+                    head_right[0] + tool_x * 3,
+                    head_right[1] + tool_y * 3,
+                )
+                pygame.draw.line(surface, metal_color, head_left, head_right, 5)
+                pygame.draw.line(surface, (110, 103, 93), face_a, face_b, 2)
             else:
                 blade_outer = (
                     tip[0] + tool_perpendicular[0] * 8 - tool_x * 4,
@@ -703,18 +723,47 @@ class GameRenderer:
         if equipment.tool is None:
             return
 
-        start = _offset_point(center, facing_x, facing_y, -3)
-        tip = _offset_point(center, facing_x, facing_y, 23)
-        pygame.draw.line(surface, metal_color, start, tip, 4)
+        guard_center = _offset_point(center, facing_x, facing_y, 3)
+        blade_base = _offset_point(guard_center, facing_x, facing_y, 2)
+        blade_tip = _offset_point(guard_center, facing_x, facing_y, 25)
+        blade_half_width = 2.5
+        blade_left = (
+            blade_base[0] + perpendicular[0] * blade_half_width,
+            blade_base[1] + perpendicular[1] * blade_half_width,
+        )
+        blade_right = (
+            blade_base[0] - perpendicular[0] * blade_half_width,
+            blade_base[1] - perpendicular[1] * blade_half_width,
+        )
+        pygame.draw.polygon(
+            surface,
+            metal_color,
+            [blade_left, blade_tip, blade_right],
+        )
+        pygame.draw.line(
+            surface,
+            (245, 235, 215),
+            blade_left,
+            blade_tip,
+            1,
+        )
         guard_left = (
-            start[0] + perpendicular[0] * 6,
-            start[1] + perpendicular[1] * 6,
+            guard_center[0] + perpendicular[0] * 7,
+            guard_center[1] + perpendicular[1] * 7,
         )
         guard_right = (
-            start[0] - perpendicular[0] * 6,
-            start[1] - perpendicular[1] * 6,
+            guard_center[0] - perpendicular[0] * 7,
+            guard_center[1] - perpendicular[1] * 7,
         )
-        pygame.draw.line(surface, weapon_color, guard_left, guard_right, 3)
+        pygame.draw.line(surface, (158, 125, 63), guard_left, guard_right, 3)
+        grip_end = _offset_point(guard_center, facing_x, facing_y, -9)
+        pygame.draw.line(surface, weapon_color, guard_center, grip_end, 4)
+        pygame.draw.circle(
+            surface,
+            (158, 125, 63),
+            (round(grip_end[0]), round(grip_end[1])),
+            3,
+        )
 
     def _draw_resource(
         self,
@@ -1823,6 +1872,13 @@ def settler_equipment_for(
     state = str(getattr(settler, "state", "idle"))
     if state in {"attack_windup", "attacking", "attack_cooldown"}:
         return UnitEquipmentVisual("bow", _bow_draw_progress(settler))
+    if state == "building":
+        queue = world.command_queues.get(settler.id)
+        command = queue.peek() if queue is not None else None
+        if command is not None and command.type == "build":
+            elapsed_ms = int(command.payload.get("build_work_elapsed_ms", 0) or 0)
+            progress = (elapsed_ms % HAMMER_SWING_MS) / max(1, HAMMER_SWING_MS)
+            return UnitEquipmentVisual("hammer", progress)
     if state != "gathering":
         return UnitEquipmentVisual(None)
 
