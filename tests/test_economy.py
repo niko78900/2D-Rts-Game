@@ -88,6 +88,34 @@ def test_settler_gather_command_swings_carries_deposits_and_returns() -> None:
     assert commands[1].target_entity_id == tree.id
 
 
+def test_gathering_settler_faces_active_resource() -> None:
+    """Verify gathering tool orientation points toward the current node."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    tree = next(entity for entity in world.entities.values() if "wood_tree" in entity.tags)
+    interaction_point = resource_interaction_position(world, tree, settler.id)
+    world.update_entity_position(settler.id, interaction_point)
+    world.enqueue_command(
+        settler.id,
+        make_command(
+            "gather",
+            [settler.id],
+            target_entity_id=tree.id,
+            resource_type="wood",
+            current_resource_id=tree.id.to_json(),
+        ),
+    )
+
+    EconomySystem().update(world, 16)
+
+    dx = tree.position.x - settler.position.x
+    dy = tree.position.y - settler.position.y
+    distance = hypot(dx, dy)
+    assert settler.state == "gathering"
+    assert settler.facing_x == dx / distance
+    assert settler.facing_y == dy / distance
+
+
 def test_gather_command_rejects_wrong_resource_type() -> None:
     """Verify that gather command rejects wrong resource type."""
     world = create_demo_world()

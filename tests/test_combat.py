@@ -306,10 +306,15 @@ def test_gather_move_is_abandoned_when_enemy_can_attack_worker() -> None:
     assert world.command_queues[settler.id].peek() is None
     assert enemy.hp == starting_hp
 
-    combat.update(world, MELEE_ATTACK_WINDUP_MS)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+
+    assert enemy.hp == starting_hp
+    assert any(projectile.source_entity_id == settler.id for projectile in world.projectiles)
+
+    combat.update(world, 250)
 
     assert enemy.hp == starting_hp - settler.damage
-    assert settler.state == "attacking"
+    assert settler.state == "attack_cooldown"
 
 
 def test_enemy_raider_deals_melee_damage_when_player_unit_is_in_range() -> None:
@@ -490,6 +495,40 @@ def test_arrow_flies_to_last_known_position_when_target_disappears() -> None:
 
     assert not world.projectiles
     assert world.performance_stats.counters.projectile_hits == 0
+
+
+def test_settler_arrow_expires_safely_when_target_disappears() -> None:
+    """Verify settler combat uses the same stale-target projectile behavior."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    enemy = next(entity for entity in world.entities.values() if "enemy" in entity.tags)
+    world.update_entity_position(
+        enemy.id,
+        WorldPosition(settler.position.x + 100, settler.position.y),
+    )
+    world.enqueue_command(
+        settler.id,
+        make_command("attack", [settler.id], target_entity_id=enemy.id),
+    )
+    combat = CombatSystem()
+
+    combat.update(world, 16)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+
+    settler_arrows = [
+        projectile
+        for projectile in world.projectiles
+        if projectile.source_entity_id == settler.id
+    ]
+    assert len(settler_arrows) == 1
+
+    world.remove_entity(enemy.id)
+    combat.update(world, 1000)
+
+    assert not any(
+        projectile.source_entity_id == settler.id
+        for projectile in world.projectiles
+    )
 
 
 def test_archer_windup_spawns_only_one_arrow_per_attack_cycle() -> None:

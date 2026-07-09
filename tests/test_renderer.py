@@ -37,6 +37,7 @@ from house_of_wolves.core.renderer import (
     queued_move_targets,
     resource_sprite_reference_for,
     resource_sprite_stage_for,
+    settler_equipment_for,
     status_bar_for_entity,
 )
 from house_of_wolves.core.settings import AppSettings
@@ -48,6 +49,73 @@ from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.ui.selected_panel import mutual_abilities, selected_panel_for
 from house_of_wolves.world.collision import blocking_bounds_for_entity
 from house_of_wolves.world.demo import create_demo_world
+
+
+def test_settler_equipment_matches_gathered_resource_and_swing_progress() -> None:
+    """Verify wood uses an axe while mine resources use a pickaxe."""
+    expected_tools = {
+        "wood": "axe",
+        "stone": "pickaxe",
+        "iron": "pickaxe",
+        "gold": "pickaxe",
+    }
+    for resource_type, expected_tool in expected_tools.items():
+        world = create_demo_world()
+        settler = next(
+            entity for entity in world.entities.values() if "settler" in entity.tags
+        )
+        resource = next(
+            entity for entity in world.entities.values() if "resource" in entity.tags
+        )
+        settler.state = "gathering"
+        world.enqueue_command(
+            settler.id,
+            make_command(
+                "gather",
+                [settler.id],
+                target_entity_id=resource.id,
+                resource_type=resource_type,
+                swing_elapsed_ms=325,
+            ),
+        )
+
+        equipment = settler_equipment_for(world, settler)
+
+        assert equipment.tool == expected_tool
+        assert equipment.progress == 0.5
+
+
+def test_settler_hides_work_tools_outside_gathering() -> None:
+    """Verify idle, moving, and carrying settlers do not show work tools."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    resource = next(entity for entity in world.entities.values() if "resource" in entity.tags)
+    world.enqueue_command(
+        settler.id,
+        make_command(
+            "gather",
+            [settler.id],
+            target_entity_id=resource.id,
+            resource_type="wood",
+        ),
+    )
+
+    for state in ("idle", "moving", "carrying_resource", "depositing"):
+        settler.state = state
+        assert settler_equipment_for(world, settler).tool is None
+
+
+def test_settler_uses_bow_and_draw_progress_during_combat() -> None:
+    """Verify combat state overrides work tools with the ranged placeholder."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    settler.state = "attack_windup"
+    settler.attack_windup_remaining_ms = 125
+
+    equipment = settler_equipment_for(world, settler)
+
+    assert equipment.tool == "bow"
+    assert equipment.progress == 0.5
 
 
 def test_renderer_draws_arrow_projectile_with_primitives() -> None:

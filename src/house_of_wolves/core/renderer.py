@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from math import hypot
+from math import cos, hypot, sin
 from pathlib import Path
 
 import pygame
@@ -19,7 +19,9 @@ from house_of_wolves.core.keybindings import (
 from house_of_wolves.core.performance import time_block
 from house_of_wolves.core.settings import UI_PANEL_HEIGHT, AppSettings
 from house_of_wolves.systems.buildings import is_building_destroying
+from house_of_wolves.systems.combat import RANGED_ATTACK_WINDUP_MS
 from house_of_wolves.systems.economy import (
+    GATHER_SWING_MS,
     is_mine_resource,
     mine_harvest_area_bounds,
     mine_harvest_slot_candidates,
@@ -139,6 +141,14 @@ class StatusBarSpec:
     ratio: float
     fill_color: tuple[int, int, int]
     empty_color: tuple[int, int, int]
+
+
+@dataclass(frozen=True, slots=True)
+class UnitEquipmentVisual:
+    """Derived placeholder equipment and normalized animation progress."""
+
+    tool: str | None
+    progress: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,7 +329,7 @@ class GameRenderer:
                 if self.settings.show_resource_hitboxes:
                     self._draw_resource_hitbox(surface, world, entity)
             else:
-                self._draw_unit(surface, rect, entity)
+                self._draw_unit(surface, rect, entity, world)
                 if self.settings.show_unit_hitboxes:
                     self._draw_entity_hitbox(surface, rect, "unit")
             if _status_bar_visible(entity, entity.id in selected, entity.id in recent_hit_ids):
@@ -506,7 +516,13 @@ class GameRenderer:
             )
             pygame.draw.ellipse(surface, (225, 72, 67), marker, width=3)
 
-    def _draw_unit(self, surface: pygame.Surface, rect: pygame.Rect, entity: object) -> None:
+    def _draw_unit(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        entity: object,
+        world: WorldState,
+    ) -> None:
         """Draw a readable primitive placeholder for one unit type."""
         tags = tuple(getattr(entity, "tags", ()))
         enemy = _is_enemy_entity(entity)
@@ -541,6 +557,7 @@ class GameRenderer:
         else:
             facing_x /= facing_length
             facing_y /= facing_length
+        equipment = _unit_equipment_for(world, entity)
         self._draw_unit_equipment(
             surface,
             rect,
@@ -548,8 +565,8 @@ class GameRenderer:
             enemy,
             facing_x,
             facing_y,
+            equipment,
         )
-        self._draw_facing_marker(surface, rect, enemy, facing_x, facing_y)
         self._draw_label(surface, _short_label(tags), body.center)
 
     def _draw_unit_equipment(
@@ -560,6 +577,7 @@ class GameRenderer:
         enemy: bool,
         facing_x: float,
         facing_y: float,
+        equipment: UnitEquipmentVisual,
     ) -> None:
         """Draw a tool, spear, sword, or bow in the unit's facing direction."""
         center = (float(rect.centerx), float(rect.centery + 3))
@@ -567,7 +585,8 @@ class GameRenderer:
         weapon_color = (70, 48, 34) if not enemy else (55, 39, 46)
         metal_color = (213, 213, 194) if not enemy else (226, 176, 177)
 
-        if _tags_include_role(tags, "archer"):
+        if equipment.tool == "bow":
+            draw_progress = max(0.0, min(1.0, equipment.progress))
             grip = _offset_point(center, facing_x, facing_y, 9)
             bow_center = _offset_point(center, facing_x, facing_y, 17)
             upper = (
@@ -579,29 +598,58 @@ class GameRenderer:
                 bow_center[1] - perpendicular[1] * 11 - facing_y * 4,
             )
             pygame.draw.lines(surface, weapon_color, False, [upper, bow_center, lower], 3)
-            pygame.draw.lines(surface, (204, 194, 157), False, [upper, grip, lower], 1)
+            nock = _offset_point(
+                grip,
+                facing_x,
+                facing_y,
+                -(2.0 + draw_progress * 8.0),
+            )
+            pygame.draw.lines(surface, (204, 194, 157), False, [upper, nock, lower], 1)
+            if draw_progress > 0:
+                arrow_front = _offset_point(bow_center, facing_x, facing_y, 8)
+                pygame.draw.line(surface, metal_color, nock, arrow_front, 2)
             return
 
-        if "spearman" in tags:
+        if equipment.tool == "spear":
             start = _offset_point(center, facing_x, facing_y, -8)
             tip = _offset_point(center, facing_x, facing_y, 31)
             pygame.draw.line(surface, weapon_color, start, tip, 3)
             _draw_weapon_tip(surface, tip, facing_x, facing_y, metal_color)
             return
 
-        if "settler" in tags:
-            start = _offset_point(center, facing_x, facing_y, -3)
-            tip = _offset_point(center, facing_x, facing_y, 22)
+        if equipment.tool in {"axe", "pickaxe"}:
+            tool_x, tool_y = _tool_swing_direction(
+                facing_x,
+                facing_y,
+                equipment.progress,
+            )
+            tool_perpendicular = (-tool_y, tool_x)
+            start = _offset_point(center, tool_x, tool_y, -3)
+            tip = _offset_point(center, tool_x, tool_y, 22)
             pygame.draw.line(surface, weapon_color, start, tip, 3)
-            axe_left = (
-                tip[0] + perpendicular[0] * 6,
-                tip[1] + perpendicular[1] * 6,
-            )
-            axe_right = (
-                tip[0] - perpendicular[0] * 6,
-                tip[1] - perpendicular[1] * 6,
-            )
-            pygame.draw.line(surface, metal_color, axe_left, axe_right, 4)
+            if equipment.tool == "pickaxe":
+                pick_left = (
+                    tip[0] + tool_perpendicular[0] * 8,
+                    tip[1] + tool_perpendicular[1] * 8,
+                )
+                pick_right = (
+                    tip[0] - tool_perpendicular[0] * 8,
+                    tip[1] - tool_perpendicular[1] * 8,
+                )
+                pygame.draw.line(surface, metal_color, pick_left, pick_right, 4)
+            else:
+                blade_outer = (
+                    tip[0] + tool_perpendicular[0] * 8 - tool_x * 4,
+                    tip[1] + tool_perpendicular[1] * 8 - tool_y * 4,
+                )
+                blade_inner = (
+                    tip[0] + tool_perpendicular[0] * 3 - tool_x * 7,
+                    tip[1] + tool_perpendicular[1] * 3 - tool_y * 7,
+                )
+                pygame.draw.polygon(surface, metal_color, [tip, blade_outer, blade_inner])
+            return
+
+        if equipment.tool is None:
             return
 
         start = _offset_point(center, facing_x, facing_y, -3)
@@ -616,26 +664,6 @@ class GameRenderer:
             start[1] - perpendicular[1] * 6,
         )
         pygame.draw.line(surface, weapon_color, guard_left, guard_right, 3)
-
-    def _draw_facing_marker(
-        self,
-        surface: pygame.Surface,
-        rect: pygame.Rect,
-        enemy: bool,
-        facing_x: float,
-        facing_y: float,
-    ) -> None:
-        """Draw a tiny triangle that makes movement and attack facing visible."""
-        center = (float(rect.centerx), float(rect.bottom - 5))
-        tip = _offset_point(center, facing_x, facing_y, 9)
-        perpendicular = (-facing_y, facing_x)
-        back = _offset_point(center, facing_x, facing_y, 3)
-        points = [
-            tip,
-            (back[0] + perpendicular[0] * 3, back[1] + perpendicular[1] * 3),
-            (back[0] - perpendicular[0] * 3, back[1] - perpendicular[1] * 3),
-        ]
-        pygame.draw.polygon(surface, (225, 90, 82) if enemy else (229, 214, 112), points)
 
     def _draw_resource(
         self,
@@ -1715,6 +1743,81 @@ class GameRenderer:
                 self.small_font,
                 color=(244, 238, 213),
             )
+
+
+def settler_equipment_for(
+    world: WorldState,
+    settler: object,
+) -> UnitEquipmentVisual:
+    """Derive a settler's visible tool from current work or combat state."""
+    if "settler" not in getattr(settler, "tags", ()):
+        return UnitEquipmentVisual(None)
+    state = str(getattr(settler, "state", "idle"))
+    if state in {"attack_windup", "attacking", "attack_cooldown"}:
+        return UnitEquipmentVisual("bow", _bow_draw_progress(settler))
+    if state != "gathering":
+        return UnitEquipmentVisual(None)
+
+    queue = world.command_queues.get(settler.id)
+    command = queue.peek() if queue is not None else None
+    if command is None or command.type != "gather":
+        return UnitEquipmentVisual(None)
+    resource_type = str(command.payload.get("resource_type", ""))
+    if resource_type == "wood":
+        tool = "axe"
+    elif resource_type in {"stone", "iron", "ore", "gold"}:
+        tool = "pickaxe"
+    else:
+        return UnitEquipmentVisual(None)
+    elapsed_ms = max(0, int(command.payload.get("swing_elapsed_ms", 0) or 0))
+    return UnitEquipmentVisual(tool, min(1.0, elapsed_ms / max(1, GATHER_SWING_MS)))
+
+
+def _unit_equipment_for(
+    world: WorldState,
+    entity: object,
+) -> UnitEquipmentVisual:
+    """Return placeholder equipment for the current unit role and state."""
+    tags = tuple(getattr(entity, "tags", ()))
+    if "settler" in tags:
+        return settler_equipment_for(world, entity)
+    if _tags_include_role(tags, "archer"):
+        return UnitEquipmentVisual("bow", _bow_draw_progress(entity))
+    if "spearman" in tags:
+        return UnitEquipmentVisual("spear")
+    return UnitEquipmentVisual("sword")
+
+
+def _bow_draw_progress(entity: object) -> float:
+    """Return normalized bow-string draw for an active ranged wind-up."""
+    if getattr(entity, "state", None) != "attack_windup":
+        return 0.0
+    remaining_ms = max(0, int(getattr(entity, "attack_windup_remaining_ms", 0)))
+    return max(
+        0.0,
+        min(1.0, 1.0 - remaining_ms / max(1, RANGED_ATTACK_WINDUP_MS)),
+    )
+
+
+def _tool_swing_direction(
+    facing_x: float,
+    facing_y: float,
+    progress: float,
+) -> tuple[float, float]:
+    """Rotate a gathering tool through raise, strike, and recovery phases."""
+    phase = max(0.0, min(1.0, progress))
+    if phase <= 0.65:
+        sweep = phase / 0.65
+        angle = -0.9 + sweep * 1.8
+    else:
+        recovery = (phase - 0.65) / 0.35
+        angle = 0.9 - recovery * 1.8
+    cosine = cos(angle)
+    sine = sin(angle)
+    return (
+        facing_x * cosine - facing_y * sine,
+        facing_x * sine + facing_y * cosine,
+    )
 
 
 def _unit_body_color(tags: tuple[str, ...], enemy: bool) -> tuple[int, int, int]:

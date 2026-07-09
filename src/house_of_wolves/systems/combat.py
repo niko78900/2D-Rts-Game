@@ -602,9 +602,10 @@ def _cancel_attack_windup(entity: object) -> None:
 
 def _is_ranged_attacker(entity: object) -> bool:
     """Return whether a unit should release an arrow projectile."""
-    return any(
+    tags = tuple(getattr(entity, "tags", ()))
+    return "settler" in tags or any(
         tag == "archer" or tag.endswith("_archer")
-        for tag in getattr(entity, "tags", ())
+        for tag in tags
     )
 
 

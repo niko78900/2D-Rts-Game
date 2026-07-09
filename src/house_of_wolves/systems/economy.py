@@ -579,6 +579,7 @@ class EconomySystem:
     ) -> None:
         """Advance one worker swing cycle against a resource."""
         _set_state(worker, GATHER_STATE_GATHERING)
+        _face_worker_toward_resource(worker, resource)
         elapsed = int(command.payload.get("swing_elapsed_ms", 0)) + max(0, int(dt_ms))
         swings = int(command.payload.get("successful_swings", 0))
         while elapsed >= self.gather_swing_ms and swings < GATHER_SWINGS_PER_LOAD:
@@ -1863,6 +1864,19 @@ def _set_state(entity: object, state: str) -> None:
     """Set state."""
     if hasattr(entity, "state"):
         entity.state = state
+
+
+def _face_worker_toward_resource(worker: object, resource: ResourceNode) -> None:
+    """Point a gathering settler's tool toward the active resource."""
+    if not hasattr(worker, "facing_x"):
+        return
+    dx = resource.position.x - worker.position.x
+    dy = resource.position.y - worker.position.y
+    distance = hypot(dx, dy)
+    if distance <= 0.0001:
+        return
+    worker.facing_x = dx / distance
+    worker.facing_y = dy / distance
 
 
 def _within(first: WorldPosition, second: WorldPosition, radius: float) -> bool:
