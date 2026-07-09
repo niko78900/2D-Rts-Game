@@ -11,6 +11,7 @@ from house_of_wolves.systems.combat import (
     ATTACK_MOVE_CHASE_TIMEOUT_MS,
     MELEE_ATTACK_WINDUP_MS,
     RANGED_ATTACK_WINDUP_MS,
+    UNIT_FALL_EFFECT_MS,
     CombatSystem,
 )
 from house_of_wolves.systems.commands import make_command
@@ -87,7 +88,10 @@ def test_direct_attack_command_fires_at_target_and_finishes_when_killed() -> Non
 
     assert enemy.id not in world.entities
     assert world.command_queues[attacker.id].peek() is None
-    assert any(effect.kind == "death_burst" for effect in world.combat_effects)
+    fall = next(effect for effect in world.combat_effects if effect.kind == "unit_fall")
+    assert fall.direction_x > 0
+    assert "enemy" in fall.visual_tags
+    assert not any(effect.kind == "death_burst" for effect in world.combat_effects)
 
 
 def test_attack_move_chases_locked_target_when_enemy_is_out_of_range() -> None:
@@ -363,6 +367,7 @@ def test_enemy_unit_can_damage_player_building() -> None:
     assert building.complete is False
     assert building.destruction_remaining_ms == BUILDING_DESTRUCTION_MS
     assert building.id not in world.hard_obstacle_ids
+    assert not any(effect.kind == "unit_fall" for effect in world.combat_effects)
 
 
 def test_destroying_building_is_removed_after_visual_timer() -> None:
@@ -470,6 +475,43 @@ def test_enemy_archer_uses_projectile_damage_on_impact() -> None:
 
     assert settler.hp == starting_hp - enemy_archer.damage
     assert not world.projectiles
+
+
+def test_enemy_arrow_from_right_makes_player_unit_fall_left() -> None:
+    """Verify projectile travel direction controls the victim's fall side."""
+    world = create_demo_world()
+    settler = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+    for entity in world.entities.values():
+        if (
+            "unit" in entity.tags
+            and entity.owner == "frontier"
+            and entity.id != settler.id
+        ):
+            world.update_entity_position(
+                entity.id,
+                WorldPosition(settler.position.x - 400, settler.position.y),
+            )
+    enemy_archer = create_combat_unit(
+        world,
+        "enemy_archer",
+        "wolves",
+        WorldPosition(settler.position.x + 120, settler.position.y),
+    )
+    world.add_entity(enemy_archer)
+    settler.hp = 1
+    world.enqueue_command(
+        enemy_archer.id,
+        make_command("attack", [enemy_archer.id], target_entity_id=settler.id),
+    )
+    combat = CombatSystem()
+
+    combat.update(world, 16)
+    combat.update(world, RANGED_ATTACK_WINDUP_MS)
+    combat.update(world, 250)
+
+    assert settler.id not in world.entities
+    fall = next(effect for effect in world.combat_effects if effect.kind == "unit_fall")
+    assert fall.direction_x < 0
 
 
 def test_arrow_flies_to_last_known_position_when_target_disappears() -> None:
@@ -587,4 +629,10 @@ def test_player_unit_death_cleans_population_indexes_and_adds_effect() -> None:
     assert settler.id not in world.unit_ids
     assert settler.id not in world.command_queues
     assert world.current_population == starting_population - settler.population_cost
-    assert any(effect.kind == "death_burst" for effect in world.combat_effects)
+    fall = next(effect for effect in world.combat_effects if effect.kind == "unit_fall")
+    assert fall.direction_x < 0
+    assert "settler" in fall.visual_tags
+
+    combat.update(world, UNIT_FALL_EFFECT_MS)
+
+    assert not any(effect.kind == "unit_fall" for effect in world.combat_effects)

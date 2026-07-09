@@ -823,6 +823,11 @@ class GameRuntime:
         ):
             self._toggle_performance_overlay()
             return True
+        if self.renderer.settings_hit_flashes_toggle_rect(self.screen).collidepoint(
+            screen_pos
+        ):
+            self._toggle_hit_flashes()
+            return True
         if self.renderer.settings_waves_toggle_rect(self.screen).collidepoint(screen_pos):
             self._toggle_waves()
             return True
@@ -908,6 +913,15 @@ class GameRuntime:
         self.settings = replace(
             self.settings,
             wave_timer_enabled=not self.settings.wave_timer_enabled,
+        )
+        self.world.settings = self.settings
+        self.renderer = GameRenderer(self.settings)
+
+    def _toggle_hit_flashes(self) -> None:
+        """Toggle debug-only attacker and target outline flashes."""
+        self.settings = replace(
+            self.settings,
+            show_debug_hit_flashes=not self.settings.show_debug_hit_flashes,
         )
         self.world.settings = self.settings
         self.renderer = GameRenderer(self.settings)

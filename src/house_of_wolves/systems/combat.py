@@ -33,7 +33,7 @@ ARROW_PROJECTILE_HIT_RADIUS = 12.0
 MELEE_STRIKE_EFFECT_MS = 170
 HIT_FLASH_EFFECT_MS = 180
 DAMAGE_NUMBER_EFFECT_MS = 700
-DEATH_EFFECT_MS = 700
+UNIT_FALL_EFFECT_MS = 800
 NEUTRAL_OWNER = "neutral"
 # Limit combat targets to units/buildings so resource nodes and farm animals are
 # ignored by wave pressure and idle guard scans.
@@ -195,11 +195,13 @@ class CombatSystem:
                 target_killed = False
             else:
                 self._spawn_melee_strike(world, attacker, target)
+                impact_direction = _direction_to(attacker.position, target.position)
                 target_killed = self._apply_damage(
                     world,
                     target,
                     int(getattr(attacker, "damage", 0)),
                     attacker.owner,
+                    impact_direction,
                 )
             attacker.cooldown_remaining_ms = int(
                 getattr(attacker, "attack_cooldown_ms", 0)
@@ -290,6 +292,11 @@ class CombatSystem:
             distance = hypot(dx, dy)
             step = max(0.0, projectile.speed) * dt_seconds
             if distance <= projectile.hit_radius + step:
+                impact_direction = (
+                    (dx / distance, dy / distance)
+                    if distance > 0.0001
+                    else (1.0, 0.0)
+                )
                 projectile.position = projectile.target_pos
                 if target_is_valid:
                     self._apply_damage(
@@ -297,6 +304,7 @@ class CombatSystem:
                         target,
                         projectile.damage,
                         projectile.owner,
+                        impact_direction,
                     )
                     world.performance_stats.counters.projectile_hits += 1
                 continue
@@ -324,6 +332,7 @@ class CombatSystem:
         target: object,
         damage: int,
         attacker_owner: str,
+        impact_direction: tuple[float, float],
     ) -> bool:
         """Apply combat damage and emit bounded hit/death feedback."""
         if not getattr(target, "alive", False):
@@ -355,18 +364,24 @@ class CombatSystem:
         if target.hp > 0:
             return False
 
-        world.add_combat_effect(
-            CombatEffect(
-                kind="death_burst",
-                position=position,
-                duration_ms=DEATH_EFFECT_MS,
-                remaining_ms=DEATH_EFFECT_MS,
-                owner=str(getattr(target, "owner", NEUTRAL_OWNER)),
-            )
-        )
         if isinstance(target, Building):
             start_building_destruction(world, target)
             return True
+        if "unit" in getattr(target, "tags", ()):
+            world.add_combat_effect(
+                CombatEffect(
+                    kind="unit_fall",
+                    position=target.position,
+                    duration_ms=UNIT_FALL_EFFECT_MS,
+                    remaining_ms=UNIT_FALL_EFFECT_MS,
+                    owner=str(getattr(target, "owner", NEUTRAL_OWNER)),
+                    direction_x=impact_direction[0],
+                    direction_y=impact_direction[1],
+                    visual_tags=tuple(getattr(target, "tags", ())),
+                    visual_width=float(target.footprint.width),
+                    visual_height=float(target.footprint.height),
+                )
+            )
         target.alive = False
         world.remove_entity(target.id)
         return True

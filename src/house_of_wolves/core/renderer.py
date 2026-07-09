@@ -404,6 +404,8 @@ class GameRenderer:
                 continue
 
             if effect.kind == "hit_flash":
+                if not self.settings.show_debug_hit_flashes:
+                    continue
                 if target is not None:
                     target_rect = _screen_rect(world, target.bounds).inflate(6, 6)
                     if "building" in getattr(target, "tags", ()):
@@ -436,23 +438,8 @@ class GameRenderer:
                 surface.blit(text, draw_pos)
                 continue
 
-            if effect.kind == "death_burst":
-                radius = max(3, round(24 * (1.0 - progress)))
-                color = (126, 42, 48) if effect.owner != "frontier" else (66, 92, 65)
-                pygame.draw.circle(surface, color, screen, radius, width=3)
-                for direction_x, direction_y in (
-                    (1.0, 0.0),
-                    (-1.0, 0.0),
-                    (0.0, 1.0),
-                    (0.0, -1.0),
-                    (0.7, 0.7),
-                    (-0.7, 0.7),
-                ):
-                    end = (
-                        screen[0] + direction_x * radius,
-                        screen[1] + direction_y * radius,
-                    )
-                    pygame.draw.line(surface, color, screen, end, 2)
+            if effect.kind == "unit_fall":
+                self._draw_unit_fall(surface, screen, effect, progress)
                 continue
 
             if effect.kind == "melee_strike":
@@ -496,6 +483,69 @@ class GameRenderer:
                     4,
                 )
 
+    def _draw_unit_fall(
+        self,
+        surface: pygame.Surface,
+        ground_position: tuple[int, int],
+        effect: object,
+        progress: float,
+    ) -> None:
+        """Draw a dead unit collapsing in the incoming hit direction."""
+        fall_x = float(getattr(effect, "direction_x", 1.0))
+        fall_y = float(getattr(effect, "direction_y", 0.0))
+        direction_length = hypot(fall_x, fall_y)
+        if direction_length <= 0.0001:
+            fall_x, fall_y = 1.0, 0.0
+        else:
+            fall_x /= direction_length
+            fall_y /= direction_length
+
+        width = max(16.0, float(getattr(effect, "visual_width", 38.0)))
+        height = max(20.0, float(getattr(effect, "visual_height", 58.0)))
+        eased = min(1.0, max(0.0, progress))
+        body_width = _lerp(max(10.0, width - 10.0), height * 0.72, eased)
+        body_height = _lerp(max(14.0, height - 15.0), max(8.0, width * 0.30), eased)
+        shift_x = fall_x * height * 0.34 * eased
+        shift_y = abs(fall_y) * 6.0 * eased
+        body_center_x = ground_position[0] + shift_x
+        body_bottom = ground_position[1] + shift_y
+        body_rect = pygame.Rect(
+            round(body_center_x - body_width / 2),
+            round(body_bottom - body_height),
+            max(1, round(body_width)),
+            max(1, round(body_height)),
+        )
+        tags = tuple(getattr(effect, "visual_tags", ()))
+        enemy = getattr(effect, "owner", "neutral") not in {"frontier", "neutral"}
+        color = _unit_body_color(tags, enemy)
+        outline = (42, 27, 31) if enemy else (27, 38, 31)
+
+        shadow = pygame.Rect(
+            body_rect.left - 3,
+            round(body_bottom - 6),
+            body_rect.width + 6,
+            10,
+        )
+        pygame.draw.ellipse(surface, (33, 42, 34), shadow)
+        pygame.draw.ellipse(surface, color, body_rect)
+        pygame.draw.ellipse(surface, outline, body_rect, width=2)
+
+        head_radius = max(4, min(8, round(width / 5)))
+        upright_head = (
+            float(ground_position[0]),
+            float(ground_position[1] - height + 12),
+        )
+        fallen_head = (
+            float(ground_position[0] + fall_x * height * 0.62),
+            float(ground_position[1] - head_radius + shift_y),
+        )
+        head_center = (
+            round(_lerp(upright_head[0], fallen_head[0], eased)),
+            round(_lerp(upright_head[1], fallen_head[1], eased)),
+        )
+        pygame.draw.circle(surface, _unit_head_color(enemy), head_center, head_radius)
+        pygame.draw.circle(surface, outline, head_center, head_radius, width=1)
+
     def _draw_attack_target_indicators(
         self,
         surface: pygame.Surface,
@@ -529,10 +579,11 @@ class GameRenderer:
         color = _unit_body_color(tags, enemy)
         outline = (42, 27, 31) if enemy else (27, 38, 31)
         state = str(getattr(entity, "state", "idle"))
-        if state == "attack_windup":
-            outline = (246, 211, 105)
-        elif state == "attacking":
-            outline = (248, 238, 205)
+        if self.settings.show_debug_hit_flashes:
+            if state == "attack_windup":
+                outline = (246, 211, 105)
+            elif state == "attacking":
+                outline = (248, 238, 205)
 
         shadow = pygame.Rect(rect.left - 2, rect.bottom - 13, rect.width + 4, 13)
         pygame.draw.ellipse(surface, (33, 42, 34), shadow)
@@ -1366,14 +1417,25 @@ class GameRenderer:
 
         perf = self.settings_performance_overlay_toggle_rect(surface)
         perf_label = (
-            "Performance Overlay: On"
+            "Performance: On"
             if self.settings.show_performance_overlay
-            else "Performance Overlay: Off"
+            else "Performance: Off"
         )
         pygame.draw.rect(surface, (64, 75, 61), perf, border_radius=4)
         pygame.draw.rect(surface, (136, 152, 116), perf, width=1, border_radius=4)
         perf_text = self.small_font.render(perf_label, True, (244, 238, 213))
         surface.blit(perf_text, perf_text.get_rect(center=perf.center))
+
+        flashes = self.settings_hit_flashes_toggle_rect(surface)
+        flashes_label = (
+            "Hit Flashes: On"
+            if self.settings.show_debug_hit_flashes
+            else "Hit Flashes: Off"
+        )
+        pygame.draw.rect(surface, (64, 75, 61), flashes, border_radius=4)
+        pygame.draw.rect(surface, (136, 152, 116), flashes, width=1, border_radius=4)
+        flashes_text = self.small_font.render(flashes_label, True, (244, 238, 213))
+        surface.blit(flashes_text, flashes_text.get_rect(center=flashes.center))
 
         # Wave debug controls share one row so the existing keybind list remains visible.
         waves = self.settings_waves_toggle_rect(surface)
@@ -1471,7 +1533,13 @@ class GameRenderer:
     def settings_performance_overlay_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
         """Return the profiler overlay toggle rectangle."""
         menu = self.settings_menu_rect(surface)
-        return pygame.Rect(menu.left + 14, menu.top + 228, menu.width - 28, 30)
+        return pygame.Rect(menu.left + 14, menu.top + 228, (menu.width - 36) // 2, 30)
+
+    def settings_hit_flashes_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
+        """Return the debug hit-flash toggle rectangle."""
+        menu = self.settings_menu_rect(surface)
+        left = menu.left + 22 + ((menu.width - 36) // 2)
+        return pygame.Rect(left, menu.top + 228, (menu.width - 36) // 2, 30)
 
     def settings_waves_toggle_rect(self, surface: pygame.Surface) -> pygame.Rect:
         """Return the enemy-wave toggle rectangle."""
@@ -1854,6 +1922,11 @@ def _offset_point(
         origin[0] + direction_x * distance,
         origin[1] + direction_y * distance,
     )
+
+
+def _lerp(start: float, end: float, progress: float) -> float:
+    """Interpolate between two scalar values."""
+    return start + (end - start) * progress
 
 
 def _draw_weapon_tip(

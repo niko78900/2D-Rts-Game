@@ -461,6 +461,41 @@ def test_runtime_toggles_performance_overlay_from_hotkey_and_settings_menu() -> 
         runtime.shutdown()
 
 
+def test_runtime_settings_menu_toggles_debug_hit_flashes() -> None:
+    """Verify hit flashes remain default-off and propagate through runtime settings."""
+    runtime = GameRuntime(AppSettings())
+
+    runtime.initialize()
+    try:
+        assert runtime.screen is not None
+        assert runtime.renderer is not None
+        assert runtime.settings.show_debug_hit_flashes is False
+
+        settings_center = runtime.renderer.settings_button_rect(runtime.screen).center
+        runtime.handle_event(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 1, "pos": settings_center},
+            )
+        )
+        toggle_center = runtime.renderer.settings_hit_flashes_toggle_rect(
+            runtime.screen
+        ).center
+        runtime.handle_event(
+            pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"button": 1, "pos": toggle_center},
+            )
+        )
+
+        assert runtime.settings.show_debug_hit_flashes is True
+        assert runtime.world.settings.show_debug_hit_flashes is True
+        assert runtime.renderer.settings.show_debug_hit_flashes is True
+        assert runtime.settings_menu_open is True
+    finally:
+        runtime.shutdown()
+
+
 def test_runtime_clicking_hut_produce_button_spawns_unit() -> None:
     """Verify that runtime clicking hut produce button spawns unit."""
     runtime = GameRuntime(AppSettings())

@@ -20,3 +20,6 @@ class CombatEffect:
     value: int | None = None
     direction_x: float = 1.0
     direction_y: float = 0.0
+    visual_tags: tuple[str, ...] = ()
+    visual_width: float = 0.0
+    visual_height: float = 0.0

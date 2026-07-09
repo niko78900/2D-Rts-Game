@@ -27,6 +27,7 @@ class AppSettings:
     show_building_hitboxes: bool = False
     show_debug_waypoints: bool = False
     show_performance_overlay: bool = False
+    show_debug_hit_flashes: bool = False
     waves_enabled: bool = True
     wave_timer_enabled: bool = True
     wave_timer_seconds: int = 120

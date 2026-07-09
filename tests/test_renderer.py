@@ -178,6 +178,103 @@ def test_damage_number_rendering_reuses_cached_text_surface() -> None:
         renderer._draw_combat_effects(surface, world)
 
         assert renderer._damage_surface_cache[(6, (246, 103, 92))] is first_surface
+        assert _surface_has_nonblack_pixel(surface)
+    finally:
+        pygame.quit()
+
+
+def test_hit_flash_rendering_is_debug_only() -> None:
+    """Verify target hit outlines are hidden by default and visible in debug mode."""
+    pygame.init()
+    try:
+        world = create_demo_world()
+        unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+        world.add_combat_effect(
+            CombatEffect(
+                kind="hit_flash",
+                position=unit.position,
+                duration_ms=180,
+                remaining_ms=180,
+                target_entity_id=unit.id,
+            )
+        )
+        normal_surface = pygame.Surface(AppSettings().virtual_size)
+        normal_surface.fill((0, 0, 0))
+        GameRenderer(AppSettings())._draw_combat_effects(normal_surface, world)
+
+        debug_surface = pygame.Surface(AppSettings().virtual_size)
+        debug_surface.fill((0, 0, 0))
+        GameRenderer(
+            AppSettings(show_debug_hit_flashes=True)
+        )._draw_combat_effects(debug_surface, world)
+
+        assert not _surface_has_nonblack_pixel(normal_surface)
+        assert _surface_has_nonblack_pixel(debug_surface)
+    finally:
+        pygame.quit()
+
+
+def test_attacker_outline_flash_is_debug_only() -> None:
+    """Verify attack-state outlines use normal colors unless debug flashes are on."""
+    pygame.init()
+    try:
+        world = create_demo_world()
+        unit = next(entity for entity in world.entities.values() if "settler" in entity.tags)
+        unit.state = "attacking"
+        rect = pygame.Rect(20, 20, 38, 58)
+        sample = (rect.left + 5, rect.centery + 3)
+        normal_surface = pygame.Surface((100, 100))
+        normal_surface.fill((0, 0, 0))
+        GameRenderer(AppSettings())._draw_unit(normal_surface, rect, unit, world)
+
+        debug_surface = pygame.Surface((100, 100))
+        debug_surface.fill((0, 0, 0))
+        GameRenderer(AppSettings(show_debug_hit_flashes=True))._draw_unit(
+            debug_surface,
+            rect,
+            unit,
+            world,
+        )
+
+        assert normal_surface.get_at(sample)[:3] == (27, 38, 31)
+        assert debug_surface.get_at(sample)[:3] == (248, 238, 205)
+    finally:
+        pygame.quit()
+
+
+def test_unit_fall_renderer_moves_body_in_impact_direction_without_burst() -> None:
+    """Verify falling death pixels shift left without drawing the removed circle."""
+    pygame.init()
+    try:
+        world = create_demo_world()
+        world.combat_effects = [
+            CombatEffect(
+                kind="unit_fall",
+                position=WorldPosition(300, 300),
+                duration_ms=800,
+                remaining_ms=200,
+                owner="frontier",
+                direction_x=-1.0,
+                visual_tags=("unit", "settler"),
+                visual_width=38,
+                visual_height=58,
+            )
+        ]
+        surface = pygame.Surface(AppSettings().virtual_size)
+        surface.fill((0, 0, 0))
+
+        GameRenderer(AppSettings())._draw_combat_effects(surface, world)
+
+        center_x, _center_y = world.camera.world_to_screen(WorldPosition(300, 300))
+        left_pixels = _nonblack_pixels_in_rect(
+            surface,
+            pygame.Rect(center_x - 70, 220, 70, 100),
+        )
+        right_pixels = _nonblack_pixels_in_rect(
+            surface,
+            pygame.Rect(center_x, 220, 70, 100),
+        )
+        assert left_pixels > right_pixels
     finally:
         pygame.quit()
 
@@ -876,6 +973,21 @@ def _near_pixel_color(
             if surface.get_rect().collidepoint(x, y) and surface.get_at((x, y))[:3] == color:
                 return True
     return False
+
+
+def _surface_has_nonblack_pixel(surface: pygame.Surface) -> bool:
+    """Return whether any rendered pixel differs from a black test background."""
+    return _nonblack_pixels_in_rect(surface, surface.get_rect()) > 0
+
+
+def _nonblack_pixels_in_rect(surface: pygame.Surface, rect: pygame.Rect) -> int:
+    """Count nonblack pixels inside a clipped test rectangle."""
+    clipped = rect.clip(surface.get_rect())
+    return sum(
+        surface.get_at((x, y))[:3] != (0, 0, 0)
+        for x in range(clipped.left, clipped.right)
+        for y in range(clipped.top, clipped.bottom)
+    )
 
 
 def test_renderer_highlights_active_dropoff_button() -> None:
