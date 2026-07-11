@@ -6,10 +6,23 @@ from dataclasses import dataclass
 from math import hypot
 
 from house_of_wolves.core.contracts import Command, EntityId, Footprint, WorldPosition
+from house_of_wolves.core.geometry import (
+    circle_overlaps_entity_bounds as _circle_overlaps_entity_bounds,
+)
+from house_of_wolves.core.geometry import (
+    direction_to as _direction_to,
+)
+from house_of_wolves.core.geometry import (
+    distance as _distance,
+)
+from house_of_wolves.core.geometry import (
+    visual_center as _visual_center,
+)
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.combat_effect import CombatEffect
 from house_of_wolves.entities.projectile import Projectile
 from house_of_wolves.systems.buildings import start_building_destruction
+from house_of_wolves.systems.command_payloads import payload_entity_id as _payload_entity_id
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.world.collision import (
     MAX_COLLISION_ADJUSTMENT,
@@ -576,11 +589,6 @@ def _is_enemy_target(entity: object, other: object) -> bool:
     )
 
 
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return center-to-center distance between two world positions."""
-    return hypot(first.x - second.x, first.y - second.y)
-
-
 def _attack_distance(attacker: object, target: object) -> float:
     """Return how far an attacker is from being able to damage a target."""
     if "building" not in getattr(target, "tags", ()):
@@ -608,14 +616,6 @@ def _last_contact_ms(command: Command, elapsed_ms: int) -> int:
         return value
     command.payload["attack_move_last_contact_ms"] = elapsed_ms
     return elapsed_ms
-
-
-def _payload_entity_id(command: Command, key: str) -> EntityId | None:
-    """Return entity identifiers for payload entity id."""
-    value = command.payload.get(key)
-    if value is None:
-        return None
-    return EntityId(int(value))
 
 
 def _clear_attack_target(command: Command) -> None:
@@ -697,26 +697,6 @@ def _is_magic_splash_target(projectile: Projectile, target: object | None) -> bo
     )
 
 
-def _circle_overlaps_entity_bounds(
-    center: WorldPosition,
-    radius: float,
-    entity: object,
-) -> bool:
-    """Return whether a circle overlaps an entity footprint rectangle."""
-    left, top, width, height = entity.bounds
-    right = left + width
-    bottom = top + height
-    closest_x = min(max(center.x, left), right)
-    closest_y = min(max(center.y, top), bottom)
-    return hypot(center.x - closest_x, center.y - closest_y) <= radius
-
-
-def _visual_center(entity: object) -> WorldPosition:
-    """Return the visual center of an entity's anchored footprint."""
-    left, top, width, height = entity.bounds
-    return WorldPosition(left + width / 2, top + height / 2)
-
-
 def _attack_origin(attacker: object, target_pos: WorldPosition) -> WorldPosition:
     """Return a projectile launch point slightly ahead of its attacker."""
     center = _visual_center(attacker)
@@ -725,19 +705,6 @@ def _attack_origin(attacker: object, target_pos: WorldPosition) -> WorldPosition
         center.x + direction_x * 14.0,
         center.y + direction_y * 14.0,
     )
-
-
-def _direction_to(
-    origin: WorldPosition,
-    target: WorldPosition,
-) -> tuple[float, float]:
-    """Return a normalized direction with a deterministic right-facing fallback."""
-    dx = target.x - origin.x
-    dy = target.y - origin.y
-    distance = hypot(dx, dy)
-    if distance <= 0.0001:
-        return (1.0, 0.0)
-    return (dx / distance, dy / distance)
 
 
 def _face_toward(entity: object, target: WorldPosition) -> None:

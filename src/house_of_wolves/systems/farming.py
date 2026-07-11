@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from math import ceil, hypot
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
+from house_of_wolves.core.geometry import distance as _distance
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.resource_node import ResourceNode
+from house_of_wolves.systems.command_payloads import entity_id_from_value as _payload_entity_id
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.economy import (
     GATHER_CARRY_AMOUNT,
@@ -15,6 +17,8 @@ from house_of_wolves.systems.economy import (
     completed_deposit_huts,
     hut_deposit_position,
 )
+from house_of_wolves.systems.entity_helpers import is_settler as _is_settler
+from house_of_wolves.systems.entity_helpers import set_state as _set_state
 from house_of_wolves.world.collision import (
     UNIT_COLLISION_RADIUS,
     nearest_free_position,
@@ -834,15 +838,6 @@ def _worker_alive(world: WorldState, worker_id: EntityId) -> bool:
     return _is_settler(worker)
 
 
-def _is_settler(entity: object | None) -> bool:
-    """Return whether settler."""
-    return (
-        entity is not None
-        and getattr(entity, "alive", False)
-        and "settler" in getattr(entity, "tags", ())
-    )
-
-
 def _queue_owned_by_farm(command: object | None, farm_id: EntityId) -> bool:
     """Queue owned by farm work for later processing."""
     return (
@@ -866,12 +861,6 @@ def _clear_farm_interaction_slot(farm: Building) -> None:
 def _set_farm_state(farm: Building, state: str) -> None:
     """Set farm state."""
     farm.functions["farm_state"] = state
-
-
-def _set_state(entity: object, state: str) -> None:
-    """Set state."""
-    if hasattr(entity, "state"):
-        entity.state = state
 
 
 def _raw_animal_harvest_slots(
@@ -955,7 +944,7 @@ def _animal_spawn_position(world: WorldState, farm: Building) -> WorldPosition:
 
 def _within(first: WorldPosition, second: WorldPosition, radius: float) -> bool:
     """Return whether two positions are within a radius."""
-    return hypot(first.x - second.x, first.y - second.y) <= radius
+    return _distance(first, second) <= radius
 
 
 def _farm_respawn_delay_ms(farm: Building) -> int:
@@ -1034,13 +1023,6 @@ def _clamp_to_area(
         min(max(position.x, left), left + width),
         min(max(position.y, top), top + height),
     )
-
-
-def _payload_entity_id(value: object) -> EntityId | None:
-    """Return entity identifiers for payload entity id."""
-    if value is None:
-        return None
-    return EntityId(int(value))
 
 
 def _move_key(farm_id: EntityId, target: WorldPosition) -> str:

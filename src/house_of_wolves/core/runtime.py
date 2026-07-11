@@ -9,6 +9,7 @@ from math import hypot
 import pygame
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
+from house_of_wolves.core.geometry import bounds_intersect as _bounds_intersect
 from house_of_wolves.core.keybindings import (
     COMMAND_PANEL_SLOT_ACTIONS,
     KEYBIND_ACTION_ORDER,
@@ -1591,21 +1592,6 @@ def _normalize_screen_rect(
     width = abs(end[0] - start[0])
     height = abs(end[1] - start[1])
     return (left, top, width, height)
-
-
-def _bounds_intersect(
-    first: tuple[float, float, float, float],
-    second: tuple[float, float, float, float],
-) -> bool:
-    """Return the bounds used for bounds intersect."""
-    first_left, first_top, first_width, first_height = first
-    second_left, second_top, second_width, second_height = second
-    return not (
-        first_left + first_width < second_left
-        or second_left + second_width < first_left
-        or first_top + first_height < second_top
-        or second_top + second_height < first_top
-    )
 
 
 def _needs_repair(building: Building) -> bool:

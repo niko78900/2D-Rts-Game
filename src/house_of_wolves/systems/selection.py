@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from house_of_wolves.core.contracts import EntityId, WorldPosition
-
-Bounds = tuple[float, float, float, float]
+from house_of_wolves.core.geometry import Bounds
+from house_of_wolves.core.geometry import bounds_intersect as _bounds_intersect
+from house_of_wolves.core.geometry import point_in_bounds as _point_in_bounds
 
 
 @dataclass(slots=True)
@@ -129,12 +130,6 @@ def _is_enemy_unit(entity: object) -> bool:
     )
 
 
-def _point_in_bounds(position: WorldPosition, bounds: Bounds) -> bool:
-    """Return the bounds used for point in bounds."""
-    left, top, width, height = bounds
-    return left <= position.x <= left + width and top <= position.y <= top + height
-
-
 def _normalize_bounds(bounds: Bounds) -> Bounds:
     """Return the bounds used for normalize bounds."""
     left, top, width, height = bounds
@@ -145,15 +140,3 @@ def _normalize_bounds(bounds: Bounds) -> Bounds:
         top += height
         height = abs(height)
     return (left, top, width, height)
-
-
-def _bounds_intersect(first: Bounds, second: Bounds) -> bool:
-    """Return the bounds used for bounds intersect."""
-    first_left, first_top, first_width, first_height = first
-    second_left, second_top, second_width, second_height = second
-    return not (
-        first_left + first_width < second_left
-        or second_left + second_width < first_left
-        or first_top + first_height < second_top
-        or second_top + second_height < first_top
-    )

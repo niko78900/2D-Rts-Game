@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from math import hypot
 
 from house_of_wolves.core.contracts import Command, CommandQueue, EntityId, WorldPosition
+from house_of_wolves.core.geometry import distance as _distance
+from house_of_wolves.systems.command_payloads import payload_entity_id as _payload_entity_id
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.pathing import move_waypoints_around_blockers
 from house_of_wolves.world.collision import (
@@ -503,11 +505,6 @@ def _copy_move_command_with_target(
     )
 
 
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return the distance used for distance."""
-    return hypot(first.x - second.x, first.y - second.y)
-
-
 def _movement_paused_for_attack(command: Command, elapsed_ms: int) -> bool:
     """Return whether combat temporarily pauses movement."""
     pause_until = command.payload.get("pause_movement_until_ms")
@@ -546,14 +543,6 @@ def _movement_target_for_command(
         ),
         False,
     )
-
-
-def _payload_entity_id(command: Command, key: str) -> EntityId | None:
-    """Return entity identifiers for payload entity id."""
-    value = command.payload.get(key)
-    if value is None:
-        return None
-    return EntityId(int(value))
 
 
 def _path_final_target(command: Command) -> WorldPosition:

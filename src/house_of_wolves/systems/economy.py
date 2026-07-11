@@ -7,9 +7,21 @@ from dataclasses import dataclass, field
 from math import hypot
 
 from house_of_wolves.core.contracts import Command, CommandQueue, EntityId, Footprint, WorldPosition
+from house_of_wolves.core.geometry import (
+    bounds_intersect as _bounds_intersect,
+)
+from house_of_wolves.core.geometry import (
+    distance as _distance,
+)
+from house_of_wolves.core.geometry import (
+    inflate_bounds as _inflate_bounds,
+)
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.resource_node import ResourceNode, resource_hp_for_type
+from house_of_wolves.systems.command_payloads import payload_entity_id as _payload_entity_id
 from house_of_wolves.systems.commands import make_command
+from house_of_wolves.systems.entity_helpers import is_settler as _is_settler
+from house_of_wolves.systems.entity_helpers import set_state as _set_state
 from house_of_wolves.systems.pathing import move_waypoints_around_blockers
 from house_of_wolves.world.collision import (
     UNIT_COLLISION_RADIUS,
@@ -1759,14 +1771,6 @@ def _gather_target_type_invalid(
     return False
 
 
-def _payload_entity_id(command: Command, key: str) -> EntityId | None:
-    """Return entity identifiers for payload entity id."""
-    value = command.payload.get(key)
-    if value is None:
-        return None
-    return EntityId(int(value))
-
-
 def _cached_resource_ids(
     world: WorldState,
     resource_type: str | None,
@@ -1851,21 +1855,6 @@ def _clear_gather_job(worker: object, queue: CommandQueue) -> None:
     _set_state(worker, GATHER_STATE_IDLE)
 
 
-def _is_settler(entity: object | None) -> bool:
-    """Return whether settler."""
-    return (
-        entity is not None
-        and getattr(entity, "alive", False)
-        and "settler" in getattr(entity, "tags", ())
-    )
-
-
-def _set_state(entity: object, state: str) -> None:
-    """Set state."""
-    if hasattr(entity, "state"):
-        entity.state = state
-
-
 def _face_worker_toward_resource(worker: object, resource: ResourceNode) -> None:
     """Point a gathering settler's tool toward the active resource."""
     if not hasattr(worker, "facing_x"):
@@ -1882,11 +1871,6 @@ def _face_worker_toward_resource(worker: object, resource: ResourceNode) -> None
 def _within(first: WorldPosition, second: WorldPosition, radius: float) -> bool:
     """Return whether two positions are within a radius."""
     return _distance(first, second) <= radius
-
-
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return the distance used for distance."""
-    return hypot(first.x - second.x, first.y - second.y)
 
 
 def _entity_position(world: WorldState, entity_id: EntityId | None) -> WorldPosition | None:
@@ -1982,25 +1966,3 @@ def _entities_near_position(
     return entities
 
 
-def _bounds_intersect(
-    first: tuple[float, float, float, float],
-    second: tuple[float, float, float, float],
-) -> bool:
-    """Return the bounds used for bounds intersect."""
-    first_left, first_top, first_width, first_height = first
-    second_left, second_top, second_width, second_height = second
-    return not (
-        first_left + first_width < second_left
-        or second_left + second_width < first_left
-        or first_top + first_height < second_top
-        or second_top + second_height < first_top
-    )
-
-
-def _inflate_bounds(
-    bounds: tuple[float, float, float, float],
-    amount: float,
-) -> tuple[float, float, float, float]:
-    """Return the bounds used for inflate bounds."""
-    left, top, width, height = bounds
-    return (left - amount, top - amount, width + (amount * 2), height + (amount * 2))

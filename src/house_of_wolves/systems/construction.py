@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from math import hypot
 
 from house_of_wolves.core.contracts import CommandQueue, EntityId, WorldPosition
+from house_of_wolves.core.geometry import distance as _distance
 from house_of_wolves.entities.building import Building
+from house_of_wolves.systems.entity_helpers import set_state as _set_state
 from house_of_wolves.world.world import WorldState
 
 MIN_CONSTRUCTION_HP_RATIO = 0.10
@@ -226,17 +228,6 @@ def _build_time(site: Building) -> int:
 def _max_hp(site: Building) -> int:
     """Return the configured max HP for a building."""
     return max(0, int(getattr(site, "max_hp", 0) or getattr(site, "hp", 0)))
-
-
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return the distance used for distance."""
-    return hypot(first.x - second.x, first.y - second.y)
-
-
-def _set_state(entity: object, state: str) -> None:
-    """Set state."""
-    if hasattr(entity, "state"):
-        entity.state = state
 
 
 def _face_entity_towards(entity: object, position: WorldPosition) -> None:

@@ -8,6 +8,7 @@ from math import ceil, sqrt
 from typing import Protocol
 
 from house_of_wolves.core.contracts import EntityId, WorldPosition
+from house_of_wolves.core.geometry import distance as _distance
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.world.collision import UNIT_HITBOX_RADIUS
 from house_of_wolves.world.terrain import (
@@ -375,11 +376,6 @@ def _relax_slots(
             for slot, offset in zip(relaxed, offsets, strict=False)
         ]
     return relaxed
-
-
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return the distance used for distance."""
-    return ((first.x - second.x) ** 2 + (first.y - second.y) ** 2) ** 0.5
 
 
 def _clamp(position: WorldPosition, world_height: int | float) -> WorldPosition:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from house_of_wolves.core.contracts import Footprint, WorldPosition
+from house_of_wolves.core.geometry import bounds_intersect as _bounds_intersect
+from house_of_wolves.core.geometry import inflate_bounds as _inflate_bounds
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.combat_unit import CombatUnit
@@ -181,30 +183,6 @@ def _resource_bounds_clear(
         )
         for entity in world.entities.values()
         if getattr(entity, "alive", False)
-    )
-
-
-def _inflate_bounds(
-    bounds: tuple[float, float, float, float],
-    amount: float,
-) -> tuple[float, float, float, float]:
-    """Return the bounds used for inflate bounds."""
-    left, top, width, height = bounds
-    return (left - amount, top - amount, width + amount * 2, height + amount * 2)
-
-
-def _bounds_intersect(
-    first: tuple[float, float, float, float],
-    second: tuple[float, float, float, float],
-) -> bool:
-    """Return the bounds used for bounds intersect."""
-    first_left, first_top, first_width, first_height = first
-    second_left, second_top, second_width, second_height = second
-    return not (
-        first_left + first_width < second_left
-        or second_left + second_width < first_left
-        or first_top + first_height < second_top
-        or second_top + second_height < first_top
     )
 
 

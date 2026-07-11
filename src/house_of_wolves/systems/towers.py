@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import hypot
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
+from house_of_wolves.core.geometry import (
+    direction_to as _direction_to,
+)
+from house_of_wolves.core.geometry import (
+    visual_center as _visual_center,
+)
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.combat_effect import CombatEffect
 from house_of_wolves.entities.projectile import Projectile
@@ -373,26 +378,3 @@ def _tower_projectile_origin(tower: Building, *, shooter_index: int = 0) -> Worl
             return WorldPosition(left + width * x_ratio, top + max(16.0, height * 0.20))
     return WorldPosition(left + width / 2, top + max(16.0, height * 0.20))
 
-
-def _visual_center(entity: object) -> WorldPosition:
-    """Return the visual center of an anchored entity footprint."""
-    left, top, width, height = entity.bounds
-    return WorldPosition(left + width / 2, top + height / 2)
-
-
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return center-to-center distance between two world positions."""
-    return hypot(first.x - second.x, first.y - second.y)
-
-
-def _direction_to(
-    origin: WorldPosition,
-    target: WorldPosition,
-) -> tuple[float, float]:
-    """Return a normalized direction with a deterministic fallback."""
-    dx = target.x - origin.x
-    dy = target.y - origin.y
-    distance = hypot(dx, dy)
-    if distance <= 0.0001:
-        return (1.0, 0.0)
-    return (dx / distance, dy / distance)

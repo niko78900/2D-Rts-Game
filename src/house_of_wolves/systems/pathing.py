@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from math import hypot
-
 from house_of_wolves.core.contracts import EntityId, WorldPosition
+from house_of_wolves.core.geometry import distance as _distance
 from house_of_wolves.world.collision import (
     HARD_OBSTACLE_CLEARANCE,
     first_hard_obstacle_on_segment,
@@ -140,11 +139,6 @@ def _route_clear(
 def _route_length(points: list[WorldPosition]) -> float:
     """Return total length for a waypoint route."""
     return sum(_distance(start, end) for start, end in zip(points, points[1:], strict=False))
-
-
-def _distance(first: WorldPosition, second: WorldPosition) -> float:
-    """Return the distance used for distance."""
-    return hypot(first.x - second.x, first.y - second.y)
 
 
 def _far_enough(first: WorldPosition, second: WorldPosition) -> bool:
