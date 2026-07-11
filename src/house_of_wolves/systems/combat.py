@@ -424,7 +424,7 @@ class CombatSystem:
             target = world.entities.get(entity_id)
             if not _is_magic_splash_target(projectile, target):
                 continue
-            if _distance(impact, _visual_center(target)) > radius:
+            if not _circle_overlaps_entity_bounds(impact, radius, target):
                 continue
             self._apply_damage(
                 world,
@@ -695,6 +695,20 @@ def _is_magic_splash_target(projectile: Projectile, target: object | None) -> bo
         and getattr(target, "owner", NEUTRAL_OWNER) != NEUTRAL_OWNER
         and getattr(target, "owner", None) != projectile.owner
     )
+
+
+def _circle_overlaps_entity_bounds(
+    center: WorldPosition,
+    radius: float,
+    entity: object,
+) -> bool:
+    """Return whether a circle overlaps an entity footprint rectangle."""
+    left, top, width, height = entity.bounds
+    right = left + width
+    bottom = top + height
+    closest_x = min(max(center.x, left), right)
+    closest_y = min(max(center.y, top), bottom)
+    return hypot(center.x - closest_x, center.y - closest_y) <= radius
 
 
 def _visual_center(entity: object) -> WorldPosition:

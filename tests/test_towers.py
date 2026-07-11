@@ -4,7 +4,8 @@ from house_of_wolves.core.contracts import Footprint, WorldPosition
 from house_of_wolves.core.runtime import BUILD_MENU_ABILITIES, GameRuntime
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
-from house_of_wolves.systems.combat import CombatSystem
+from house_of_wolves.entities.resource_node import ResourceNode
+from house_of_wolves.systems.combat import MAGIC_SPLASH_RADIUS, CombatSystem
 from house_of_wolves.systems.construction import starting_construction_hp
 from house_of_wolves.systems.production import create_combat_unit
 from house_of_wolves.systems.towers import (
@@ -176,6 +177,71 @@ def test_wizard_tower_magic_projectile_splashes_enemy_units_only() -> None:
     assert any(effect.kind == "magic_impact" for effect in world.combat_effects)
 
 
+def test_wizard_tower_splash_uses_enemy_footprint_overlap() -> None:
+    """Verify magic splash hits body overlap, not only centers inside the ring."""
+    world = create_demo_world()
+    tower = _add_tower(world, WIZARD_TOWER_ID)
+    direct_target = _add_enemy(world, tower.position.x + 80, tower.position.y)
+    edge_enemy = _add_enemy(
+        world,
+        direct_target.position.x + MAGIC_SPLASH_RADIUS + edge_overlap_padding(direct_target),
+        direct_target.position.y,
+    )
+    outside_enemy = _add_enemy(
+        world,
+        direct_target.position.x + MAGIC_SPLASH_RADIUS + outside_overlap_padding(direct_target),
+        direct_target.position.y,
+    )
+    friendly = create_combat_unit(
+        world,
+        "spearman",
+        "frontier",
+        WorldPosition(edge_enemy.position.x, edge_enemy.position.y),
+    )
+    neutral_animal = create_combat_unit(
+        world,
+        "settler",
+        "neutral",
+        WorldPosition(edge_enemy.position.x, edge_enemy.position.y),
+    )
+    neutral_animal.tags = (*neutral_animal.tags, "food_animal")
+    resource = ResourceNode(
+        id=world.allocate_entity_id(),
+        owner="neutral",
+        position=WorldPosition(edge_enemy.position.x, edge_enemy.position.y),
+        footprint=Footprint(42, 34),
+        hp=150,
+        max_hp=150,
+        tags=("resource", "wood_tree"),
+        resource_type="wood",
+        amount_remaining=150,
+    )
+    world.add_entity(friendly)
+    world.add_entity(neutral_animal)
+    world.add_entity(resource)
+    starting_hp = {
+        direct_target.id: direct_target.hp,
+        edge_enemy.id: edge_enemy.hp,
+        outside_enemy.id: outside_enemy.hp,
+        friendly.id: friendly.hp,
+        neutral_animal.id: neutral_animal.hp,
+        resource.id: resource.hp,
+    }
+
+    tower_system = TowerCombatSystem()
+    tower_system.update(world, 16)
+    tower_system.update(world, TOWER_SPECS[WIZARD_TOWER_ID].windup_ms)
+    CombatSystem().update(world, 500)
+
+    damage = TOWER_SPECS[WIZARD_TOWER_ID].damage
+    assert direct_target.hp == starting_hp[direct_target.id] - damage
+    assert edge_enemy.hp == starting_hp[edge_enemy.id] - damage
+    assert outside_enemy.hp == starting_hp[outside_enemy.id]
+    assert friendly.hp == starting_hp[friendly.id]
+    assert neutral_animal.hp == starting_hp[neutral_animal.id]
+    assert resource.hp == starting_hp[resource.id]
+
+
 def test_towers_ignore_friendly_units() -> None:
     """Verify towers do not target player-owned units."""
     world = create_demo_world()
@@ -244,3 +310,13 @@ def _add_enemy(world: object, x: float, y: float) -> object:
     enemy.footprint = Footprint(38, 58)
     world.add_entity(enemy)
     return enemy
+
+
+def edge_overlap_padding(entity: object) -> float:
+    """Return center offset that leaves one unit edge just inside magic splash."""
+    return entity.footprint.width / 2 - 1
+
+
+def outside_overlap_padding(entity: object) -> float:
+    """Return center offset that places a unit just outside magic splash."""
+    return entity.footprint.width / 2 + 2
