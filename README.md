@@ -362,7 +362,7 @@ gameplay behavior.
 ```text
 src/house_of_wolves/
   core/       application shell, runtime loop, settings, renderer, data loading,
-              keybindings, serialization, assets, profiling
+              typed game specs, sprite registry, keybindings, and performance tools
   entities/   units, buildings, resources, projectiles, and transient combat effects
   systems/    movement, commands, construction, economy, production, farming,
               combat, waves, and lifecycle logic
@@ -392,8 +392,12 @@ amounts, and production queue items.
 - Camera, terrain, encounter zones, notifications, projectiles, and combat effects.
 - A spatial hash used for local visibility, collision, and target queries.
 
-JSON files under `data/` are schema-validated at startup. Some alpha gameplay balance
-values still live in centralized Python constants while the runtime data model evolves.
+JSON files under `data/` are schema-validated at startup and are the canonical source
+for unit, production-building, defensive-tower, farm-building, and resource-node
+runtime specs. `core.game_specs` converts those validated definitions into typed
+runtime objects while preserving compatibility aliases such as legacy `ore` keybinds
+for the Iron resource. Lower-level system timing, pathing thresholds, and visual-effect
+durations still live as centralized Python constants.
 
 ### Implemented Systems
 
@@ -419,9 +423,8 @@ values still live in centralized Python constants while the runtime data model e
   debug controls.
 - **Rendering:** terrain bands, HUD, settings, selected panel, waypoints, processed
   sprites, Pygame-drawn placeholders, health bars, notifications, and debug overlays.
-
-The `ai.py`, `objectives.py`, and `upgrades.py` modules currently contain forward-looking
-shells rather than complete playable systems.
+- **Sprite registry:** processed building/resource sprite paths, lifecycle stage
+  selection, and display-aware image caches live outside the main renderer.
 
 ## Asset Pipeline
 
@@ -445,7 +448,8 @@ Current runtime assets:
 Building sprites are bottom-aligned to existing gameplay footprints so art changes do
 not alter collision. Mine sprites are also visual-only; their smaller blocking
 footprints remain independent from image bounds. Missing processed sprites fall back
-to Pygame-drawn placeholders.
+to Pygame-drawn placeholders. Processed sprite path selection and cached image loading
+are centralized in `src/house_of_wolves/core/sprite_registry.py`.
 
 Unit sprites are not final. Units, Trees, weapons, arrows, melee strikes, damage
 feedback, wave markers, and directional death animations currently use Pygame
@@ -486,8 +490,7 @@ projectile counts, effect counts, attacks, and projectile hits.
   management.
 - Pathing uses local obstacle detours instead of a full navigation mesh or A* grid.
 - Crowded formations can still require soft separation or temporary friendly ghosting.
-- Upgrade definitions and a system shell exist, but there is no complete playable
-  progression loop.
+- Upgrade definitions exist, but there is no complete playable progression loop.
 - Save/load is not implemented.
 - Audio and final sound hooks are not implemented.
 - Balance values and wave scaling are provisional.
