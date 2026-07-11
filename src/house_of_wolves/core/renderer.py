@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from math import cos, hypot, sin
-from pathlib import Path
 
 import pygame
 
@@ -18,6 +17,70 @@ from house_of_wolves.core.keybindings import (
 )
 from house_of_wolves.core.performance import time_block
 from house_of_wolves.core.settings import UI_PANEL_HEIGHT, AppSettings
+from house_of_wolves.core.sprite_registry import (
+    BUILDING_SPRITE_BUILDING_IDS as BUILDING_SPRITE_BUILDING_IDS,
+)
+from house_of_wolves.core.sprite_registry import (
+    BUILDING_SPRITE_PATHS as BUILDING_SPRITE_PATHS,
+)
+from house_of_wolves.core.sprite_registry import (
+    BUILDING_STAGE_DAMAGE_25_10 as BUILDING_STAGE_DAMAGE_25_10,
+)
+from house_of_wolves.core.sprite_registry import (
+    BUILDING_STAGE_DAMAGE_50_25 as BUILDING_STAGE_DAMAGE_50_25,
+)
+from house_of_wolves.core.sprite_registry import (
+    BUILDING_STAGE_DAMAGE_75_50 as BUILDING_STAGE_DAMAGE_75_50,
+)
+from house_of_wolves.core.sprite_registry import (
+    BUILDING_STAGE_DESTROYED_10_0 as BUILDING_STAGE_DESTROYED_10_0,
+)
+from house_of_wolves.core.sprite_registry import (
+    HUT_CONSTRUCTION_SPRITES as HUT_CONSTRUCTION_SPRITES,
+)
+from house_of_wolves.core.sprite_registry import (
+    HUT_STAGE_COMPLETE as HUT_STAGE_COMPLETE,
+)
+from house_of_wolves.core.sprite_registry import (
+    HUT_STAGE_PARTIAL,
+    HUT_STAGE_SCAFFOLDING,
+    PROJECT_ROOT,
+    building_sprite_id_for,
+    building_sprite_stage_for,
+    hut_construction_stage_for,
+    resource_sprite_id_for,
+    resource_sprite_stage_for,
+)
+from house_of_wolves.core.sprite_registry import (
+    RESOURCE_SPRITE_IDS as RESOURCE_SPRITE_IDS,
+)
+from house_of_wolves.core.sprite_registry import (
+    RESOURCE_SPRITE_PATHS as RESOURCE_SPRITE_PATHS,
+)
+from house_of_wolves.core.sprite_registry import (
+    RESOURCE_STAGE_AMOUNT_25_0 as RESOURCE_STAGE_AMOUNT_25_0,
+)
+from house_of_wolves.core.sprite_registry import (
+    RESOURCE_STAGE_AMOUNT_75_25 as RESOURCE_STAGE_AMOUNT_75_25,
+)
+from house_of_wolves.core.sprite_registry import (
+    RESOURCE_STAGE_AMOUNT_100_75 as RESOURCE_STAGE_AMOUNT_100_75,
+)
+from house_of_wolves.core.sprite_registry import (
+    building_sprite_reference_for as building_sprite_reference_for,
+)
+from house_of_wolves.core.sprite_registry import (
+    hut_sprite_reference_for as hut_sprite_reference_for,
+)
+from house_of_wolves.core.sprite_registry import (
+    load_building_sprite as _load_building_sprite,
+)
+from house_of_wolves.core.sprite_registry import (
+    load_resource_sprite as _load_resource_sprite,
+)
+from house_of_wolves.core.sprite_registry import (
+    resource_sprite_reference_for as resource_sprite_reference_for,
+)
 from house_of_wolves.systems.buildings import is_building_destroying
 from house_of_wolves.systems.combat import RANGED_ATTACK_WINDUP_MS
 from house_of_wolves.systems.economy import (
@@ -74,68 +137,9 @@ HEALTH_EMPTY = (139, 47, 43)
 RESOURCE_FILL = (230, 193, 77)
 RESOURCE_EMPTY = (118, 87, 35)
 TOWER_RANGE_LINE = (242, 84, 74, 180)
-HUT_STAGE_SCAFFOLDING = "construction_0_50"
-HUT_STAGE_PARTIAL = "construction_50_90"
-HUT_STAGE_COMPLETE = "complete"
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RESOURCE_SPRITE_ROOT = PROJECT_ROOT / "assets" / "art" / "resources" / "processed"
-RESOURCE_STAGE_AMOUNT_100_75 = "amount_100_75"
-RESOURCE_STAGE_AMOUNT_75_25 = "amount_75_25"
-RESOURCE_STAGE_AMOUNT_25_0 = "amount_25_0"
-RESOURCE_SPRITE_IDS = ("gold_mine", "iron_deposit", "stone_outcrop")
-RESOURCE_SPRITE_STAGES = (
-    RESOURCE_STAGE_AMOUNT_100_75,
-    RESOURCE_STAGE_AMOUNT_75_25,
-    RESOURCE_STAGE_AMOUNT_25_0,
-)
-RESOURCE_SPRITE_PATHS = {
-    resource_id: {
-        stage: RESOURCE_SPRITE_ROOT / resource_id / f"{stage}.png"
-        for stage in RESOURCE_SPRITE_STAGES
-    }
-    for resource_id in RESOURCE_SPRITE_IDS
-}
-_RESOURCE_SPRITE_CACHE: dict[tuple[str, str, str, bool], pygame.Surface | None] = {}
-BUILDING_SPRITE_ROOT = PROJECT_ROOT / "assets" / "art" / "buildings" / "processed"
-BUILDING_STAGE_DAMAGE_75_50 = "damage_75_50"
-BUILDING_STAGE_DAMAGE_50_25 = "damage_50_25"
-BUILDING_STAGE_DAMAGE_25_10 = "damage_25_10"
-BUILDING_STAGE_DESTROYED_10_0 = "destroyed_10_0"
-BUILDING_SPRITE_BUILDING_IDS = (
-    "hut",
-    "barracks",
-    "archery",
-    "chicken_farm",
-    "pig_farm",
-    WOODEN_ARCHER_TOWER_ID,
-    STONE_ARCHER_TOWER_ID,
-    WIZARD_TOWER_ID,
-)
-BUILDING_SPRITE_STAGES = (
-    HUT_STAGE_SCAFFOLDING,
-    HUT_STAGE_PARTIAL,
-    HUT_STAGE_COMPLETE,
-    BUILDING_STAGE_DAMAGE_75_50,
-    BUILDING_STAGE_DAMAGE_50_25,
-    BUILDING_STAGE_DAMAGE_25_10,
-    BUILDING_STAGE_DESTROYED_10_0,
-)
-BUILDING_SPRITE_PATHS = {
-    building_id: {
-        stage: BUILDING_SPRITE_ROOT / building_id / f"{stage}.png"
-        for stage in BUILDING_SPRITE_STAGES
-    }
-    for building_id in BUILDING_SPRITE_BUILDING_IDS
-}
-BUILDING_SPRITE_PATHS[WIZARD_TOWER_ID] = BUILDING_SPRITE_PATHS[STONE_ARCHER_TOWER_ID]
-_BUILDING_SPRITE_CACHE: dict[tuple[str, str, str, bool], pygame.Surface | None] = {}
 WOODEN_TOWER_ARCHER_ANCHOR = (0.50, 0.30)
 STONE_TOWER_ARCHER_HEAD_ANCHORS = ((0.34, 0.08), (0.66, 0.08))
 WIZARD_TOWER_WIZARD_ANCHOR = (0.50, 0.16)
-HUT_CONSTRUCTION_SPRITES = {
-    stage: str(BUILDING_SPRITE_PATHS["hut"][stage])
-    for stage in (HUT_STAGE_SCAFFOLDING, HUT_STAGE_PARTIAL, HUT_STAGE_COMPLETE)
-}
 ANIMAL_SPRITE_PATHS = {
     "chicken": PROJECT_ROOT / "assets" / "art" / "resources" / "chicken.png",
     "pig": PROJECT_ROOT / "assets" / "art" / "resources" / "pig.png",
@@ -2407,137 +2411,6 @@ def _renderable_entity(entity: object) -> bool:
     return getattr(entity, "alive", False) or is_building_destroying(entity)
 
 
-def resource_sprite_id_for(entity: object) -> str | None:
-    """Return the normalized mine resource sprite id for an entity."""
-    tags = set(getattr(entity, "tags", ()))
-    for resource_id in RESOURCE_SPRITE_IDS:
-        if resource_id in tags:
-            return resource_id
-    return None
-
-
-def resource_sprite_stage_for(entity: object) -> str:
-    """Return the resource sprite depletion stage for the current entity state."""
-    if str(getattr(entity, "state", "active")) == "destroying":
-        return RESOURCE_STAGE_AMOUNT_25_0
-    max_hp = max(0, int(getattr(entity, "max_hp", 0) or getattr(entity, "hp", 0)))
-    if max_hp <= 0:
-        return RESOURCE_STAGE_AMOUNT_100_75
-    hp_ratio = max(0.0, min(1.0, int(getattr(entity, "hp", 0)) / max_hp))
-    if hp_ratio > 0.75:
-        return RESOURCE_STAGE_AMOUNT_100_75
-    if hp_ratio > 0.25:
-        return RESOURCE_STAGE_AMOUNT_75_25
-    return RESOURCE_STAGE_AMOUNT_25_0
-
-
-def resource_sprite_reference_for(entity: object) -> str | None:
-    """Return the processed sprite path expected for a mine resource entity."""
-    resource_id = resource_sprite_id_for(entity)
-    if resource_id is None:
-        return None
-    return str(RESOURCE_SPRITE_PATHS[resource_id][resource_sprite_stage_for(entity)])
-
-
-def _load_resource_sprite(resource_id: str, stage: str) -> pygame.Surface | None:
-    """Load and cache one processed mine resource sprite."""
-    path = RESOURCE_SPRITE_PATHS.get(resource_id, {}).get(stage)
-    if path is None:
-        return None
-    can_convert = pygame.display.get_init() and pygame.display.get_surface() is not None
-    cache_key = (resource_id, stage, str(path), can_convert)
-    if cache_key in _RESOURCE_SPRITE_CACHE:
-        return _RESOURCE_SPRITE_CACHE[cache_key]
-    if not path.exists():
-        _RESOURCE_SPRITE_CACHE[cache_key] = None
-        return None
-    try:
-        sprite = pygame.image.load(str(path))
-        loaded = sprite.convert_alpha() if can_convert else sprite
-    except pygame.error:
-        loaded = None
-    _RESOURCE_SPRITE_CACHE[cache_key] = loaded
-    return loaded
-
-
-def building_sprite_id_for(entity: object) -> str | None:
-    """Return the normalized building sprite id for an entity."""
-    tags = set(getattr(entity, "tags", ()))
-    if "hut" in tags:
-        return "hut"
-    if "barracks" in tags:
-        return "barracks"
-    if "archery" in tags or "archery_range" in tags:
-        return "archery"
-    if "chicken_farm" in tags:
-        return "chicken_farm"
-    if "pig_farm" in tags:
-        return "pig_farm"
-    if WOODEN_ARCHER_TOWER_ID in tags:
-        return WOODEN_ARCHER_TOWER_ID
-    if STONE_ARCHER_TOWER_ID in tags:
-        return STONE_ARCHER_TOWER_ID
-    if WIZARD_TOWER_ID in tags:
-        return WIZARD_TOWER_ID
-    return None
-
-
-def building_sprite_stage_for(entity: object) -> str:
-    """Return the building sprite lifecycle stage for the current entity state."""
-    if is_building_destroying(entity):
-        return BUILDING_STAGE_DESTROYED_10_0
-    if not bool(getattr(entity, "complete", True)):
-        progress = _building_progress_ratio(entity)
-        if progress < 0.50:
-            return HUT_STAGE_SCAFFOLDING
-        if progress < 0.90:
-            return HUT_STAGE_PARTIAL
-        return HUT_STAGE_COMPLETE
-
-    max_hp = max(0, int(getattr(entity, "max_hp", 0) or getattr(entity, "hp", 0)))
-    if max_hp <= 0:
-        return HUT_STAGE_COMPLETE
-    hp_ratio = max(0.0, min(1.0, int(getattr(entity, "hp", 0)) / max_hp))
-    if hp_ratio <= 0.10:
-        return BUILDING_STAGE_DESTROYED_10_0
-    if hp_ratio <= 0.25:
-        return BUILDING_STAGE_DAMAGE_25_10
-    if hp_ratio <= 0.50:
-        return BUILDING_STAGE_DAMAGE_50_25
-    if hp_ratio <= 0.75:
-        return BUILDING_STAGE_DAMAGE_75_50
-    return HUT_STAGE_COMPLETE
-
-
-def building_sprite_reference_for(entity: object) -> str | None:
-    """Return the processed sprite path expected for a building entity."""
-    building_id = building_sprite_id_for(entity)
-    if building_id is None:
-        return None
-    return str(BUILDING_SPRITE_PATHS[building_id][building_sprite_stage_for(entity)])
-
-
-def _load_building_sprite(building_id: str, stage: str) -> pygame.Surface | None:
-    """Load and cache one processed building sprite."""
-    path = BUILDING_SPRITE_PATHS.get(building_id, {}).get(stage)
-    if path is None:
-        return None
-    can_convert = pygame.display.get_init() and pygame.display.get_surface() is not None
-    cache_key = (building_id, stage, str(path), can_convert)
-    if cache_key in _BUILDING_SPRITE_CACHE:
-        return _BUILDING_SPRITE_CACHE[cache_key]
-    if not path.exists():
-        _BUILDING_SPRITE_CACHE[cache_key] = None
-        return None
-    try:
-        sprite = pygame.image.load(str(path))
-        loaded = sprite.convert_alpha() if can_convert else sprite
-    except pygame.error:
-        loaded = None
-    _BUILDING_SPRITE_CACHE[cache_key] = loaded
-    return loaded
-
-
 def _load_animal_sprites() -> dict[str, pygame.Surface]:
     """Load animal sprites."""
     sprites: dict[str, pygame.Surface] = {}
@@ -2592,21 +2465,6 @@ def _fit_sprite_size(
         target_width = box_width
         target_height = round(target_width / aspect)
     return (max(1, target_width), max(1, target_height))
-
-
-def hut_construction_stage_for(entity: object) -> str:
-    """Return the Hut construction stage used by both drawing and future sprites."""
-
-    tags = set(getattr(entity, "tags", ()))
-    if "hut" not in tags or bool(getattr(entity, "complete", True)):
-        return HUT_STAGE_COMPLETE
-    return building_sprite_stage_for(entity)
-
-
-def hut_sprite_reference_for(entity: object) -> str:
-    """Return the expected future sprite path for the current Hut stage."""
-
-    return str(BUILDING_SPRITE_PATHS["hut"][hut_construction_stage_for(entity)])
 
 
 def status_bar_for_entity(entity: object) -> StatusBarSpec | None:
