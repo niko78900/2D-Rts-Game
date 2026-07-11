@@ -34,6 +34,7 @@ MELEE_STRIKE_EFFECT_MS = 170
 HIT_FLASH_EFFECT_MS = 180
 DAMAGE_NUMBER_EFFECT_MS = 700
 UNIT_FALL_EFFECT_MS = 800
+MAGIC_SPLASH_RADIUS = 25.0
 NEUTRAL_OWNER = "neutral"
 # Limit combat targets to units/buildings so resource nodes and farm animals are
 # ignored by wave pressure and idle guard scans.
@@ -299,14 +300,12 @@ class CombatSystem:
                 )
                 projectile.position = projectile.target_pos
                 if target_is_valid:
-                    self._apply_damage(
-                        world,
-                        target,
-                        projectile.damage,
-                        projectile.owner,
-                        impact_direction,
-                    )
                     if "magic" in getattr(projectile, "tags", ()):
+                        hits = self._apply_magic_splash_damage(
+                            world,
+                            projectile,
+                            impact_direction,
+                        )
                         world.add_combat_effect(
                             CombatEffect(
                                 kind="magic_impact",
@@ -316,7 +315,16 @@ class CombatSystem:
                                 owner=projectile.owner,
                             )
                         )
-                    world.performance_stats.counters.projectile_hits += 1
+                        world.performance_stats.counters.projectile_hits += hits
+                    else:
+                        self._apply_damage(
+                            world,
+                            target,
+                            projectile.damage,
+                            projectile.owner,
+                            impact_direction,
+                        )
+                        world.performance_stats.counters.projectile_hits += 1
                 continue
             if distance > 0 and step > 0:
                 ratio = min(1.0, step / distance)
@@ -395,6 +403,38 @@ class CombatSystem:
         target.alive = False
         world.remove_entity(target.id)
         return True
+
+    def _apply_magic_splash_damage(
+        self,
+        world: WorldState,
+        projectile: Projectile,
+        impact_direction: tuple[float, float],
+    ) -> int:
+        """Apply Wizard Tower-style splash damage inside the visible impact ring."""
+        impact = projectile.position
+        radius = MAGIC_SPLASH_RADIUS
+        bounds = (
+            impact.x - radius,
+            impact.y - radius,
+            radius * 2,
+            radius * 2,
+        )
+        hits = 0
+        for entity_id in list(world.spatial_hash.query(bounds)):
+            target = world.entities.get(entity_id)
+            if not _is_magic_splash_target(projectile, target):
+                continue
+            if _distance(impact, _visual_center(target)) > radius:
+                continue
+            self._apply_damage(
+                world,
+                target,
+                projectile.damage,
+                projectile.owner,
+                impact_direction,
+            )
+            hits += 1
+        return hits
 
 
 def _current_command(world: WorldState, entity_id: EntityId) -> Command | None:
@@ -639,6 +679,19 @@ def _is_projectile_target(projectile: Projectile, target: object) -> bool:
     return (
         getattr(target, "alive", False)
         and bool(TARGET_TAGS & set(getattr(target, "tags", ())))
+        and getattr(target, "owner", NEUTRAL_OWNER) != NEUTRAL_OWNER
+        and getattr(target, "owner", None) != projectile.owner
+    )
+
+
+def _is_magic_splash_target(projectile: Projectile, target: object | None) -> bool:
+    """Return whether Wizard Tower splash can damage a nearby target."""
+    if target is None or not getattr(target, "alive", False):
+        return False
+    tags = set(getattr(target, "tags", ()))
+    return (
+        "unit" in tags
+        and "food_animal" not in tags
         and getattr(target, "owner", NEUTRAL_OWNER) != NEUTRAL_OWNER
         and getattr(target, "owner", None) != projectile.owner
     )

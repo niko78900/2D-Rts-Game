@@ -37,6 +37,7 @@ from house_of_wolves.systems.towers import (
     STONE_ARCHER_TOWER_ID,
     WIZARD_TOWER_ID,
     WOODEN_ARCHER_TOWER_ID,
+    tower_spec_for,
 )
 from house_of_wolves.ui.selected_panel import SelectedPanel, selected_panel_for
 from house_of_wolves.world.collision import blocking_bounds_for_entity
@@ -72,6 +73,7 @@ HEALTH_FILL = (54, 174, 86)
 HEALTH_EMPTY = (139, 47, 43)
 RESOURCE_FILL = (230, 193, 77)
 RESOURCE_EMPTY = (118, 87, 35)
+TOWER_RANGE_LINE = (242, 84, 74, 180)
 HUT_STAGE_SCAFFOLDING = "construction_0_50"
 HUT_STAGE_PARTIAL = "construction_50_90"
 HUT_STAGE_COMPLETE = "complete"
@@ -99,7 +101,15 @@ BUILDING_STAGE_DAMAGE_75_50 = "damage_75_50"
 BUILDING_STAGE_DAMAGE_50_25 = "damage_50_25"
 BUILDING_STAGE_DAMAGE_25_10 = "damage_25_10"
 BUILDING_STAGE_DESTROYED_10_0 = "destroyed_10_0"
-BUILDING_SPRITE_BUILDING_IDS = ("hut", "barracks", "archery", "chicken_farm", "pig_farm")
+BUILDING_SPRITE_BUILDING_IDS = (
+    "hut",
+    "barracks",
+    "archery",
+    "chicken_farm",
+    "pig_farm",
+    WOODEN_ARCHER_TOWER_ID,
+    STONE_ARCHER_TOWER_ID,
+)
 BUILDING_SPRITE_STAGES = (
     HUT_STAGE_SCAFFOLDING,
     HUT_STAGE_PARTIAL,
@@ -117,6 +127,8 @@ BUILDING_SPRITE_PATHS = {
     for building_id in BUILDING_SPRITE_BUILDING_IDS
 }
 _BUILDING_SPRITE_CACHE: dict[tuple[str, str, str, bool], pygame.Surface | None] = {}
+WOODEN_TOWER_ARCHER_ANCHOR = (0.50, 0.30)
+STONE_TOWER_ARCHER_HEAD_ANCHORS = ((0.34, 0.08), (0.66, 0.08))
 HUT_CONSTRUCTION_SPRITES = {
     stage: str(BUILDING_SPRITE_PATHS["hut"][stage])
     for stage in (HUT_STAGE_SCAFFOLDING, HUT_STAGE_PARTIAL, HUT_STAGE_COMPLETE)
@@ -221,6 +233,7 @@ class GameRenderer:
         with time_block(stats, "render_background"):
             self._draw_background(surface, world)
         with time_block(stats, "render_entities"):
+            self._draw_selected_tower_ranges(surface, world, selection.selected_ids)
             self._draw_entities(surface, world, selection.selected_ids)
             self._draw_projectiles(surface, world)
             self._draw_combat_effects(surface, world)
@@ -342,6 +355,38 @@ class GameRenderer:
                 self._draw_status_bar(surface, rect, entity)
             if entity.id in selected:
                 self._draw_selection(surface, rect, enemy=_is_enemy_entity(entity))
+
+    def _draw_selected_tower_ranges(
+        self,
+        surface: pygame.Surface,
+        world: WorldState,
+        selected_ids: Iterable[EntityId],
+    ) -> None:
+        """Draw left/right ground range boundaries for every selected tower."""
+        layout = terrain_layout_for_height(surface.get_height())
+        top_y = round(layout.unit_walkable_top_y)
+        bottom_y = round(layout.unit_walkable_bottom_y)
+        for entity_id in selected_ids:
+            entity = world.entities.get(entity_id)
+            spec = tower_spec_for(entity)
+            if (
+                spec is None
+                or not getattr(entity, "alive", False)
+                or is_building_destroying(entity)
+            ):
+                continue
+            for world_x in (
+                entity.position.x - spec.attack_range,
+                entity.position.x + spec.attack_range,
+            ):
+                screen_x = round(world_x - world.camera.x)
+                pygame.draw.line(
+                    surface,
+                    TOWER_RANGE_LINE,
+                    (screen_x, top_y),
+                    (screen_x, bottom_y),
+                    2,
+                )
 
     def _draw_projectiles(self, surface: pygame.Surface, world: WorldState) -> None:
         """Draw lightweight arrows and magic bolts."""
@@ -931,26 +976,49 @@ class GameRenderer:
         entity: object,
     ) -> None:
         """Draw building."""
-        if self._draw_building_sprite(surface, rect, entity):
-            return
         tags = tuple(getattr(entity, "tags", ()))
         if WOODEN_ARCHER_TOWER_ID in tags:
-            self._draw_wooden_archer_tower(
-                surface,
-                rect,
-                complete=bool(getattr(entity, "complete", True)),
-                hp_ratio=_hp_ratio(entity),
-            )
-            self._draw_label(surface, _short_label(tags), rect.center)
+            sprite_rect = self._draw_building_sprite_rect(surface, rect, entity)
+            if sprite_rect is not None:
+                if _wooden_tower_archer_visible(entity):
+                    self._draw_tower_archer(
+                        surface,
+                        _tower_archer_center(sprite_rect, WOODEN_TOWER_ARCHER_ANCHOR),
+                        draw_progress=_tower_archer_draw_progress(entity),
+                        torso_height=18,
+                    )
+            else:
+                self._draw_wooden_archer_tower(
+                    surface,
+                    rect,
+                    complete=bool(getattr(entity, "complete", True)),
+                    hp_ratio=_hp_ratio(entity),
+                    draw_progress=_tower_archer_draw_progress(entity),
+                )
+                self._draw_label(surface, _short_label(tags), rect.center)
             return
         if STONE_ARCHER_TOWER_ID in tags:
-            self._draw_stone_archer_tower(
-                surface,
-                rect,
-                complete=bool(getattr(entity, "complete", True)),
-                hp_ratio=_hp_ratio(entity),
-            )
-            self._draw_label(surface, _short_label(tags), rect.center)
+            draw_progresses = _stone_tower_archer_draw_progresses(entity)
+            sprite_rect = self._draw_building_sprite_rect(surface, rect, entity)
+            if sprite_rect is not None:
+                if _stone_tower_archers_visible(entity):
+                    for archer_index, anchor in enumerate(STONE_TOWER_ARCHER_HEAD_ANCHORS):
+                        self._draw_embedded_tower_archer(
+                            surface,
+                            _tower_archer_head_position(sprite_rect, anchor),
+                            draw_progress=draw_progresses[archer_index],
+                        )
+            else:
+                self._draw_stone_archer_tower(
+                    surface,
+                    rect,
+                    complete=bool(getattr(entity, "complete", True)),
+                    hp_ratio=_hp_ratio(entity),
+                    draw_progresses=draw_progresses,
+                )
+                self._draw_label(surface, _short_label(tags), rect.center)
+            return
+        if self._draw_building_sprite(surface, rect, entity):
             return
         if WIZARD_TOWER_ID in tags:
             self._draw_wizard_tower(
@@ -993,21 +1061,31 @@ class GameRenderer:
         entity: object,
     ) -> bool:
         """Draw a processed building sprite when one exists for the entity stage."""
+        return self._draw_building_sprite_rect(surface, rect, entity) is not None
+
+    def _draw_building_sprite_rect(
+        self,
+        surface: pygame.Surface,
+        rect: pygame.Rect,
+        entity: object,
+    ) -> pygame.Rect | None:
+        """Draw a processed building sprite and return its actual screen rect."""
         building_id = building_sprite_id_for(entity)
         if building_id is None:
-            return False
+            return None
         stage = building_sprite_stage_for(entity)
         sprite = _load_building_sprite(building_id, stage)
         if sprite is None:
-            return False
+            return None
         target_size = _fit_sprite_inside_rect(sprite, rect)
         cache_key = (f"building:{building_id}:{stage}", target_size)
         scaled = self._scaled_sprite_cache.get(cache_key)
         if scaled is None:
             scaled = pygame.transform.smoothscale(sprite, target_size)
             self._scaled_sprite_cache[cache_key] = scaled
-        surface.blit(scaled, scaled.get_rect(midbottom=rect.midbottom))
-        return True
+        sprite_rect = scaled.get_rect(midbottom=rect.midbottom)
+        surface.blit(scaled, sprite_rect)
+        return sprite_rect
 
     def _draw_hut_scaffolding(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
         """Draw hut scaffolding."""
@@ -1149,6 +1227,7 @@ class GameRenderer:
         *,
         complete: bool,
         hp_ratio: float,
+        draw_progress: float = 0.0,
     ) -> None:
         """Draw a primitive wooden tower with one archer on top."""
         wood = (116, 79, 49) if complete else (84, 84, 70)
@@ -1163,7 +1242,12 @@ class GameRenderer:
         pygame.draw.rect(surface, wood, platform, border_radius=3)
         pygame.draw.rect(surface, dark, platform, width=2, border_radius=3)
         pygame.draw.rect(surface, (92, 60, 39), rect.inflate(-30, -12), width=3)
-        self._draw_tower_archer(surface, (rect.centerx, platform.top - 5))
+        if complete and hp_ratio > 0.10:
+            self._draw_tower_archer(
+                surface,
+                (rect.centerx, platform.top - 5),
+                draw_progress=draw_progress,
+            )
         if not complete:
             pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
             pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
@@ -1176,6 +1260,7 @@ class GameRenderer:
         *,
         complete: bool,
         hp_ratio: float,
+        draw_progresses: tuple[float, float] = (0.0, 0.0),
     ) -> None:
         """Draw a primitive stone tower with two archers on top."""
         base = _tower_body_rect(rect)
@@ -1188,8 +1273,17 @@ class GameRenderer:
         for x in range(base.left, base.right, battlement_w * 2):
             pygame.draw.rect(surface, stone, (x, base.top - 14, battlement_w, 18))
         pygame.draw.rect(surface, outline, base, width=3, border_radius=5)
-        self._draw_tower_archer(surface, (base.centerx - 15, base.top - 19))
-        self._draw_tower_archer(surface, (base.centerx + 15, base.top - 19))
+        if complete and hp_ratio > 0.10:
+            self._draw_tower_archer(
+                surface,
+                (base.centerx - 15, base.top - 19),
+                draw_progress=draw_progresses[0],
+            )
+            self._draw_tower_archer(
+                surface,
+                (base.centerx + 15, base.top - 19),
+                draw_progress=draw_progresses[1],
+            )
         if not complete:
             pygame.draw.line(surface, (196, 181, 119), rect.topleft, rect.bottomright, 2)
             pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
@@ -1220,13 +1314,63 @@ class GameRenderer:
             pygame.draw.line(surface, (196, 181, 119), rect.bottomleft, rect.topright, 2)
         _draw_damage_cracks(surface, rect, hp_ratio)
 
-    def _draw_tower_archer(self, surface: pygame.Surface, center: tuple[int, int]) -> None:
+    def _draw_tower_archer(
+        self,
+        surface: pygame.Surface,
+        center: tuple[int, int],
+        *,
+        draw_progress: float = 0.0,
+        torso_height: int = 12,
+    ) -> None:
         """Draw a tiny archer stationed on a tower platform."""
         x, y = center
+        draw = max(0.0, min(1.0, draw_progress))
+        body_top = y - 6
         pygame.draw.circle(surface, (218, 190, 134), (x, y - 8), 4)
-        pygame.draw.rect(surface, (93, 132, 85), (x - 5, y - 6, 10, 12), border_radius=4)
-        pygame.draw.arc(surface, (73, 48, 34), (x + 3, y - 11, 12, 20), -1.2, 1.2, 2)
-        pygame.draw.line(surface, (226, 207, 113), (x + 5, y - 1), (x + 16, y - 1), 1)
+        pygame.draw.rect(
+            surface,
+            (93, 132, 85),
+            (x - 5, body_top, 10, torso_height),
+            border_radius=4,
+        )
+        bow_rect = pygame.Rect(x + 3, y - 12, 13, 22)
+        pygame.draw.arc(surface, (73, 48, 34), bow_rect, -1.2, 1.2, 2)
+        nock = (round(x + 9 - draw * 6), y - 1)
+        pygame.draw.lines(
+            surface,
+            (222, 212, 174),
+            False,
+            [(x + 13, y - 9), nock, (x + 13, y + 7)],
+            1,
+        )
+        arrow_tip = (x + 18, y - 1)
+        pygame.draw.line(surface, (226, 207, 113), nock, arrow_tip, 1)
+        if draw > 0.60:
+            pygame.draw.polygon(
+                surface,
+                (226, 207, 113),
+                [
+                    arrow_tip,
+                    (arrow_tip[0] - 3, arrow_tip[1] - 2),
+                    (arrow_tip[0] - 3, arrow_tip[1] + 2),
+                ],
+            )
+
+    def _draw_embedded_tower_archer(
+        self,
+        surface: pygame.Surface,
+        head_center: tuple[int, int],
+        *,
+        draw_progress: float = 0.0,
+    ) -> None:
+        """Draw a tower archer clipped so it appears inside battlements."""
+        x, head_y = head_center
+        body_center = (x, head_y + 8)
+        clip = pygame.Rect(x - 10, head_y - 7, 20, 18)
+        previous_clip = surface.get_clip()
+        surface.set_clip(clip)
+        self._draw_tower_archer(surface, body_center, draw_progress=draw_progress)
+        surface.set_clip(previous_clip)
 
     def _draw_tower_wizard(self, surface: pygame.Surface, center: tuple[int, int]) -> None:
         """Draw a tiny wizard stationed on a tower platform."""
@@ -2318,6 +2462,10 @@ def building_sprite_id_for(entity: object) -> str | None:
         return "chicken_farm"
     if "pig_farm" in tags:
         return "pig_farm"
+    if WOODEN_ARCHER_TOWER_ID in tags:
+        return WOODEN_ARCHER_TOWER_ID
+    if STONE_ARCHER_TOWER_ID in tags:
+        return STONE_ARCHER_TOWER_ID
     return None
 
 
@@ -2514,6 +2662,64 @@ def _tower_body_rect(rect: pygame.Rect) -> pygame.Rect:
         rect.top + max(20, rect.height // 6),
         max(20, rect.width - max(16, (rect.width // 7) * 2)),
         max(30, rect.height - max(24, rect.height // 6)),
+    )
+
+
+def _tower_archer_center(sprite_rect: pygame.Rect, anchor: tuple[float, float]) -> tuple[int, int]:
+    """Return an archer overlay position inside the actual drawn sprite rect."""
+    return (
+        sprite_rect.left + round(sprite_rect.width * anchor[0]),
+        sprite_rect.top + round(sprite_rect.height * anchor[1]),
+    )
+
+
+def _tower_archer_head_position(
+    sprite_rect: pygame.Rect,
+    anchor: tuple[float, float],
+) -> tuple[int, int]:
+    """Return an archer head position inside the actual drawn sprite rect."""
+    return _tower_archer_center(sprite_rect, anchor)
+
+
+def _wooden_tower_archer_visible(entity: object) -> bool:
+    """Return whether the processed wooden tower should show its live archer."""
+    return (
+        bool(getattr(entity, "complete", False))
+        and not is_building_destroying(entity)
+        and _hp_ratio(entity) > 0.10
+    )
+
+
+def _stone_tower_archers_visible(entity: object) -> bool:
+    """Return whether the processed stone tower should show its live archers."""
+    return (
+        bool(getattr(entity, "complete", False))
+        and not is_building_destroying(entity)
+        and _hp_ratio(entity) > 0.10
+    )
+
+
+def _tower_archer_draw_progress(entity: object, shooter_index: int | None = None) -> float:
+    """Return 0..1 bow-draw progress from a tower's wind-up state."""
+    functions = getattr(entity, "functions", {})
+    if not isinstance(functions, dict):
+        return 0.0
+    if str(functions.get("tower_state", "idle")) != "aiming":
+        return 0.0
+    if shooter_index is not None:
+        active_index = int(functions.get("tower_active_shooter_index", 0) or 0)
+        if active_index != shooter_index:
+            return 0.0
+    windup_ms = max(1, int(functions.get("tower_windup_ms", 120) or 120))
+    remaining_ms = max(0, int(functions.get("tower_windup_remaining_ms", 0) or 0))
+    return max(0.0, min(1.0, 1.0 - remaining_ms / windup_ms))
+
+
+def _stone_tower_archer_draw_progresses(entity: object) -> tuple[float, float]:
+    """Return left/right draw progress values for the alternating stone tower archers."""
+    return (
+        _tower_archer_draw_progress(entity, shooter_index=0),
+        _tower_archer_draw_progress(entity, shooter_index=1),
     )
 
 

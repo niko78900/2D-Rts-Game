@@ -24,8 +24,11 @@ from house_of_wolves.core.renderer import (
     RESOURCE_STAGE_AMOUNT_25_0,
     RESOURCE_STAGE_AMOUNT_75_25,
     RESOURCE_STAGE_AMOUNT_100_75,
+    STONE_TOWER_ARCHER_HEAD_ANCHORS,
+    WOODEN_TOWER_ARCHER_ANCHOR,
     BuildingPlacementPreview,
     GameRenderer,
+    _tower_archer_center,
     building_sprite_reference_for,
     building_sprite_stage_for,
     dotted_line_points,
@@ -47,9 +50,16 @@ from house_of_wolves.entities.projectile import Projectile
 from house_of_wolves.entities.resource_node import ResourceNode
 from house_of_wolves.systems.commands import make_command
 from house_of_wolves.systems.group_movement import issue_group_move_command
+from house_of_wolves.systems.towers import (
+    STONE_ARCHER_TOWER_ID,
+    TOWER_SPECS,
+    WOODEN_ARCHER_TOWER_ID,
+)
 from house_of_wolves.ui.selected_panel import mutual_abilities, selected_panel_for
 from house_of_wolves.world.collision import blocking_bounds_for_entity
 from house_of_wolves.world.demo import create_demo_world
+from house_of_wolves.world.terrain import terrain_layout_for_height
+from house_of_wolves.world.world import WorldState
 
 
 def test_settler_equipment_matches_gathered_resource_and_swing_progress() -> None:
@@ -546,6 +556,156 @@ def test_processed_building_sprite_assets_exist_with_transparent_backgrounds() -
             sprite = pygame.image.load(str(path))
             assert sprite.get_flags() & pygame.SRCALPHA
             assert sprite.get_at((0, 0)).a == 0
+
+
+def test_wooden_archer_tower_uses_processed_building_sprite_reference() -> None:
+    """Verify that Wooden Archer Tower resolves to the processed complete sprite."""
+    tower = Building(
+        id=EntityId(999),
+        owner="frontier",
+        position=WorldPosition(100, 100),
+        footprint=Footprint(74, 120),
+        hp=450,
+        max_hp=450,
+        tags=("building", "selectable", WOODEN_ARCHER_TOWER_ID),
+        complete=True,
+    )
+
+    assert building_sprite_reference_for(tower) == str(
+        BUILDING_SPRITE_PATHS[WOODEN_ARCHER_TOWER_ID][HUT_STAGE_COMPLETE]
+    )
+
+
+def test_stone_archer_tower_uses_processed_building_sprite_reference() -> None:
+    """Verify that Stone Archer Tower resolves to the processed complete sprite."""
+    tower = Building(
+        id=EntityId(1000),
+        owner="frontier",
+        position=WorldPosition(100, 100),
+        footprint=Footprint(106, 172),
+        hp=850,
+        max_hp=850,
+        tags=("building", "selectable", STONE_ARCHER_TOWER_ID),
+        complete=True,
+    )
+
+    assert building_sprite_reference_for(tower) == str(
+        BUILDING_SPRITE_PATHS[STONE_ARCHER_TOWER_ID][HUT_STAGE_COMPLETE]
+    )
+
+
+def test_stone_archer_tower_complete_sprite_bottom_is_grounded() -> None:
+    """Verify Stone Tower complete art is not bottom-aligned to sparse alpha noise."""
+    path = BUILDING_SPRITE_PATHS[STONE_ARCHER_TOWER_ID][HUT_STAGE_COMPLETE]
+    sprite = pygame.image.load(str(path))
+    bottom_y = sprite.get_height() - 1
+    visible_bottom_pixels = sum(
+        1 for x in range(sprite.get_width()) if sprite.get_at((x, bottom_y)).a > 0
+    )
+
+    assert visible_bottom_pixels >= 10
+
+
+def test_processed_tower_sprite_rects_are_returned_for_overlay_anchors() -> None:
+    """Verify processed tower drawing exposes the actual blitted sprite rect."""
+    renderer = GameRenderer(AppSettings())
+    surface = pygame.Surface((260, 260), pygame.SRCALPHA)
+    for tower_id in (WOODEN_ARCHER_TOWER_ID, STONE_ARCHER_TOWER_ID):
+        spec = TOWER_SPECS[tower_id]
+        tower = Building(
+            id=EntityId(1001),
+            owner="frontier",
+            position=WorldPosition(130, 230),
+            footprint=spec.footprint,
+            hp=spec.hp,
+            max_hp=spec.hp,
+            tags=("building", "selectable", tower_id),
+            complete=True,
+        )
+        rect = pygame.Rect(
+            round(tower.position.x - spec.footprint.width / 2),
+            round(tower.position.y - spec.footprint.height),
+            round(spec.footprint.width),
+            round(spec.footprint.height),
+        )
+
+        sprite_rect = renderer._draw_building_sprite_rect(surface, rect, tower)  # noqa: SLF001
+
+        assert sprite_rect is not None
+        assert sprite_rect.midbottom == rect.midbottom
+        assert sprite_rect.width <= rect.width
+        assert sprite_rect.height <= rect.height
+
+
+def test_tower_archer_overlay_anchors_are_inside_processed_sprite_rect() -> None:
+    """Verify tower archer anchors are relative to the processed sprite rect."""
+    renderer = GameRenderer(AppSettings())
+    surface = pygame.Surface((260, 260), pygame.SRCALPHA)
+    tower_anchors = {
+        WOODEN_ARCHER_TOWER_ID: (WOODEN_TOWER_ARCHER_ANCHOR,),
+        STONE_ARCHER_TOWER_ID: STONE_TOWER_ARCHER_HEAD_ANCHORS,
+    }
+    for tower_id, anchors in tower_anchors.items():
+        spec = TOWER_SPECS[tower_id]
+        tower = Building(
+            id=EntityId(1002),
+            owner="frontier",
+            position=WorldPosition(130, 230),
+            footprint=spec.footprint,
+            hp=spec.hp,
+            max_hp=spec.hp,
+            tags=("building", "selectable", tower_id),
+            complete=True,
+        )
+        rect = pygame.Rect(
+            round(tower.position.x - spec.footprint.width / 2),
+            round(tower.position.y - spec.footprint.height),
+            round(spec.footprint.width),
+            round(spec.footprint.height),
+        )
+        sprite_rect = renderer._draw_building_sprite_rect(surface, rect, tower)  # noqa: SLF001
+        assert sprite_rect is not None
+
+        for anchor in anchors:
+            assert sprite_rect.collidepoint(_tower_archer_center(sprite_rect, anchor))
+
+
+def test_renderer_draws_selected_tower_ground_range_lines_for_multiple_towers() -> None:
+    """Verify every selected tower gets left and right ground range markers."""
+    renderer = GameRenderer(AppSettings())
+    world = WorldState()
+    surface = pygame.Surface((1600, 900), pygame.SRCALPHA)
+    tower_fixtures = (
+        (WOODEN_ARCHER_TOWER_ID, WorldPosition(440, 500)),
+        (STONE_ARCHER_TOWER_ID, WorldPosition(980, 500)),
+    )
+    towers: list[Building] = []
+    for index, (tower_id, position) in enumerate(tower_fixtures, start=1):
+        spec = TOWER_SPECS[tower_id]
+        tower = Building(
+            id=EntityId(index),
+            owner="frontier",
+            position=position,
+            footprint=spec.footprint,
+            hp=spec.hp,
+            max_hp=spec.hp,
+            tags=("building", "selectable", "tower", tower_id),
+            complete=True,
+        )
+        world.add_entity(tower)
+        towers.append(tower)
+
+    renderer._draw_selected_tower_ranges(  # noqa: SLF001
+        surface,
+        world,
+        [tower.id for tower in towers],
+    )
+
+    ground_y = round(terrain_layout_for_height(surface.get_height()).unit_walkable_bottom_y - 8)
+    for tower in towers:
+        spec = TOWER_SPECS[next(tag for tag in tower.tags if tag in TOWER_SPECS)]
+        for world_x in (tower.position.x - spec.attack_range, tower.position.x + spec.attack_range):
+            assert surface.get_at((round(world_x - world.camera.x), ground_y)).a > 0
 
 
 def test_processed_resource_sprite_assets_exist_with_transparent_backgrounds() -> None:

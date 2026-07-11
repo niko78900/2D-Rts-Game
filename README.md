@@ -112,8 +112,8 @@ Current buildings:
 | Chicken Farm | Lower-output farm loop with Chickens |
 | Pig Farm | Higher-output farm loop with Pigs |
 | Wooden Archer Tower | Early single-arrow defensive tower |
-| Stone Archer Tower | Tougher double-arrow defensive tower |
-| Wizard Tower | Expensive magic-projectile defensive tower |
+| Stone Archer Tower | Tougher fast-arrow defensive tower |
+| Wizard Tower | Expensive splash-damage magic defensive tower |
 
 Construction begins at 10% HP and gains HP with build progress. Processed building
 sprites cover early construction, partial construction, completion, multiple damage
@@ -164,8 +164,10 @@ Combat currently includes:
 
 - Idle defensive target acquisition for player and enemy combat units.
 - Completed defensive towers automatically acquire nearby enemy units.
-- Wooden Archer Towers fire one arrow; Stone Archer Towers fire two arrows.
-- Wizard Towers fire slower, stronger Pygame-drawn magic bolts.
+- Wooden Archer Towers fire one arrow; Stone Archer Towers alternate two archers,
+  firing harder-hitting fast arrows at roughly double the single-archer cadence.
+- Wizard Towers fire slower, stronger Pygame-drawn magic bolts with a small splash
+  radius around impact.
 - Direct attacks, Attack Move, local aggro, chase limits, and target cleanup.
 - Building-edge melee distance so attackers do not chase unreachable building centers.
 - Configurable attack wind-up and cooldown states.
@@ -433,8 +435,9 @@ python tools/process_resource_sprites.py
 
 Current runtime assets:
 
-- Hut, Barracks, Archery, Chicken Farm, and Pig Farm construction/damage/destruction
-  sprites under `assets/art/buildings/processed/`.
+- Hut, Barracks, Archery, Chicken Farm, Pig Farm, Wooden Archer Tower, and Stone
+  Archer Tower construction/damage/destruction sprites under
+  `assets/art/buildings/processed/`.
 - Gold Mine, Iron Deposit, and Stone Outcrop depletion sprites under
   `assets/art/resources/processed/`.
 - Transparent Chicken and Pig sprites under `assets/art/resources/`.
@@ -447,8 +450,9 @@ to Pygame-drawn placeholders.
 Unit sprites are not final. Units, Trees, weapons, arrows, melee strikes, damage
 feedback, wave markers, and directional death animations currently use Pygame
 primitives. Current placeholder equipment includes bows, spears, swords, axes,
-pickaxes, and building hammers. Defensive towers and Wizard Tower magic bolts are also
-currently drawn with Pygame primitives. This keeps gameplay testable while final art is
+pickaxes, and building hammers. Wooden and Stone Archer Towers use processed art with
+Pygame-drawn archer overlays, while Wizard Tower and Wizard Tower magic bolts are
+still drawn with Pygame primitives. This keeps gameplay testable while final art is
 still in development.
 
 ## Performance Approach

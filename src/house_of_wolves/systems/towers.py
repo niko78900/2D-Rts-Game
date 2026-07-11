@@ -21,6 +21,8 @@ STONE_ARCHER_TOWER_ID = "stone_archer_tower"
 WIZARD_TOWER_ID = "wizard_tower"
 TOWER_IDS = (WOODEN_ARCHER_TOWER_ID, STONE_ARCHER_TOWER_ID, WIZARD_TOWER_ID)
 TOWER_TARGET_SCAN_MS = 300
+STONE_ARCHER_TOWER_ALTERNATING_COOLDOWN_MS = 550
+STONE_ARCHER_TOWER_PROJECTILE_SPEED = ARROW_PROJECTILE_SPEED * 2
 MAGIC_PROJECTILE_SPEED = 480.0
 MAGIC_PROJECTILE_LIFETIME_MS = 2200
 MAGIC_PROJECTILE_HIT_RADIUS = 16.0
@@ -72,13 +74,13 @@ STONE_ARCHER_TOWER_SPEC = TowerSpec(
     hp=850,
     build_time_ms=16_000,
     cost={"wood": 120, "stone": 90, "iron": 20},
-    attack_range=290.0,
-    damage=5,
-    attack_cooldown_ms=1100,
+    attack_range=420.0,
+    damage=8,
+    attack_cooldown_ms=STONE_ARCHER_TOWER_ALTERNATING_COOLDOWN_MS,
     windup_ms=120,
     projectile_kind="arrow",
-    shots_per_attack=2,
-    projectile_speed=ARROW_PROJECTILE_SPEED,
+    shots_per_attack=1,
+    projectile_speed=STONE_ARCHER_TOWER_PROJECTILE_SPEED,
     projectile_lifetime_ms=ARROW_PROJECTILE_LIFETIME_MS,
     projectile_hit_radius=ARROW_PROJECTILE_HIT_RADIUS,
 )
@@ -90,7 +92,7 @@ WIZARD_TOWER_SPEC = TowerSpec(
     build_time_ms=18_000,
     cost={"wood": 150, "stone": 120, "iron": 40, "gold": 30},
     attack_range=320.0,
-    damage=18,
+    damage=27,
     attack_cooldown_ms=1800,
     windup_ms=300,
     projectile_kind="magic",
@@ -163,6 +165,7 @@ class TowerCombatSystem:
 
         functions["tower_pending_target_id"] = target.id.to_json()
         functions["tower_windup_remaining_ms"] = spec.windup_ms
+        functions["tower_active_shooter_index"] = _next_tower_shooter_index(tower, spec)
         functions["tower_state"] = "aiming"
         world.performance_stats.counters.attacks_started += 1
 
@@ -178,6 +181,10 @@ def tower_functions_for(spec: TowerSpec) -> dict[str, object]:
         "attack_cooldown_ms": spec.attack_cooldown_ms,
         "shots_per_attack": spec.shots_per_attack,
         "projectile_kind": spec.projectile_kind,
+        "tower_windup_ms": spec.windup_ms,
+        "tower_shooter_count": _tower_shooter_count(spec),
+        "tower_active_shooter_index": 0,
+        "tower_next_shooter_index": 0,
         "tower_scan_remaining_ms": 0,
         "tower_cooldown_remaining_ms": 0,
         "tower_windup_remaining_ms": 0,
@@ -221,6 +228,24 @@ def _tick_timer(functions: dict[str, object], key: str, elapsed_ms: int) -> None
     functions[key] = max(0, int(functions.get(key, 0) or 0) - elapsed_ms)
 
 
+def _tower_shooter_count(spec: TowerSpec) -> int:
+    """Return the number of visible shooter positions a tower cycles through."""
+    return 2 if spec.building_id == STONE_ARCHER_TOWER_ID else 1
+
+
+def _next_tower_shooter_index(tower: Building, spec: TowerSpec) -> int:
+    """Return the shooter index that should perform the next tower attack."""
+    count = max(1, _tower_shooter_count(spec))
+    return int(tower.functions.get("tower_next_shooter_index", 0) or 0) % count
+
+
+def _advance_tower_shooter_index(tower: Building, spec: TowerSpec) -> None:
+    """Advance alternating tower shooter state after a projectile launch."""
+    count = max(1, _tower_shooter_count(spec))
+    current = int(tower.functions.get("tower_active_shooter_index", 0) or 0) % count
+    tower.functions["tower_next_shooter_index"] = (current + 1) % count
+
+
 def _stored_target(world: WorldState, tower: Building, spec: TowerSpec) -> object | None:
     """Return the currently locked target if it remains valid and in range."""
     target_id = tower.functions.get("tower_target_id")
@@ -229,7 +254,7 @@ def _stored_target(world: WorldState, tower: Building, spec: TowerSpec) -> objec
     target = world.entities.get(EntityId(int(target_id)))
     if not _valid_tower_target(tower, target):
         return None
-    if _distance(tower.position, target.position) > spec.attack_range:
+    if not _target_in_horizontal_tower_range(tower, target, spec):
         return None
     return target
 
@@ -242,9 +267,9 @@ def _acquire_tower_target(
     """Pick the closest enemy unit in range, then prefer lower HP on ties."""
     bounds = (
         tower.position.x - spec.attack_range,
-        tower.position.y - spec.attack_range,
+        0,
         spec.attack_range * 2,
-        spec.attack_range * 2,
+        max(1.0, float(world.settings.world_height)),
     )
     best: object | None = None
     best_key: tuple[float, int] | None = None
@@ -252,14 +277,25 @@ def _acquire_tower_target(
         candidate = world.entities.get(entity_id)
         if not _valid_tower_target(tower, candidate):
             continue
-        distance = _distance(tower.position, candidate.position)
-        if distance > spec.attack_range:
+        if not _target_in_horizontal_tower_range(tower, candidate, spec):
             continue
-        key = (distance, max(0, int(getattr(candidate, "hp", 0))))
+        key = (
+            abs(candidate.position.x - tower.position.x),
+            max(0, int(getattr(candidate, "hp", 0))),
+        )
         if best_key is None or key < best_key:
             best = candidate
             best_key = key
     return best
+
+
+def _target_in_horizontal_tower_range(
+    tower: Building,
+    target: object,
+    spec: TowerSpec,
+) -> bool:
+    """Return whether a target is between a tower's left/right ground range lines."""
+    return abs(target.position.x - tower.position.x) <= spec.attack_range
 
 
 def _valid_tower_target(tower: Building, target: object | None) -> bool:
@@ -283,12 +319,15 @@ def _fire_tower_projectiles(
 ) -> None:
     """Launch one tower attack as one or more projectiles."""
     target_pos = _visual_center(target)
-    direction_x, direction_y = _direction_to(_tower_projectile_origin(tower), target_pos)
+    shooter_index = _next_tower_shooter_index(tower, spec)
+    tower.functions["tower_active_shooter_index"] = shooter_index
+    base_origin = _tower_projectile_origin(tower, shooter_index=shooter_index)
+    direction_x, direction_y = _direction_to(base_origin, target_pos)
     perpendicular = (-direction_y, direction_x)
     shot_count = max(1, int(spec.shots_per_attack))
     for shot_index in range(shot_count):
         offset = (shot_index - ((shot_count - 1) / 2)) * 9.0
-        origin = _tower_projectile_origin(tower)
+        origin = base_origin
         origin = WorldPosition(
             origin.x + perpendicular[0] * offset,
             origin.y + perpendicular[1] * offset,
@@ -311,6 +350,7 @@ def _fire_tower_projectiles(
             hit_radius=spec.projectile_hit_radius,
         )
         world.projectiles.append(projectile)
+    _advance_tower_shooter_index(tower, spec)
     if spec.projectile_kind == "magic":
         world.add_combat_effect(
             CombatEffect(
@@ -323,9 +363,14 @@ def _fire_tower_projectiles(
         )
 
 
-def _tower_projectile_origin(tower: Building) -> WorldPosition:
+def _tower_projectile_origin(tower: Building, *, shooter_index: int = 0) -> WorldPosition:
     """Return the top-platform launch point for a tower projectile."""
     left, top, width, height = tower.bounds
+    if STONE_ARCHER_TOWER_ID in getattr(tower, "tags", ()):
+        count = max(1, int(tower.functions.get("tower_shooter_count", 2) or 2))
+        if count > 1:
+            x_ratio = 0.38 if shooter_index % count == 0 else 0.62
+            return WorldPosition(left + width * x_ratio, top + max(16.0, height * 0.20))
     return WorldPosition(left + width / 2, top + max(16.0, height * 0.20))
 
 

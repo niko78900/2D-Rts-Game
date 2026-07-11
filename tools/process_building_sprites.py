@@ -27,6 +27,33 @@ BUILDING_MAPPINGS = (
     SpriteMapping("pig_farm", "Pig pen"),
 )
 
+FLAT_STAGE_MAPPINGS = {
+    "wooden_archer_tower": (
+        "Wooden Archer tower",
+        {
+            "7e849c33-6088-4757-9766-c694df258937.png": "construction_0_50.png",
+            "ebb21944-a5d5-452d-9dbb-63b0ba41dbf6.png": "construction_50_90.png",
+            "6e1999c8-4359-4aa3-8249-5602a32f8931.png": "complete.png",
+            "014eff5a-fe86-4f18-a575-96fe05e082e9.png": "damage_75_50.png",
+            "210c2d8f-b51b-4ddc-984c-6091cf51a7f1.png": "damage_50_25.png",
+            "beb9769c-9cbf-474b-a9f4-63f8b9774392.png": "damage_25_10.png",
+            "d783fead-f2a0-4274-bee2-1465432bf320.png": "destroyed_10_0.png",
+        },
+    ),
+    "stone_archer_tower": (
+        "Stone Archer Tower",
+        {
+            "construction_0_50.png": "construction_0_50.png",
+            "construction_50_90.png": "construction_50_90.png",
+            "complete.png": "complete.png",
+            "damage_75_50.png": "damage_75_50.png",
+            "damage_50_25.png": "damage_50_25.png",
+            "damage_25_10.png": "damage_25_10.png",
+            "destroyed_10_0.png": "destroyed_10_0.png",
+        },
+    ),
+}
+
 STAGE_MAPPINGS = {
     ("Construction", "0 to 50.png"): "construction_0_50.png",
     ("Construction", "50 to 90.png"): "construction_50_90.png",
@@ -47,13 +74,21 @@ def main() -> None:
             output.parent.mkdir(parents=True, exist_ok=True)
             _process_sprite(source, output)
             print(f"{source.relative_to(PROJECT_ROOT)} -> {output.relative_to(PROJECT_ROOT)}")
+    for building_id, (source_folder_name, stages) in FLAT_STAGE_MAPPINGS.items():
+        source_folder = SOURCE_ROOT / source_folder_name
+        for source_name, output_name in stages.items():
+            source = source_folder / source_name
+            output = OUTPUT_ROOT / building_id / output_name
+            output.parent.mkdir(parents=True, exist_ok=True)
+            _process_sprite(source, output)
+            print(f"{source.relative_to(PROJECT_ROOT)} -> {output.relative_to(PROJECT_ROOT)}")
 
 
 def _process_sprite(source: Path, output: Path) -> None:
     """Remove baked light/checkerboard background and crop to useful pixels."""
     image = Image.open(source).convert("RGB")
     alpha = _foreground_alpha(image)
-    bounds = alpha.getbbox()
+    bounds = _meaningful_alpha_bounds(alpha)
     if bounds is None:
         raise ValueError(f"{source} produced an empty sprite")
 
@@ -75,19 +110,32 @@ def _foreground_alpha(image: Image.Image) -> Image.Image:
     return mask.filter(ImageFilter.MaxFilter(3))
 
 
+def _meaningful_alpha_bounds(
+    alpha: Image.Image,
+    min_edge_pixels: int = 8,
+) -> tuple[int, int, int, int] | None:
+    """Return crop bounds while ignoring sparse alpha specks on image edges."""
+    mask = np.asarray(alpha, dtype=np.uint8) > 0
+    rows = np.flatnonzero(mask.sum(axis=1) >= min_edge_pixels)
+    cols = np.flatnonzero(mask.sum(axis=0) >= min_edge_pixels)
+    if rows.size == 0 or cols.size == 0:
+        return alpha.getbbox()
+    return (int(cols[0]), int(rows[0]), int(cols[-1]) + 1, int(rows[-1]) + 1)
+
+
 def _pad_bounds(
     bounds: tuple[int, int, int, int],
     image_size: tuple[int, int],
     padding: int,
 ) -> tuple[int, int, int, int]:
-    """Return crop bounds with a transparent safety margin."""
+    """Return crop bounds with safety margin while preserving the bottom anchor."""
     left, top, right, bottom = bounds
     width, height = image_size
     return (
         max(0, left - padding),
         max(0, top - padding),
         min(width, right + padding),
-        min(height, bottom + padding),
+        min(height, bottom),
     )
 
 

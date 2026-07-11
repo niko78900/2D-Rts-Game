@@ -31,14 +31,14 @@
     "display_name": "Stone Archer Tower",
     "stats": {"hp": 850, "footprint_px": [106, 172], "build_time_ms": 16000},
     "cost": {"wood": 120, "food": 0, "stone": 90, "iron": 20, "gold": 0},
-    "functions": {"defensive": true, "attack_range": 290, "damage": 5, "projectile": "arrow", "shots_per_attack": 2},
+    "functions": {"defensive": true, "attack_range": 420, "damage": 8, "attack_cooldown_ms": 550, "projectile": "arrow", "shots_per_attack": 1, "projectile_speed": 1240, "shooter_count": 2},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "wizard_tower": {
     "display_name": "Wizard Tower",
     "stats": {"hp": 750, "footprint_px": [112, 182], "build_time_ms": 18000},
     "cost": {"wood": 150, "food": 0, "stone": 120, "iron": 40, "gold": 30},
-    "functions": {"defensive": true, "attack_range": 320, "damage": 18, "projectile": "magic", "shots_per_attack": 1},
+    "functions": {"defensive": true, "attack_range": 320, "damage": 27, "projectile": "magic", "shots_per_attack": 1, "splash_radius": 25},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "farm": {
