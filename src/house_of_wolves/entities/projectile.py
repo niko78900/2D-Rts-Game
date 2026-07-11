@@ -19,3 +19,4 @@ class Projectile(Entity):
     speed: float = 0
     remaining_lifetime_ms: int = 0
     hit_radius: float = 10.0
+    splash_radius: float = 0.0

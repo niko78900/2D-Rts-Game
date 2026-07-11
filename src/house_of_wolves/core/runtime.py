@@ -9,6 +9,7 @@ from math import hypot
 import pygame
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
+from house_of_wolves.core.game_specs import building_spec_from_data
 from house_of_wolves.core.geometry import bounds_intersect as _bounds_intersect
 from house_of_wolves.core.keybindings import (
     COMMAND_PANEL_SLOT_ACTIONS,
@@ -74,10 +75,11 @@ from house_of_wolves.world.terrain import (
 from house_of_wolves.world.world import WorldState
 
 HUT_BUILDING_ID = "hut"
-HUT_FOOTPRINT = Footprint(150, 116)
-HUT_MAX_HP = 650
-HUT_BUILD_TIME_MS = 12_000
-HUT_BUILD_COST = {"wood": 50}
+HUT_SPEC = building_spec_from_data(HUT_BUILDING_ID)
+HUT_FOOTPRINT = HUT_SPEC.footprint
+HUT_MAX_HP = HUT_SPEC.hp
+HUT_BUILD_TIME_MS = HUT_SPEC.build_time_ms
+HUT_BUILD_COST = HUT_SPEC.cost
 BUILD_MENU_ABILITIES = (
     "Hut",
     "Barracks",
@@ -1219,6 +1221,7 @@ class GameRuntime:
         """Create building construction site."""
         build_position = self._snapped_building_position(position)
         if building_id == HUT_BUILDING_ID:
+            hut_functions = HUT_SPEC.functions
             building = Building(
                 id=self.world.allocate_entity_id(),
                 owner="frontier",
@@ -1230,9 +1233,11 @@ class GameRuntime:
                 build_time_ms=HUT_BUILD_TIME_MS,
                 complete=False,
                 functions=Building.production_functions(
-                    dropoff=True,
+                    dropoff=bool(hut_functions.get("dropoff", False)),
                     population_cap_bonus=self.settings.hut_pop_cap_bonus,
-                    trainable_units=("settler", "spearman"),
+                    trainable_units=tuple(
+                        str(unit_id) for unit_id in hut_functions["trainable_units"]
+                    ),
                 ),
                 dropoff_point=WorldPosition(
                     build_position.x + 220,

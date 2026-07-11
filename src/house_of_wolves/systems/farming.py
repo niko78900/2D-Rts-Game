@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from math import ceil, hypot
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
+from house_of_wolves.core.game_specs import building_spec_from_data
 from house_of_wolves.core.geometry import distance as _distance
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.resource_node import ResourceNode
@@ -92,41 +93,33 @@ class FarmBuildingSpec:
     wander_speed: float
 
 
+def _farm_building_spec(building_id: str) -> FarmBuildingSpec:
+    """Build a food-farm spec from validated building data."""
+    spec = building_spec_from_data(building_id)
+    functions = spec.functions
+    animal_width, animal_height = functions["animal_footprint_px"]
+    return FarmBuildingSpec(
+        building_id=building_id,
+        display_name=spec.display_name,
+        farm_type=str(functions["farm_type"]),
+        animal_tag=str(functions["animal_tag"]),
+        carcass_tag=str(functions["carcass_tag"]),
+        footprint=spec.footprint,
+        hp=spec.hp,
+        build_time_ms=spec.build_time_ms,
+        cost=spec.cost,
+        animal_hp=int(functions["animal_hp"]),
+        animal_food_yield=int(functions["animal_food_yield"]),
+        animal_footprint=Footprint(int(animal_width), int(animal_height)),
+        respawn_delay_ms=int(functions["respawn_delay_ms"]),
+        carcass_harvest_duration_ms=int(functions["carcass_harvest_duration_ms"]),
+        wander_speed=float(functions["wander_speed"]),
+    )
+
+
 FARM_BUILDING_SPECS: dict[str, FarmBuildingSpec] = {
-    CHICKEN_FARM_ID: FarmBuildingSpec(
-        building_id=CHICKEN_FARM_ID,
-        display_name="Chicken Farm",
-        farm_type="chicken",
-        animal_tag="chicken",
-        carcass_tag="chicken_carcass",
-        footprint=Footprint(118, 76),
-        hp=75,
-        build_time_ms=8_000,
-        cost={"wood": 75},
-        animal_hp=10,
-        animal_food_yield=20,
-        animal_footprint=Footprint(24, 20),
-        respawn_delay_ms=CHICKEN_RESPAWN_DELAY_MS,
-        carcass_harvest_duration_ms=CHICKEN_CARCASS_HARVEST_DURATION_MS,
-        wander_speed=20.0,
-    ),
-    PIG_FARM_ID: FarmBuildingSpec(
-        building_id=PIG_FARM_ID,
-        display_name="Pig Farm",
-        farm_type="pig",
-        animal_tag="pig",
-        carcass_tag="pig_carcass",
-        footprint=Footprint(152, 88),
-        hp=300,
-        build_time_ms=10_000,
-        cost={"wood": 60, "stone": 20},
-        animal_hp=20,
-        animal_food_yield=20,
-        animal_footprint=Footprint(34, 24),
-        respawn_delay_ms=PIG_RESPAWN_DELAY_MS,
-        carcass_harvest_duration_ms=PIG_CARCASS_HARVEST_DURATION_MS,
-        wander_speed=16.0,
-    ),
+    CHICKEN_FARM_ID: _farm_building_spec(CHICKEN_FARM_ID),
+    PIG_FARM_ID: _farm_building_spec(PIG_FARM_ID),
 }
 
 

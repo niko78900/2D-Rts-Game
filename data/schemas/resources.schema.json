@@ -4,13 +4,26 @@
   "minProperties": 1,
   "additionalProperties": {
     "type": "object",
-    "required": ["display_name", "resource_type", "amount", "gather_time_ms", "harvest_slots", "renewable", "depleted_replacement"],
+    "required": ["display_name", "resource_type", "amount", "gather_time_ms", "harvest_slots", "footprint_px", "blocking_footprint_px", "tags", "renewable", "depleted_replacement"],
     "properties": {
       "display_name": {"type": "string", "minLength": 1},
       "resource_type": {"enum": ["wood", "food", "stone", "iron", "gold"]},
       "amount": {"type": "integer", "minimum": 0},
       "gather_time_ms": {"type": "integer", "minimum": 1},
       "harvest_slots": {"type": "integer", "minimum": 1},
+      "footprint_px": {
+        "type": "array",
+        "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "blocking_footprint_px": {
+        "type": "array",
+        "prefixItems": [{"type": "integer", "minimum": 1}, {"type": "integer", "minimum": 1}],
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "tags": {"type": "array", "items": {"type": "string"}, "minItems": 1},
       "renewable": {"type": "boolean"},
       "depleted_replacement": {"type": "string", "minLength": 1}
     },

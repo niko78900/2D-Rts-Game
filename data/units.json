@@ -2,7 +2,7 @@
   "settler": {
     "display_name": "Settler",
     "role": ["worker", "light_ranged", "builder"],
-    "stats": {"hp": 40, "damage": 6, "speed": 78, "attack_range": 115, "attack_cooldown_ms": 900},
+    "stats": {"hp": 40, "damage": 6, "speed": 92, "attack_range": 115, "attack_cooldown_ms": 900},
     "cost": {"wood": 20, "food": 10, "stone": 0, "iron": 0, "gold": 0},
     "population": 1,
     "capabilities": {"can_gather": true, "can_build": true, "can_repair": true, "can_attack": true, "carry_capacity": 8},
@@ -13,7 +13,7 @@
     "display_name": "Spearman",
     "role": ["infantry", "anti_cavalry"],
     "stats": {"hp": 50, "damage": 10, "speed": 72, "attack_range": 42, "attack_cooldown_ms": 1000},
-    "cost": {"wood": 30, "food": 15, "stone": 0, "iron": 0, "gold": 0},
+    "cost": {"wood": 25, "food": 20, "stone": 0, "iron": 5, "gold": 0},
     "population": 1,
     "capabilities": {"can_gather": false, "can_build": false, "can_repair": false, "can_attack": true, "carry_capacity": 0},
     "animations": {"idle": 4, "walk": 8, "attack": 6, "death": 6},

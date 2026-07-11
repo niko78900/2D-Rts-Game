@@ -425,7 +425,7 @@ class CombatSystem:
     ) -> int:
         """Apply Wizard Tower-style splash damage inside the visible impact ring."""
         impact = projectile.position
-        radius = MAGIC_SPLASH_RADIUS
+        radius = float(getattr(projectile, "splash_radius", 0.0) or MAGIC_SPLASH_RADIUS)
         bounds = (
             impact.x - radius,
             impact.y - radius,

@@ -5,12 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from house_of_wolves.core.contracts import EntityId, Footprint
+from house_of_wolves.core.game_specs import resource_spec_from_type
 from house_of_wolves.entities.base import Entity
 
-WOOD_RESOURCE_HP = 150
-STONE_RESOURCE_HP = 500
-ORE_RESOURCE_HP = 500
-GOLD_RESOURCE_HP = 500
+WOOD_RESOURCE_HP = resource_spec_from_type("wood").amount
+STONE_RESOURCE_HP = resource_spec_from_type("stone").amount
+ORE_RESOURCE_HP = resource_spec_from_type("iron").amount
+GOLD_RESOURCE_HP = resource_spec_from_type("gold").amount
 RESOURCE_NODE_HP_BY_TYPE = {
     "wood": WOOD_RESOURCE_HP,
     "stone": STONE_RESOURCE_HP,

@@ -1,7 +1,7 @@
 {
   "hut": {
     "display_name": "Hut",
-    "stats": {"hp": 650, "footprint_px": [140, 110], "build_time_ms": 12000},
+    "stats": {"hp": 650, "footprint_px": [150, 116], "build_time_ms": 12000},
     "cost": {"wood": 50, "food": 0, "stone": 0, "iron": 0, "gold": 0},
     "functions": {"dropoff": true, "population_cap_bonus": 10, "trainable_units": ["settler", "spearman"]},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
@@ -24,21 +24,21 @@
     "display_name": "Wooden Archer Tower",
     "stats": {"hp": 450, "footprint_px": [92, 155], "build_time_ms": 10000},
     "cost": {"wood": 80, "food": 0, "stone": 20, "iron": 0, "gold": 0},
-    "functions": {"defensive": true, "attack_range": 260, "damage": 5, "projectile": "arrow", "shots_per_attack": 1},
+    "functions": {"defensive": true, "attack_range": 260, "damage": 5, "attack_cooldown_ms": 1000, "windup_ms": 120, "projectile": "arrow", "shots_per_attack": 1, "projectile_speed": 620, "projectile_lifetime_ms": 1800, "projectile_hit_radius": 12},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "stone_archer_tower": {
     "display_name": "Stone Archer Tower",
     "stats": {"hp": 850, "footprint_px": [106, 172], "build_time_ms": 16000},
     "cost": {"wood": 120, "food": 0, "stone": 90, "iron": 20, "gold": 0},
-    "functions": {"defensive": true, "attack_range": 420, "damage": 8, "attack_cooldown_ms": 550, "projectile": "arrow", "shots_per_attack": 1, "projectile_speed": 1240, "shooter_count": 2},
+    "functions": {"defensive": true, "attack_range": 420, "damage": 8, "attack_cooldown_ms": 550, "windup_ms": 120, "projectile": "arrow", "shots_per_attack": 1, "projectile_speed": 1240, "projectile_lifetime_ms": 1800, "projectile_hit_radius": 12, "shooter_count": 2},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "wizard_tower": {
     "display_name": "Wizard Tower",
     "stats": {"hp": 750, "footprint_px": [112, 182], "build_time_ms": 18000},
     "cost": {"wood": 150, "food": 0, "stone": 120, "iron": 40, "gold": 30},
-    "functions": {"defensive": true, "attack_range": 320, "damage": 27, "projectile": "magic", "shots_per_attack": 1, "splash_radius": 25},
+    "functions": {"defensive": true, "attack_range": 320, "damage": 27, "attack_cooldown_ms": 1800, "windup_ms": 300, "projectile": "magic", "shots_per_attack": 1, "projectile_speed": 480, "projectile_lifetime_ms": 2200, "projectile_hit_radius": 16, "splash_radius": 25},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "farm": {
@@ -52,28 +52,28 @@
     "display_name": "Chicken Farm",
     "stats": {"hp": 75, "footprint_px": [118, 76], "build_time_ms": 8000},
     "cost": {"wood": 75, "food": 0, "stone": 0, "iron": 0, "gold": 0},
-    "functions": {"farm_type": "chicken", "resource_source": "food", "renewable": true},
+    "functions": {"farm_type": "chicken", "resource_source": "food", "renewable": true, "animal_tag": "chicken", "carcass_tag": "chicken_carcass", "animal_hp": 10, "animal_food_yield": 20, "animal_footprint_px": [24, 20], "respawn_delay_ms": 120000, "carcass_harvest_duration_ms": 120000, "wander_speed": 20},
     "animations": {"construction": 4, "idle": 2, "damaged": 2, "destroyed": 4}
   },
   "pig_farm": {
     "display_name": "Pig Farm",
     "stats": {"hp": 300, "footprint_px": [152, 88], "build_time_ms": 10000},
     "cost": {"wood": 60, "food": 0, "stone": 20, "iron": 0, "gold": 0},
-    "functions": {"farm_type": "pig", "resource_source": "food", "renewable": true},
+    "functions": {"farm_type": "pig", "resource_source": "food", "renewable": true, "animal_tag": "pig", "carcass_tag": "pig_carcass", "animal_hp": 20, "animal_food_yield": 20, "animal_footprint_px": [34, 24], "respawn_delay_ms": 60000, "carcass_harvest_duration_ms": 60000, "wander_speed": 16},
     "animations": {"construction": 4, "idle": 2, "damaged": 2, "destroyed": 4}
   },
   "barracks": {
     "display_name": "Barracks",
     "stats": {"hp": 700, "footprint_px": [190, 135], "build_time_ms": 14000},
     "cost": {"wood": 100, "food": 0, "stone": 25, "iron": 0, "gold": 0},
-    "functions": {"trainable_units": ["spearman"]},
+    "functions": {"trainable_units": ["spearman"], "unit_cost_overrides": {"spearman": {"wood": 30, "food": 15, "stone": 0, "iron": 0, "gold": 0}}},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "archery": {
     "display_name": "Archery",
     "stats": {"hp": 560, "footprint_px": [180, 125], "build_time_ms": 12000},
     "cost": {"wood": 90, "food": 0, "stone": 15, "iron": 0, "gold": 0},
-    "functions": {"trainable_units": ["archer"]},
+    "functions": {"trainable_units": ["archer"], "unit_cost_overrides": {"archer": {"wood": 45, "food": 15, "stone": 0, "iron": 0, "gold": 0}}},
     "animations": {"construction": 4, "idle": 1, "damaged": 2, "destroyed": 4}
   },
   "stable": {

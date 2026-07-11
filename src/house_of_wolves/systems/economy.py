@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from math import hypot
 
 from house_of_wolves.core.contracts import Command, CommandQueue, EntityId, Footprint, WorldPosition
+from house_of_wolves.core.game_specs import resource_spec_from_type
 from house_of_wolves.core.geometry import (
     bounds_intersect as _bounds_intersect,
 )
@@ -100,35 +101,21 @@ class ResourceNodeSpec:
     depleted_replacement: str
 
 
+def _resource_node_spec(resource_type: str) -> ResourceNodeSpec:
+    """Build a resource-node spec from the validated resource data."""
+    spec = resource_spec_from_type(resource_type)
+    return ResourceNodeSpec(
+        tags=spec.tags,
+        footprint=spec.footprint,
+        blocking_footprint=spec.blocking_footprint,
+        gather_time_ms=spec.gather_time_ms,
+        depleted_replacement=spec.depleted_replacement,
+    )
+
+
 RESOURCE_NODE_SPECS = {
-    "wood": ResourceNodeSpec(
-        tags=("resource", "wood_tree", "selectable"),
-        footprint=Footprint(82, 126),
-        blocking_footprint=Footprint(42, 92),
-        gather_time_ms=900,
-        depleted_replacement="tree_stump",
-    ),
-    "stone": ResourceNodeSpec(
-        tags=("resource", "stone_outcrop", "selectable"),
-        footprint=Footprint(118, 74),
-        blocking_footprint=Footprint(104, 54),
-        gather_time_ms=1200,
-        depleted_replacement="stone_rubble",
-    ),
-    "iron": ResourceNodeSpec(
-        tags=("resource", "iron_deposit", "selectable"),
-        footprint=Footprint(118, 74),
-        blocking_footprint=Footprint(104, 54),
-        gather_time_ms=1200,
-        depleted_replacement="empty_iron_deposit",
-    ),
-    "gold": ResourceNodeSpec(
-        tags=("resource", "gold_mine", "selectable"),
-        footprint=Footprint(132, 86),
-        blocking_footprint=Footprint(124, 64),
-        gather_time_ms=1200,
-        depleted_replacement="gold_mine_empty",
-    ),
+    resource_type: _resource_node_spec(resource_type)
+    for resource_type in ("wood", "stone", "iron", "gold")
 }
 
 

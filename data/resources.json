@@ -2,9 +2,12 @@
   "wood_tree": {
     "display_name": "Tree",
     "resource_type": "wood",
-    "amount": 250,
+    "amount": 150,
     "gather_time_ms": 900,
-    "harvest_slots": 2,
+    "harvest_slots": 8,
+    "footprint_px": [82, 126],
+    "blocking_footprint_px": [42, 92],
+    "tags": ["resource", "wood_tree", "selectable"],
     "renewable": false,
     "depleted_replacement": "tree_stump"
   },
@@ -14,6 +17,9 @@
     "amount": 90,
     "gather_time_ms": 850,
     "harvest_slots": 1,
+    "footprint_px": [34, 30],
+    "blocking_footprint_px": [16, 12],
+    "tags": ["resource", "food_animal", "deer", "selectable"],
     "renewable": true,
     "depleted_replacement": "bones"
   },
@@ -23,33 +29,45 @@
     "amount": 500,
     "gather_time_ms": 1000,
     "harvest_slots": 3,
+    "footprint_px": [80, 44],
+    "blocking_footprint_px": [1, 1],
+    "tags": ["resource", "farm_food", "selectable"],
     "renewable": true,
     "depleted_replacement": "fallow_field"
   },
   "stone_outcrop": {
     "display_name": "Stone Outcrop",
     "resource_type": "stone",
-    "amount": 380,
-    "gather_time_ms": 1150,
-    "harvest_slots": 2,
+    "amount": 500,
+    "gather_time_ms": 1200,
+    "harvest_slots": 8,
+    "footprint_px": [118, 74],
+    "blocking_footprint_px": [104, 54],
+    "tags": ["resource", "stone_outcrop", "selectable"],
     "renewable": false,
-    "depleted_replacement": "rubble"
+    "depleted_replacement": "stone_rubble"
   },
   "iron_deposit": {
     "display_name": "Iron Deposit",
     "resource_type": "iron",
-    "amount": 320,
+    "amount": 500,
     "gather_time_ms": 1200,
-    "harvest_slots": 2,
+    "harvest_slots": 8,
+    "footprint_px": [118, 74],
+    "blocking_footprint_px": [104, 54],
+    "tags": ["resource", "iron_deposit", "selectable"],
     "renewable": false,
     "depleted_replacement": "empty_iron_deposit"
   },
   "gold_mine": {
     "display_name": "Gold Mine",
     "resource_type": "gold",
-    "amount": 400,
+    "amount": 500,
     "gather_time_ms": 1200,
-    "harvest_slots": 3,
+    "harvest_slots": 8,
+    "footprint_px": [132, 86],
+    "blocking_footprint_px": [124, 64],
+    "tags": ["resource", "gold_mine", "selectable"],
     "renewable": false,
     "depleted_replacement": "gold_mine_empty"
   }

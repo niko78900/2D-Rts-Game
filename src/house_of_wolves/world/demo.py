@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from house_of_wolves.core.contracts import Footprint, WorldPosition
+from house_of_wolves.core.contracts import WorldPosition
+from house_of_wolves.core.game_specs import building_spec_from_data, resource_spec_from_type
 from house_of_wolves.core.geometry import bounds_intersect as _bounds_intersect
 from house_of_wolves.core.geometry import inflate_bounds as _inflate_bounds
 from house_of_wolves.core.settings import AppSettings
 from house_of_wolves.entities.building import Building
-from house_of_wolves.entities.combat_unit import CombatUnit
-from house_of_wolves.entities.resource_node import ResourceNode, resource_hp_for_type
+from house_of_wolves.entities.resource_node import ResourceNode
 from house_of_wolves.systems.production import create_combat_unit
 from house_of_wolves.world.camera import Camera
 from house_of_wolves.world.terrain import terrain_bands_for_height, terrain_layout_for_height
@@ -63,33 +63,18 @@ def create_demo_world(settings: AppSettings | None = None) -> WorldState:
         "settler",
         360,
         terrain.unit_walkable_top_y + unit_lane_height * 0.35,
-        speed=92,
-        hp=40,
-        damage=6,
-        attack_range=115,
-        attack_cooldown_ms=900,
     )
     _add_unit(
         world,
         "spearman",
         430,
         terrain.unit_walkable_top_y + unit_lane_height * 0.38,
-        speed=72,
-        hp=50,
-        damage=10,
-        attack_range=42,
-        attack_cooldown_ms=1000,
     )
     _add_unit(
         world,
         "archer",
         500,
         terrain.unit_walkable_top_y + unit_lane_height * 0.33,
-        speed=68,
-        hp=25,
-        damage=4,
-        attack_range=210,
-        attack_cooldown_ms=1000,
     )
     _add_enemy_unit(world, 1520, terrain.unit_walkable_top_y + unit_lane_height * 0.36)
 
@@ -155,7 +140,10 @@ def _add_tree_at_clear_position(
         x = _scaled_resource_x(world, base_x + x_offset)
         for row_factor in row_factors:
             position = WorldPosition(x, _resource_y(world, unit_lane_height, row_factor))
-            if _resource_bounds_clear(world, Footprint(42, 92).bounds_at(position)):
+            if _resource_bounds_clear(
+                world,
+                resource_spec_from_type("wood").blocking_footprint.bounds_at(position),
+            ):
                 _add_tree(world, position.x, position.y)
                 return
 
@@ -163,7 +151,10 @@ def _add_tree_at_clear_position(
         x = _scaled_resource_x(world, fallback_x)
         for row_factor in TREE_ROW_FACTORS:
             position = WorldPosition(x, _resource_y(world, unit_lane_height, row_factor))
-            if _resource_bounds_clear(world, Footprint(42, 92).bounds_at(position)):
+            if _resource_bounds_clear(
+                world,
+                resource_spec_from_type("wood").blocking_footprint.bounds_at(position),
+            ):
                 _add_tree(world, position.x, position.y)
                 return
 
@@ -191,27 +182,9 @@ def _add_unit(
     unit_id: str,
     x: float,
     y: float,
-    *,
-    speed: float,
-    hp: int,
-    damage: int,
-    attack_range: float,
-    attack_cooldown_ms: int,
 ) -> None:
     """Add unit."""
-    entity = CombatUnit(
-        id=world.allocate_entity_id(),
-        owner="frontier",
-        position=WorldPosition(x, y),
-        footprint=Footprint(38, 58),
-        hp=hp,
-        max_hp=hp,
-        tags=("unit", unit_id, "selectable", "movable"),
-        speed=speed,
-        attack_range=attack_range,
-        damage=damage,
-        attack_cooldown_ms=attack_cooldown_ms,
-    )
+    entity = create_combat_unit(world, unit_id, "frontier", WorldPosition(x, y))
     world.add_entity(entity)
 
 
@@ -223,108 +196,65 @@ def _add_enemy_unit(world: WorldState, x: float, y: float) -> None:
 
 def _add_tree(world: WorldState, x: float, y: float) -> None:
     """Add tree."""
-    hp = resource_hp_for_type("wood")
-    entity = ResourceNode(
-        id=world.allocate_entity_id(),
-        owner="neutral",
-        position=WorldPosition(x, y),
-        footprint=Footprint(82, 126),
-        hp=hp,
-        max_hp=hp,
-        tags=("resource", "wood_tree", "selectable"),
-        resource_type="wood",
-        amount_remaining=hp,
-        max_amount_remaining=hp,
-        gather_time_ms=900,
-        harvest_slots=2,
-        depleted_replacement="tree_stump",
-        blocking_footprint=Footprint(42, 92),
-    )
-    world.add_entity(entity)
+    _add_resource_node(world, "wood", x, y)
 
 
 def _add_gold_mine(world: WorldState, x: float, y: float) -> None:
     """Add gold mine."""
-    hp = resource_hp_for_type("gold")
-    entity = ResourceNode(
-        id=world.allocate_entity_id(),
-        owner="neutral",
-        position=WorldPosition(x, y),
-        footprint=Footprint(132, 86),
-        hp=hp,
-        max_hp=hp,
-        tags=("resource", "gold_mine", "selectable"),
-        resource_type="gold",
-        amount_remaining=hp,
-        max_amount_remaining=hp,
-        gather_time_ms=1200,
-        harvest_slots=3,
-        depleted_replacement="gold_mine_empty",
-        blocking_footprint=Footprint(124, 64),
-    )
-    world.add_entity(entity)
+    _add_resource_node(world, "gold", x, y)
 
 
 def _add_stone_outcrop(world: WorldState, x: float, y: float) -> None:
     """Add stone outcrop."""
-    hp = resource_hp_for_type("stone")
-    entity = ResourceNode(
-        id=world.allocate_entity_id(),
-        owner="neutral",
-        position=WorldPosition(x, y),
-        footprint=Footprint(118, 74),
-        hp=hp,
-        max_hp=hp,
-        tags=("resource", "stone_outcrop", "selectable"),
-        resource_type="stone",
-        amount_remaining=hp,
-        max_amount_remaining=hp,
-        gather_time_ms=1200,
-        harvest_slots=3,
-        depleted_replacement="stone_rubble",
-        blocking_footprint=Footprint(104, 54),
-    )
-    world.add_entity(entity)
+    _add_resource_node(world, "stone", x, y)
 
 
 def _add_iron_deposit(world: WorldState, x: float, y: float) -> None:
     """Add iron deposit."""
-    hp = resource_hp_for_type("iron")
+    _add_resource_node(world, "iron", x, y)
+
+
+def _add_resource_node(world: WorldState, resource_type: str, x: float, y: float) -> None:
+    """Create a neutral resource node from the canonical resource data."""
+    spec = resource_spec_from_type(resource_type)
+    hp = spec.amount
     entity = ResourceNode(
         id=world.allocate_entity_id(),
         owner="neutral",
         position=WorldPosition(x, y),
-        footprint=Footprint(118, 74),
+        footprint=spec.footprint,
         hp=hp,
         max_hp=hp,
-        tags=("resource", "iron_deposit", "selectable"),
-        resource_type="iron",
+        tags=spec.tags,
+        resource_type=resource_type,
         amount_remaining=hp,
         max_amount_remaining=hp,
-        gather_time_ms=1200,
-        harvest_slots=3,
-        depleted_replacement="empty_iron_deposit",
-        blocking_footprint=Footprint(104, 54),
+        gather_time_ms=spec.gather_time_ms,
+        harvest_slots=spec.harvest_slots,
+        depleted_replacement=spec.depleted_replacement,
+        blocking_footprint=spec.blocking_footprint,
     )
     world.add_entity(entity)
 
 
 def _add_hut(world: WorldState, x: float, y: float) -> None:
     """Add hut."""
+    spec = building_spec_from_data("hut")
+    functions = spec.functions
     entity = Building(
         id=world.allocate_entity_id(),
         owner="frontier",
         position=WorldPosition(x, y),
-        footprint=Footprint(150, 116),
-        hp=650,
-        max_hp=650,
+        footprint=spec.footprint,
+        hp=spec.hp,
+        max_hp=spec.hp,
         tags=("building", "hut", "selectable"),
-        build_time_ms=12000,
+        build_time_ms=spec.build_time_ms,
         complete=True,
         functions=Building.production_functions(
-            dropoff=True,
+            dropoff=bool(functions.get("dropoff", False)),
             population_cap_bonus=world.settings.hut_pop_cap_bonus,
-            trainable_units=("settler", "spearman"),
+            trainable_units=tuple(str(unit_id) for unit_id in functions["trainable_units"]),
         ),
         dropoff_point=WorldPosition(
             x + 220,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
+from house_of_wolves.core.game_specs import building_spec_from_data
 from house_of_wolves.core.geometry import (
     direction_to as _direction_to,
 )
@@ -31,6 +32,7 @@ STONE_ARCHER_TOWER_PROJECTILE_SPEED = ARROW_PROJECTILE_SPEED * 2
 MAGIC_PROJECTILE_SPEED = 480.0
 MAGIC_PROJECTILE_LIFETIME_MS = 2200
 MAGIC_PROJECTILE_HIT_RADIUS = 16.0
+MAGIC_SPLASH_RADIUS = 25.0
 MAGIC_CAST_EFFECT_MS = 280
 
 
@@ -53,59 +55,56 @@ class TowerSpec:
     projectile_speed: float
     projectile_lifetime_ms: int
     projectile_hit_radius: float
+    splash_radius: float = 0.0
 
 
-WOODEN_ARCHER_TOWER_SPEC = TowerSpec(
-    building_id=WOODEN_ARCHER_TOWER_ID,
-    display_name="Wooden Archer Tower",
-    footprint=Footprint(92, 155),
-    hp=450,
-    build_time_ms=10_000,
-    cost={"wood": 80, "stone": 20},
-    attack_range=260.0,
-    damage=5,
-    attack_cooldown_ms=1000,
-    windup_ms=120,
-    projectile_kind="arrow",
-    shots_per_attack=1,
-    projectile_speed=ARROW_PROJECTILE_SPEED,
-    projectile_lifetime_ms=ARROW_PROJECTILE_LIFETIME_MS,
-    projectile_hit_radius=ARROW_PROJECTILE_HIT_RADIUS,
-)
-STONE_ARCHER_TOWER_SPEC = TowerSpec(
-    building_id=STONE_ARCHER_TOWER_ID,
-    display_name="Stone Archer Tower",
-    footprint=Footprint(106, 172),
-    hp=850,
-    build_time_ms=16_000,
-    cost={"wood": 120, "stone": 90, "iron": 20},
-    attack_range=420.0,
-    damage=8,
-    attack_cooldown_ms=STONE_ARCHER_TOWER_ALTERNATING_COOLDOWN_MS,
-    windup_ms=120,
-    projectile_kind="arrow",
-    shots_per_attack=1,
-    projectile_speed=STONE_ARCHER_TOWER_PROJECTILE_SPEED,
-    projectile_lifetime_ms=ARROW_PROJECTILE_LIFETIME_MS,
-    projectile_hit_radius=ARROW_PROJECTILE_HIT_RADIUS,
-)
-WIZARD_TOWER_SPEC = TowerSpec(
-    building_id=WIZARD_TOWER_ID,
-    display_name="Wizard Tower",
-    footprint=Footprint(112, 182),
-    hp=750,
-    build_time_ms=18_000,
-    cost={"wood": 150, "stone": 120, "iron": 40, "gold": 30},
-    attack_range=320.0,
-    damage=27,
-    attack_cooldown_ms=1800,
-    windup_ms=300,
-    projectile_kind="magic",
-    shots_per_attack=1,
-    projectile_speed=MAGIC_PROJECTILE_SPEED,
-    projectile_lifetime_ms=MAGIC_PROJECTILE_LIFETIME_MS,
-    projectile_hit_radius=MAGIC_PROJECTILE_HIT_RADIUS,
-)
+def _tower_spec(building_id: str) -> TowerSpec:
+    """Build an autonomous tower spec from validated building data."""
+    spec = building_spec_from_data(building_id)
+    functions = spec.functions
+    projectile_kind = str(functions["projectile"])
+    return TowerSpec(
+        building_id=building_id,
+        display_name=spec.display_name,
+        footprint=spec.footprint,
+        hp=spec.hp,
+        build_time_ms=spec.build_time_ms,
+        cost=spec.cost,
+        attack_range=float(functions["attack_range"]),
+        damage=int(functions["damage"]),
+        attack_cooldown_ms=int(functions["attack_cooldown_ms"]),
+        windup_ms=int(functions["windup_ms"]),
+        projectile_kind=projectile_kind,
+        shots_per_attack=int(functions.get("shots_per_attack", 1)),
+        projectile_speed=float(
+            functions.get(
+                "projectile_speed",
+                MAGIC_PROJECTILE_SPEED if projectile_kind == "magic" else ARROW_PROJECTILE_SPEED,
+            )
+        ),
+        projectile_lifetime_ms=int(
+            functions.get(
+                "projectile_lifetime_ms",
+                MAGIC_PROJECTILE_LIFETIME_MS
+                if projectile_kind == "magic"
+                else ARROW_PROJECTILE_LIFETIME_MS,
+            )
+        ),
+        projectile_hit_radius=float(
+            functions.get(
+                "projectile_hit_radius",
+                MAGIC_PROJECTILE_HIT_RADIUS
+                if projectile_kind == "magic"
+                else ARROW_PROJECTILE_HIT_RADIUS,
+            )
+        ),
+        splash_radius=float(functions.get("splash_radius", 0.0)),
+    )
+
+
+WOODEN_ARCHER_TOWER_SPEC = _tower_spec(WOODEN_ARCHER_TOWER_ID)
+STONE_ARCHER_TOWER_SPEC = _tower_spec(STONE_ARCHER_TOWER_ID)
+WIZARD_TOWER_SPEC = _tower_spec(WIZARD_TOWER_ID)
 TOWER_SPECS: dict[str, TowerSpec] = {
     WOODEN_ARCHER_TOWER_ID: WOODEN_ARCHER_TOWER_SPEC,
     STONE_ARCHER_TOWER_ID: STONE_ARCHER_TOWER_SPEC,
@@ -353,6 +352,7 @@ def _fire_tower_projectiles(
             speed=spec.projectile_speed,
             remaining_lifetime_ms=spec.projectile_lifetime_ms,
             hit_radius=spec.projectile_hit_radius,
+            splash_radius=spec.splash_radius,
         )
         world.projectiles.append(projectile)
     _advance_tower_shooter_index(tower, spec)
@@ -377,4 +377,3 @@ def _tower_projectile_origin(tower: Building, *, shooter_index: int = 0) -> Worl
             x_ratio = 0.38 if shooter_index % count == 0 else 0.62
             return WorldPosition(left + width * x_ratio, top + max(16.0, height * 0.20))
     return WorldPosition(left + width / 2, top + max(16.0, height * 0.20))
-

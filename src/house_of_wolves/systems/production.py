@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from house_of_wolves.core.contracts import EntityId, Footprint, WorldPosition
+from house_of_wolves.core.game_specs import (
+    building_spec_from_data,
+    runtime_cost,
+    unit_spec_from_data,
+)
 from house_of_wolves.entities.building import Building
 from house_of_wolves.entities.combat_unit import CombatUnit
 from house_of_wolves.entities.unit import Unit
@@ -18,8 +23,6 @@ ARCHERY_BUILDING_ID = "archery"
 ARCHERY_RANGE_BUILDING_ID = "archery_range"
 
 
-# Keep first-pass military building stats in one place so placement, construction,
-# production, and tests do not drift while the JSON data remains a validation source.
 @dataclass(frozen=True, slots=True)
 class ProductionBuildingSpec:
     """Configures a first-pass military production building."""
@@ -33,96 +36,66 @@ class ProductionBuildingSpec:
     trainable_units: tuple[str, ...]
 
 
-BARRACKS_SPEC = ProductionBuildingSpec(
-    building_id=BARRACKS_BUILDING_ID,
-    display_name="Barracks",
-    footprint=Footprint(190, 135),
-    hp=700,
-    build_time_ms=14_000,
-    cost={"wood": 100, "stone": 25},
-    trainable_units=("spearman",),
-)
-ARCHERY_SPEC = ProductionBuildingSpec(
-    building_id=ARCHERY_BUILDING_ID,
-    display_name="Archery",
-    footprint=Footprint(180, 125),
-    hp=560,
-    build_time_ms=12_000,
-    cost={"wood": 90, "stone": 15},
-    trainable_units=("archer",),
-)
+
+def _production_building_spec(building_id: str) -> ProductionBuildingSpec:
+    """Build a production-building spec from the validated building data."""
+    spec = building_spec_from_data(building_id)
+    return ProductionBuildingSpec(
+        building_id=building_id,
+        display_name=spec.display_name,
+        footprint=spec.footprint,
+        hp=spec.hp,
+        build_time_ms=spec.build_time_ms,
+        cost=spec.cost,
+        trainable_units=tuple(str(unit_id) for unit_id in spec.functions["trainable_units"]),
+    )
+
+
+BARRACKS_SPEC = _production_building_spec(BARRACKS_BUILDING_ID)
+ARCHERY_SPEC = _production_building_spec(ARCHERY_BUILDING_ID)
 PRODUCTION_BUILDING_SPECS = {
     BARRACKS_BUILDING_ID: BARRACKS_SPEC,
     ARCHERY_BUILDING_ID: ARCHERY_SPEC,
     ARCHERY_RANGE_BUILDING_ID: ARCHERY_SPEC,
 }
 
+
+def _unit_template(unit_id: str) -> dict[str, object]:
+    """Build the legacy unit template shape from validated unit data."""
+    spec = unit_spec_from_data(unit_id)
+    return {
+        "hp": spec.hp,
+        "speed": spec.speed,
+        "footprint": (spec.footprint.width, spec.footprint.height),
+        "damage": spec.damage,
+        "attack_range": spec.attack_range,
+        "attack_cooldown_ms": spec.attack_cooldown_ms,
+        "cost": spec.cost,
+        "population_cost": spec.population_cost,
+    }
+
+
 UNIT_TEMPLATES = {
-    "settler": {
-        "hp": 40,
-        "speed": 92,
-        "footprint": (38, 58),
-        "damage": 6,
-        "attack_range": 115,
-        "attack_cooldown_ms": 900,
-        "cost": {"wood": 20, "food": 10},
-        "population_cost": 1,
-    },
-    "spearman": {
-        "hp": 50,
-        "speed": 72,
-        "footprint": (38, 58),
-        "damage": 10,
-        "attack_range": 42,
-        "attack_cooldown_ms": 1000,
-        "cost": {"wood": 25, "food": 20, "iron": 5},
-        "population_cost": 1,
-    },
-    "archer": {
-        "hp": 25,
-        "speed": 68,
-        "footprint": (38, 58),
-        "damage": 4,
-        "attack_range": 210,
-        "attack_cooldown_ms": 1000,
-        "cost": {"wood": 45, "food": 15},
-        "population_cost": 1,
-    },
-    "enemy_swordsman": {
-        "hp": 90,
-        "speed": 68,
-        "footprint": (38, 58),
-        "damage": 14,
-        "attack_range": 42,
-        "attack_cooldown_ms": 1100,
-        "cost": {},
-        "population_cost": 0,
-    },
-    "enemy_archer": {
-        "hp": 35,
-        "speed": 65,
-        "footprint": (38, 58),
-        "damage": 5,
-        "attack_range": 210,
-        "attack_cooldown_ms": 1200,
-        "cost": {},
-        "population_cost": 0,
-    },
+    unit_id: _unit_template(unit_id)
+    for unit_id in ("settler", "spearman", "archer", "enemy_swordsman", "enemy_archer")
 }
 
-BUILDING_UNIT_COSTS = {
-    # Huts keep their emergency/default unit prices; dedicated military buildings
-    # can override the same unit template with more efficient production costs.
-    BARRACKS_BUILDING_ID: {
-        "spearman": {"wood": 30, "food": 15},
-    },
-    ARCHERY_BUILDING_ID: {
-        "archer": {"wood": 45, "food": 15},
-    },
-    ARCHERY_RANGE_BUILDING_ID: {
-        "archer": {"wood": 45, "food": 15},
-    },
-}
+
+def _building_unit_costs() -> dict[str, dict[str, dict[str, int]]]:
+    """Load building-specific production price overrides from building data."""
+    costs: dict[str, dict[str, dict[str, int]]] = {}
+    for building_id in (BARRACKS_BUILDING_ID, ARCHERY_BUILDING_ID):
+        functions = building_spec_from_data(building_id).functions
+        overrides = functions.get("unit_cost_overrides", {})
+        costs[building_id] = {
+            str(unit_id): runtime_cost(raw_cost)
+            for unit_id, raw_cost in dict(overrides).items()
+        }
+    costs[ARCHERY_RANGE_BUILDING_ID] = dict(costs[ARCHERY_BUILDING_ID])
+    return costs
+
+
+BUILDING_UNIT_COSTS = _building_unit_costs()
 
 
 class ProductionError(ValueError):
