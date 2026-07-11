@@ -109,6 +109,7 @@ BUILDING_SPRITE_BUILDING_IDS = (
     "pig_farm",
     WOODEN_ARCHER_TOWER_ID,
     STONE_ARCHER_TOWER_ID,
+    WIZARD_TOWER_ID,
 )
 BUILDING_SPRITE_STAGES = (
     HUT_STAGE_SCAFFOLDING,
@@ -126,9 +127,11 @@ BUILDING_SPRITE_PATHS = {
     }
     for building_id in BUILDING_SPRITE_BUILDING_IDS
 }
+BUILDING_SPRITE_PATHS[WIZARD_TOWER_ID] = BUILDING_SPRITE_PATHS[STONE_ARCHER_TOWER_ID]
 _BUILDING_SPRITE_CACHE: dict[tuple[str, str, str, bool], pygame.Surface | None] = {}
 WOODEN_TOWER_ARCHER_ANCHOR = (0.50, 0.30)
 STONE_TOWER_ARCHER_HEAD_ANCHORS = ((0.34, 0.08), (0.66, 0.08))
+WIZARD_TOWER_WIZARD_ANCHOR = (0.50, 0.16)
 HUT_CONSTRUCTION_SPRITES = {
     stage: str(BUILDING_SPRITE_PATHS["hut"][stage])
     for stage in (HUT_STAGE_SCAFFOLDING, HUT_STAGE_PARTIAL, HUT_STAGE_COMPLETE)
@@ -1018,16 +1021,24 @@ class GameRenderer:
                 )
                 self._draw_label(surface, _short_label(tags), rect.center)
             return
-        if self._draw_building_sprite(surface, rect, entity):
-            return
         if WIZARD_TOWER_ID in tags:
-            self._draw_wizard_tower(
-                surface,
-                rect,
-                complete=bool(getattr(entity, "complete", True)),
-                hp_ratio=_hp_ratio(entity),
-            )
-            self._draw_label(surface, _short_label(tags), rect.center)
+            sprite_rect = self._draw_building_sprite_rect(surface, rect, entity)
+            if sprite_rect is not None:
+                if _wizard_tower_wizard_visible(entity):
+                    self._draw_tower_wizard(
+                        surface,
+                        _tower_archer_center(sprite_rect, WIZARD_TOWER_WIZARD_ANCHOR),
+                    )
+            else:
+                self._draw_wizard_tower(
+                    surface,
+                    rect,
+                    complete=bool(getattr(entity, "complete", True)),
+                    hp_ratio=_hp_ratio(entity),
+                )
+                self._draw_label(surface, _short_label(tags), rect.center)
+            return
+        if self._draw_building_sprite(surface, rect, entity):
             return
         if "chicken_farm" in tags:
             self._draw_chicken_farm(surface, rect, complete=bool(getattr(entity, "complete", True)))
@@ -2466,6 +2477,8 @@ def building_sprite_id_for(entity: object) -> str | None:
         return WOODEN_ARCHER_TOWER_ID
     if STONE_ARCHER_TOWER_ID in tags:
         return STONE_ARCHER_TOWER_ID
+    if WIZARD_TOWER_ID in tags:
+        return WIZARD_TOWER_ID
     return None
 
 
@@ -2692,6 +2705,15 @@ def _wooden_tower_archer_visible(entity: object) -> bool:
 
 def _stone_tower_archers_visible(entity: object) -> bool:
     """Return whether the processed stone tower should show its live archers."""
+    return (
+        bool(getattr(entity, "complete", False))
+        and not is_building_destroying(entity)
+        and _hp_ratio(entity) > 0.10
+    )
+
+
+def _wizard_tower_wizard_visible(entity: object) -> bool:
+    """Return whether the processed Wizard Tower should show its live wizard."""
     return (
         bool(getattr(entity, "complete", False))
         and not is_building_destroying(entity)

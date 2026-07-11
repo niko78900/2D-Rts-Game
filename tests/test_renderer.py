@@ -25,6 +25,7 @@ from house_of_wolves.core.renderer import (
     RESOURCE_STAGE_AMOUNT_75_25,
     RESOURCE_STAGE_AMOUNT_100_75,
     STONE_TOWER_ARCHER_HEAD_ANCHORS,
+    WIZARD_TOWER_WIZARD_ANCHOR,
     WOODEN_TOWER_ARCHER_ANCHOR,
     BuildingPlacementPreview,
     GameRenderer,
@@ -53,6 +54,7 @@ from house_of_wolves.systems.group_movement import issue_group_move_command
 from house_of_wolves.systems.towers import (
     STONE_ARCHER_TOWER_ID,
     TOWER_SPECS,
+    WIZARD_TOWER_ID,
     WOODEN_ARCHER_TOWER_ID,
 )
 from house_of_wolves.ui.selected_panel import mutual_abilities, selected_panel_for
@@ -594,6 +596,27 @@ def test_stone_archer_tower_uses_processed_building_sprite_reference() -> None:
     )
 
 
+def test_wizard_tower_reuses_processed_stone_tower_sprite_reference() -> None:
+    """Verify Wizard Tower resolves to the Stone Tower processed lifecycle art."""
+    tower = Building(
+        id=EntityId(1003),
+        owner="frontier",
+        position=WorldPosition(100, 100),
+        footprint=Footprint(112, 182),
+        hp=750,
+        max_hp=750,
+        tags=("building", "selectable", WIZARD_TOWER_ID),
+        complete=True,
+    )
+
+    assert BUILDING_SPRITE_PATHS[WIZARD_TOWER_ID] is BUILDING_SPRITE_PATHS[
+        STONE_ARCHER_TOWER_ID
+    ]
+    assert building_sprite_reference_for(tower) == str(
+        BUILDING_SPRITE_PATHS[STONE_ARCHER_TOWER_ID][HUT_STAGE_COMPLETE]
+    )
+
+
 def test_stone_archer_tower_complete_sprite_bottom_is_grounded() -> None:
     """Verify Stone Tower complete art is not bottom-aligned to sparse alpha noise."""
     path = BUILDING_SPRITE_PATHS[STONE_ARCHER_TOWER_ID][HUT_STAGE_COMPLETE]
@@ -668,6 +691,42 @@ def test_tower_archer_overlay_anchors_are_inside_processed_sprite_rect() -> None
 
         for anchor in anchors:
             assert sprite_rect.collidepoint(_tower_archer_center(sprite_rect, anchor))
+
+
+def test_wizard_tower_draws_wizard_overlay_on_processed_stone_sprite() -> None:
+    """Verify Wizard Tower keeps a distinct wizard overlay on reused stone art."""
+    renderer = GameRenderer(AppSettings())
+    surface = pygame.Surface((280, 280), pygame.SRCALPHA)
+    spec = TOWER_SPECS[WIZARD_TOWER_ID]
+    tower = Building(
+        id=EntityId(1004),
+        owner="frontier",
+        position=WorldPosition(140, 250),
+        footprint=spec.footprint,
+        hp=spec.hp,
+        max_hp=spec.hp,
+        tags=("building", "selectable", WIZARD_TOWER_ID),
+        complete=True,
+    )
+    rect = pygame.Rect(
+        round(tower.position.x - spec.footprint.width / 2),
+        round(tower.position.y - spec.footprint.height),
+        round(spec.footprint.width),
+        round(spec.footprint.height),
+    )
+
+    sprite_rect = renderer._draw_building_sprite_rect(surface, rect, tower)  # noqa: SLF001
+    assert sprite_rect is not None
+    surface.fill((0, 0, 0, 0))
+    renderer._draw_building(surface, rect, tower)  # noqa: SLF001
+    assert sprite_rect.collidepoint(
+        _tower_archer_center(sprite_rect, WIZARD_TOWER_WIZARD_ANCHOR)
+    )
+    assert any(
+        surface.get_at((x, y))[:3] == (128, 218, 236)
+        for x in range(surface.get_width())
+        for y in range(surface.get_height())
+    )
 
 
 def test_renderer_draws_selected_tower_ground_range_lines_for_multiple_towers() -> None:
