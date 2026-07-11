@@ -166,8 +166,8 @@ Combat currently includes:
 - Completed defensive towers automatically acquire nearby enemy units.
 - Wooden Archer Towers fire one arrow; Stone Archer Towers alternate two archers,
   firing harder-hitting fast arrows at roughly double the single-archer cadence.
-- Wizard Towers fire slower, stronger Pygame-drawn magic bolts with a small splash
-  radius around impact.
+- Wizard Towers fire slower, stronger Pygame-drawn magic bolts with a small
+  footprint-overlap splash radius around impact.
 - Direct attacks, Attack Move, local aggro, chase limits, and target cleanup.
 - Building-edge melee distance so attackers do not chase unreachable building centers.
 - Configurable attack wind-up and cooldown states.
@@ -451,9 +451,10 @@ Unit sprites are not final. Units, Trees, weapons, arrows, melee strikes, damage
 feedback, wave markers, and directional death animations currently use Pygame
 primitives. Current placeholder equipment includes bows, spears, swords, axes,
 pickaxes, and building hammers. Wooden and Stone Archer Towers use processed art with
-Pygame-drawn archer overlays, while Wizard Tower and Wizard Tower magic bolts are
-still drawn with Pygame primitives. This keeps gameplay testable while final art is
-still in development.
+Pygame-drawn archer overlays. Wizard Tower currently reuses the processed Stone
+Archer Tower base with a Pygame-drawn wizard overlay, and Wizard Tower magic bolts
+remain Pygame primitives. This keeps gameplay testable while final art is still in
+development.
 
 ## Performance Approach
 
